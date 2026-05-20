@@ -1,0 +1,72 @@
+{% load static %}
+<div id="conversation-list" class="space-y-3">
+    {% for conversation in conversations %}
+    <div class="group relative p-4 bg-white rounded-xl border border-slate-100 transition-all active:scale-[0.99]">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'chat:chat_conversation' conversation.id %}" class="flex-1 min-w-0">
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ai-avatar">
+                        <img src="{% static 'images/icons/sparkles.svg' %}" class="w-5 h-5" alt="AI">
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm font-medium text-slate-900 truncate">
+                                {{ conversation.title|default:"新对话" }}
+                            </span>
+                            <span class="text-xs text-slate-400 flex-shrink-0 ml-2">
+                                {{ conversation.updated_at|date:"m-d H:i" }}
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-500 truncate-2">
+                            {{ conversation.last_message|default:"暂无消息" }}
+                        </p>
+                    </div>
+                </div>
+            </a>
+            {% url 'chat:conversation_delete' conversation.id as delete_url %}
+            {% url 'chat:conversation_rename' conversation.id as rename_url %}
+            <div class="flex items-center gap-1 shrink-0">
+                <button type="button"
+                        @click="$dispatch('show-rename-dialog', {
+                            title: '重命名对话',
+                            postUrl: '{{ rename_url }}',
+                            currentTitle: '{{ conversation.title|default:''|escapejs }}',
+                            target: 'conversation-list',
+                        })"
+                        class="p-2 text-slate-400 hover:text-sky-500 hover:bg-sky-50 rounded-lg cursor-pointer"
+                        title="重命名对话">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                </button>
+                <button type="button"
+                    @click="$dispatch('show-confirm-dialog', {
+                        title: '删除对话',
+                        message: '确定要删除这个对话吗？此操作不可恢复。',
+                        danger: true,
+                        postUrl: '{{ delete_url }}',
+                        {% if current_conversation_id and current_conversation_id == conversation.id %}
+                        redirectUrl: '{% url 'chat:chat_home' %}',
+                        {% else %}
+                        target: 'conversation-list',
+                        {% endif %}
+                    })"
+                    class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg cursor-pointer shrink-0"
+                    title="删除对话">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
+            </div>
+        </div>
+    </div>
+
+    {% empty %}
+    <div class="text-center py-8 text-slate-400">
+        <div class="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <img src="{% static 'images/icons/sparkles.svg' %}" class="w-6 h-6" alt="AI">
+        </div>
+        <p class="text-sm">暂无对话记录</p>
+    </div>
+    {% endfor %}
+</div>

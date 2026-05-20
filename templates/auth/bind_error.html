@@ -1,0 +1,15 @@
+{% extends "base_h5.html" %}
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-screen px-4">
+    <div class="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-6">
+        <svg class="w-10 h-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </div>
+    <h1 class="text-2xl font-bold text-slate-900 mb-2">绑定失败</h1>
+    <p class="text-slate-600 mb-8 text-center">{{ error }}</p>
+    <a href="javascript:history.back()" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-300">
+        返回上一页
+    </a>
+</div>
+{% endblock %}

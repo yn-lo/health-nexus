@@ -1,0 +1,43 @@
+{% extends "staff/base_staff.html" %}
+{% load static %}
+
+{% block title %}患者管理 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto px-4 py-6">
+    <div class="max-w-2xl mx-auto w-full">
+        <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center gap-4">
+                <a href="{% url 'staff:dashboard' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                    <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+                </a>
+                <h2 class="text-xl font-bold text-slate-900">患者管理</h2>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="{% url 'staff:care:staff_bound_patients' %}" class="text-sm text-sky-600 hover:text-sky-700 font-medium">我的绑定患者</a>
+                <span class="text-sm text-slate-400">{{ total_count }} 位患者</span>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <div class="relative">
+                <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                <input type="text"
+                       name="q"
+                       placeholder="搜索姓名或手机号"
+                       class="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                       hx-get="{% url 'staff:care:staff_patient_search' %}"
+                       hx-trigger="input changed delay:500ms, search"
+                       hx-target="#patient-table"
+                       hx-indicator=".htmx-indicator">
+            </div>
+        </div>
+
+        <div id="patient-table">
+            {% include "staff/care/partials/_patient_table.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

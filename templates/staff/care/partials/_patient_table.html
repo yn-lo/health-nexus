@@ -1,0 +1,33 @@
+{% load i18n %}
+<div class="space-y-3">
+    {% for patient in patients %}
+    <a href="{% url 'staff:care:staff_patient_detail' patient.pk %}" class="flex items-center gap-4 bg-white rounded-xl shadow-sm border border-slate-100 p-4 hover:bg-slate-50 transition-colors">
+        <div class="w-11 h-11 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+            <span class="text-sm font-bold text-purple-600">{{ patient.name|first|upper }}</span>
+        </div>
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-slate-900 truncate">{{ patient.name }}</span>
+                <span class="text-xs text-slate-400">{{ patient.get_gender_display|default:"" }}</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">{{ patient.age|default:"未知" }}岁 · {{ patient.user.phone|default:"未绑定手机" }}</p>
+        </div>
+        <svg class="w-5 h-5 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+    </a>
+    {% empty %}
+    <div class="flex flex-col items-center justify-center py-16">
+        <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+        <p class="text-sm text-slate-400">
+            {% if is_search %}
+                {% trans "未找到匹配的患者" %}
+            {% else %}
+                {% trans "暂无患者数据" %}
+            {% endif %}
+        </p>
+    </div>
+    {% endfor %}
+</div>

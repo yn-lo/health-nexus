@@ -1,0 +1,375 @@
+:root {
+  --primary: #0EA5E9;
+  --primary-dark: #0284C7;
+  --primary-light: rgba(14, 165, 233, 0.1);
+  --secondary: #06B6D4;
+  --accent: #22D3EE;
+
+  --bg-primary: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-gradient-start: #0EA5E9;
+  --bg-gradient-end: #06B6D4;
+
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+
+  --border: #E2E8F0;
+  --border-light: rgba(255, 255, 255, 0.2);
+
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
+
+  --glass-bg: rgba(255, 255, 255, 0.15);
+  --glass-bg-dark: rgba(15, 23, 42, 0.15);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-blur: 16px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  --transition-fast: 150ms ease-out;
+  --transition-default: 200ms ease-out;
+  --transition-slow: 300ms ease-out;
+}
+
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-card-dark {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-lg);
+}
+
+.gradient-bg {
+  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.badge-primary {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-up {
+  animation: slideUp var(--transition-slow) ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.hover-lift {
+  transition: transform var(--transition-default), box-shadow var(--transition-default);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.hover-scale {
+  transition: transform var(--transition-default);
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+.hover-scale:active {
+  transform: scale(0.98);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* HTMX 加载指示器 */
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.htmx-request .htmx-indicator {
+  opacity: 1;
+}
+
+.htmx-request.htmx-indicator {
+  opacity: 1;
+}
+
+/* 表单图标定位 */
+.input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94A3B8;
+  pointer-events: none;
+}
+
+/* 登录/注册页面背景 */
+.login-bg {
+  background: linear-gradient(135deg, #0EA5E9 0%, #06B6D4 50%, #22D3EE 100%);
+}
+
+/* 登录卡片 */
+.login-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* 浮动动画 */
+.floating {
+  animation: floating 3s ease-in-out infinite;
+}
+
+@keyframes floating {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* 导航项样式（保留用于兼容） */
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  gap: 4px;
+  cursor: pointer;
+  transition: color 200ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-item img {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.nav-item span {
+  font-size: 10px;
+  font-weight: 500;
+  transition: color 200ms ease-out;
+}
+
+.nav-item.inactive {
+  color: #94A3B8;
+}
+
+.nav-item.inactive:hover {
+  color: #64748B;
+}
+
+.nav-item.active {
+  color: #0EA5E9;
+}
+
+/* 现代导航项样式（浮动胶囊导航栏） */
+.nav-item-modern {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 250ms ease-out;
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  border-radius: 1.5rem;
+  padding: 0.5rem 1rem;
+}
+
+.nav-item-modern svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  transition: all 250ms ease-out;
+  color: #94A3B8;
+}
+
+.nav-item-modern span {
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 250ms ease-out;
+  color: #94A3B8;
+}
+
+.nav-item-modern.inactive {
+  background: transparent;
+}
+
+.nav-item-modern.inactive:hover {
+  background: rgba(14, 165, 233, 0.05);
+}
+
+.nav-item-modern.inactive:hover svg {
+  color: #64748B;
+}
+
+.nav-item-modern.inactive:hover span {
+  color: #64748B;
+}
+
+.nav-item-modern.active {
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.nav-item-modern.active svg {
+  transform: scale(1.15);
+  color: #0EA5E9;
+}
+
+.nav-item-modern.active span {
+  color: #0EA5E9;
+  font-weight: 600;
+}
+
+/* 主按钮渐变背景 */
+.btn-gradient {
+  background: linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%);
+}
+
+/* AI 消息气泡 */
+.ai-avatar {
+  background: linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%);
+}
+
+/* 用户消息气泡 */
+.user-message-bubble {
+  background: linear-gradient(135deg, #0EA5E9 0%, #06B6D4 100%);
+}
+
+/* Alpine x-cloak 支持 */
+[x-cloak] {
+  display: none !important;
+}
+
+/* 输入框字体大小（iOS 安全设置） */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* 图标着色 - 用于 <img> 标签的 SVG 图标 */
+.icon-primary {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(77%) saturate(1603%) hue-rotate(167deg) brightness(98%) contrast(96%);
+}
+
+.icon-slate {
+  filter: brightness(0) saturate(100%) invert(53%) sepia(6%) saturate(976%) hue-rotate(184deg) brightness(94%) contrast(86%);
+}

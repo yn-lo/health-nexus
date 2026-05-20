@@ -1,0 +1,375 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="p-6">
+    <h1 class="text-2xl font-bold mb-2">{% trans "配置总览" %}</h1>
+    <p class="text-gray-500 mb-6">{% trans "所有配置的当前运行值一览。点击「编辑」跳转到对应管理页面进行修改。" %}</p>
+
+    <!-- LLM 服务配置 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "LLM 配置" %}</h2>
+            <a href="{% url 'admin:config_llmproviderconfig_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理 LLM 配置" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "名称" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "类型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "提供商" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "模型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "API Key" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "Base URL" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "状态" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for config in llm_configs %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ config.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">LLM</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.provider }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.model_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">{{ config.api_key|slice:":8" }}****{{ config.api_key|slice:"-4:" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ config.base_url }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if config.is_active %}
+                            <span class="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">{% trans "启用" %}</span>
+                            {% else %}
+                            <span class="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">{% trans "停用" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_llmproviderconfig_change' config.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-4 text-center text-gray-500">{% trans "暂无 LLM 配置" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Embedding 服务配置 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "Embedding 配置" %}</h2>
+            <a href="{% url 'admin:config_embeddingproviderconfig_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理 Embedding 配置" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "名称" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "类型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "提供商" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "模型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "向量维数" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "API Key" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "Base URL" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "状态" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for config in embedding_configs %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ config.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">Embedding</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.provider }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.model_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.dimensions }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">{{ config.api_key|slice:":8" }}****{{ config.api_key|slice:"-4:" }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ config.base_url }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if config.is_active %}
+                            <span class="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">{% trans "启用" %}</span>
+                            {% else %}
+                            <span class="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">{% trans "停用" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_embeddingproviderconfig_change' config.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="px-6 py-4 text-center text-gray-500">{% trans "暂无 Embedding 配置" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- RAG 配置 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "RAG 配置" %}</h2>
+            <a href="{% url 'admin:config_ragconfig_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理 RAG 配置" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "配置项" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "分类" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "当前值" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "说明" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "状态" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for config in rag_configs %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ config.display_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.get_category_display }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">{{ config.config_value }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ config.description }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if config.is_active %}
+                            <span class="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">{% trans "启用" %}</span>
+                            {% else %}
+                            <span class="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">{% trans "停用" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_ragconfig_change' config.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">{% trans "暂无 RAG 配置" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 品牌配置 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "品牌配置" %}</h2>
+            <a href="{% url 'admin:config_brandconfig_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理品牌配置" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "配置项" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "当前值" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "状态" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for config in brand_configs %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ config.display_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.value }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if config.is_active %}
+                            <span class="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">{% trans "启用" %}</span>
+                            {% else %}
+                            <span class="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">{% trans "停用" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_brandconfig_change' config.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-gray-500">{% trans "暂无品牌配置" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 系统配置 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "系统配置" %}</h2>
+            <a href="{% url 'admin:config_systemconfig_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理系统配置" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "分类" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "配置项" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "当前值" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "说明" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for config in system_configs %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ config.get_category_display }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ config.config_key }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">{{ config.config_value }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ config.description }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_systemconfig_change' config.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">{% trans "暂无系统配置" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 安全规则 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "安全规则" %}</h2>
+            <a href="{% url 'admin:config_safetyrule_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理安全规则" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "规则类型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "规则标识" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "描述" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "状态" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for rule in safety_rules %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ rule.get_rule_type_display }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ rule.rule_key }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ rule.description }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if rule.is_active %}
+                            <span class="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">{% trans "启用" %}</span>
+                            {% else %}
+                            <span class="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">{% trans "停用" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_safetyrule_change' rule.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">{% trans "暂无安全规则" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 敏感词列表 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "敏感词列表" %}</h2>
+            <a href="{% url 'admin:config_sensitiveword_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理敏感词" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "敏感词" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "分类" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for word in sensitive_words %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ word.word }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ word.get_category_display }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_sensitiveword_change' word.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3" class="px-6 py-4 text-center text-gray-500">{% trans "暂无敏感词" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 限流规则 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-medium">{% trans "限流规则" %}</h2>
+            <a href="{% url 'admin:config_ratelimitrule_changelist' %}" class="text-blue-600 hover:text-blue-800 text-sm">
+                {% trans "管理限流规则" %} &rarr;
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "名称" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "类型" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "限流值" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "窗口(秒)" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "操作" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for rule in rate_limit_rules %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ rule.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ rule.get_rule_type_display }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap font-mono text-sm">{{ rule.limit }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ rule.window }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="{% url 'admin:config_ratelimitrule_change' rule.pk %}" class="text-blue-600 hover:text-blue-800 text-sm">{% trans "编辑" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">{% trans "无限流规则" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="{% url 'admin:index' %}" class="text-blue-600 hover:text-blue-800">
+            &larr; {% trans "返回 Admin 首页" %}
+        </a>
+    </div>
+</div>
+{% endblock %}

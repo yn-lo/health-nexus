@@ -1,0 +1,80 @@
+{% extends "layout.html" %}
+{% load static %}
+
+{% block body %}
+{% include "partials/_messages.html" %}
+{% block body_open %}{% endblock %}
+{% block header %}
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200/50 px-4 py-3">
+    <div class="flex items-center justify-between max-w-4xl mx-auto">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-md ai-avatar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 18 L22 82"/>
+                        <path d="M22 50 L40 50"/>
+                        <path d="M40 18 L40 82"/>
+                        <path d="M60 82 L60 18"/>
+                        <path d="M60 82 L78 18"/>
+                        <path d="M78 82 L78 18"/>
+                    </g>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-slate-900">{{ brand.name }}</h1>
+                <p class="text-xs text-slate-500">{{ brand.tagline }}</p>
+            </div>
+        </div>
+        <a href="{% url 'base:about_page' %}" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors" title="关于">
+            <img src="{% static 'images/icons/information-circle.svg' %}" class="w-6 h-6" alt="关于">
+        </a>
+    </div>
+</header>
+{% endblock %}
+
+{% block main %}
+<main class="flex-1 min-h-0 pb-[6.5rem] relative flex flex-col overflow-hidden">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
+
+{% block nav %}
+<nav class="fixed bottom-6 left-6 right-6 z-50">
+    <div class="bg-white/60 backdrop-blur-2xl rounded-[2rem] shadow-xl border border-white/30 px-3">
+        <div class="flex justify-around items-center h-16">
+
+            {% url 'wiki:blog_list' as blog_url %}
+            <a href="{{ blog_url }}" class="nav-item-modern {% if request.path == blog_url or request.resolver_match.url_name == 'blog_list' %}active{% else %}inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"/>
+                </svg>
+                <span>知识</span>
+            </a>
+
+            {% url 'chat:chat_home' as chat_url %}
+            <a href="{{ chat_url }}" class="nav-item-modern {% if request.path == chat_url or request.resolver_match.url_name == 'chat_home' %}active{% else %}inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>
+                </svg>
+                <span>咨询</span>
+            </a>
+
+            {% url 'care:profile_detail' as profile_url %}
+            <a href="{{ profile_url }}" class="nav-item-modern {% if request.path == profile_url or request.resolver_match.url_name == 'profile_detail' or request.resolver_match.url_name == 'profile_edit' %}active{% else %}inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/>
+                </svg>
+                <span>我的</span>
+            </a>
+
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{% block alpine_components %}{% endblock %}
+
+{# 全局对话框，必须放在 body 层级避免被 overflow-hidden 裁剪 #}
+{% include 'partials/_confirm_dialog.html' %}
+{% include 'partials/_rename_dialog.html' %}
+{% endblock %}

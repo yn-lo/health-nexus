@@ -1,0 +1,73 @@
+{% extends "layout.html" %}
+{% load static %}
+
+{% block body %}
+{% include "partials/_messages.html" %}
+{% block body_open %}{% endblock %}
+{% block header %}
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200/50 px-4 py-3">
+    <div class="flex items-center justify-between max-w-4xl mx-auto">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-md ai-avatar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 18 L22 82"/>
+                        <path d="M22 50 L40 50"/>
+                        <path d="M40 18 L40 82"/>
+                        <path d="M60 82 L60 18"/>
+                        <path d="M60 82 L78 18"/>
+                        <path d="M78 82 L78 18"/>
+                    </g>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold text-slate-900">医护工作台</h1>
+            </div>
+        </div>
+        <a href="{% url 'base:about_page' %}" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors" title="关于">
+            <img src="{% static 'images/icons/information-circle.svg' %}" class="w-6 h-6" alt="关于">
+        </a>
+    </div>
+</header>
+{% endblock %}
+
+{% block main %}
+<main class="flex-1 min-h-0 pb-[4rem] relative flex flex-col overflow-hidden">
+    {% block content %}{% endblock %}
+</main>
+{% endblock %}
+
+{% block nav %}
+<nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-slate-200/50 pb-safe z-50">
+    <div class="flex justify-around items-center h-16 max-w-4xl mx-auto">
+        {% url 'staff:dashboard' as dashboard_url %}
+        <a href="{{ dashboard_url }}" class="nav-item {% if request.path == dashboard_url or request.resolver_match.url_name == 'dashboard' %}active{% else %}inactive{% endif %}">
+            <img src="{% static 'images/icons/home.svg' %}" alt="工作台">
+            <span>工作台</span>
+        </a>
+
+        {% url 'staff:care:staff_patient_list' as patient_url %}
+        <a href="{{ patient_url }}" class="nav-item {% if 'patient' in request.path %}active{% else %}inactive{% endif %}">
+            <img src="{% static 'images/icons/user-group.svg' %}" alt="患者">
+            <span>患者</span>
+        </a>
+
+        {% if user.can_access_staff_dashboard %}
+        {% url 'wiki:article_management' as article_url %}
+        <a href="{{ article_url }}" class="nav-item {% if 'article' in request.path or 'review' in request.path %}active{% else %}inactive{% endif %}">
+            <img src="{% static 'images/icons/document-text.svg' %}" alt="文章">
+            <span>文章</span>
+        </a>
+        {% endif %}
+
+        {% url 'staff:profile' as profile_url %}
+        <a href="{{ profile_url }}" class="nav-item {% if 'profile' in request.path %}active{% else %}inactive{% endif %}">
+            <img src="{% static 'images/icons/user.svg' %}" alt="我的">
+            <span>我的</span>
+        </a>
+    </div>
+</nav>
+{% endblock %}
+
+{% block alpine_components %}{% endblock %}
+{% endblock %}

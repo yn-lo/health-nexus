@@ -1,0 +1,76 @@
+{% comment %}
+  Partial: _confirm_dialog.html
+  Unified confirmation dialog that receives configuration via Alpine events.
+  Listens to: show-confirm-dialog.window
+  Event detail expected:
+    - title: str, dialog title
+    - message: str, confirmation message
+{% endcomment %}
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     x-show="open"
+     x-cloak
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0 translate-y-4"
+     x-transition:enter-end="opacity-100 translate-y-0"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100 translate-y-0"
+     x-transition:leave-end="opacity-0 translate-y-4"
+     x-data="confirmDialog()"
+     @show-confirm-dialog.window="show($event.detail)">
+    
+    <!-- 背景遮罩 -->
+    <div class="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+         @click="close()"
+         x-show="open"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+    </div>
+    
+    <!-- 对话框卡片 -->
+    <div class="bg-white rounded-2xl p-6 w-full max-w-sm relative shadow-xl"
+         x-show="open"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         x-cloak>
+        
+        <!-- 关闭按钮 -->
+        <button type="button" @click="close()" class="absolute right-4 top-4 w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+        
+        <!-- 图标区域 -->
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-gradient-to-br from-red-500 to-pink-500 flex items-center justify-center shadow-lg">
+            <svg class="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+        </div>
+        
+        <!-- 标题和描述 -->
+        <h3 class="text-lg font-bold text-slate-900 mb-2 text-center" x-text="title"></h3>
+        <p class="text-sm text-slate-600 mb-6 text-center leading-relaxed" x-text="message"></p>
+        
+        <!-- 操作按钮 -->
+        <div class="flex gap-3">
+            <button type="button"
+                    @click="close()"
+                    class="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+                取消
+            </button>
+            <button type="button"
+                    @click="postUrl ? confirmWithPost() : confirm()"
+                    class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-red-500 to-pink-500 rounded-lg hover:shadow-md transition-shadow">
+                确认
+            </button>
+        </div>
+    </div>
+</div>

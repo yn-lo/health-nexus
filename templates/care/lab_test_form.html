@@ -1,0 +1,110 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}新增检验报告 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'care:lab_test_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">新增检验报告</h1>
+    </div>
+
+    {% if messages %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="flex items-center gap-2 px-4 py-3 rounded-xl {% if message.tags == 'success' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+            <img src="{% static 'images/icons/check-circle.svg' %}" class="w-5 h-5" alt="">
+            <span class="text-sm">{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">检验类型</label>
+            <select name="lab_type"
+                    class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                <option value="">选择检验类型</option>
+                <option value="blood_test">血液检查</option>
+                <option value="urine_test">尿液检查</option>
+                <option value="stool_test">粪便检查</option>
+                <option value="biochemistry">生化检查</option>
+                <option value="immunology">免疫检查</option>
+                <option value="pathology">病理检查</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">检验日期</label>
+            <input type="date" name="test_date" value="{{ today }}"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">检验数据</label>
+            <div id="lab-data-fields" class="space-y-2">
+                <div class="flex gap-2 lab-data-row">
+                    <input type="text" name="data_key[]" placeholder="项目名称"
+                           class="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                    <input type="text" name="data_value[]" placeholder="结果"
+                           class="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                    <button type="button" onclick="this.parentElement.remove()" class="p-3 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <button type="button" onclick="addDataRow()" class="mt-2 px-3 py-2 text-sm font-medium rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+                添加项目
+            </button>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">检验机构</label>
+            <input type="text" name="source"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                   placeholder="如：北京协和医院检验科">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">备注</label>
+            <textarea name="notes" rows="3"
+                      class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                      placeholder="如：空腹抽血"></textarea>
+        </div>
+        <div>
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-medium bg-brand-gradient text-white hover:opacity-90 transition-all">
+                保存记录
+            </button>
+        </div>
+    </form>
+        </div>
+    </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function addDataRow() {
+    const container = document.getElementById('lab-data-fields');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 lab-data-row';
+    row.innerHTML = `
+        <input type="text" name="data_key[]" placeholder="项目名称"
+               class="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+        <input type="text" name="data_value[]" placeholder="结果"
+               class="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+        <button type="button" onclick="this.parentElement.remove()" class="p-3 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+    `;
+    container.appendChild(row);
+}
+</script>
+{% endblock %}

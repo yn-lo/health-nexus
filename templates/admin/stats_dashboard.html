@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="p-6">
+    <h1 class="text-2xl font-bold mb-6">{% trans "数据统计看板" %}</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-blue-500 text-white rounded-lg p-6 shadow">
+            <h3 class="text-sm font-medium opacity-80">{% trans "总提问数" %}</h3>
+            <p class="text-3xl font-bold mt-2">{{ global_stats.total_questions }}</p>
+        </div>
+        <div class="bg-green-500 text-white rounded-lg p-6 shadow">
+            <h3 class="text-sm font-medium opacity-80">{% trans "知识覆盖率" %}</h3>
+            <p class="text-3xl font-bold mt-2">{{ global_stats.coverage_rate }}%</p>
+        </div>
+        <div class="bg-purple-500 text-white rounded-lg p-6 shadow">
+            <h3 class="text-sm font-medium opacity-80">{% trans "满意度" %}</h3>
+            <p class="text-3xl font-bold mt-2">{{ global_stats.satisfaction_rate }}%</p>
+        </div>
+        <div class="bg-red-500 text-white rounded-lg p-6 shadow">
+            <h3 class="text-sm font-medium opacity-80">{% trans "敏感词拦截" %}</h3>
+            <p class="text-3xl font-bold mt-2">{{ global_stats.sensitive_interceptions }}</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-medium">{% trans "科室统计" %}</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "科室" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "提问数" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "覆盖率" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "满意度" %}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% trans "差评数" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for dept in dashboard_data %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap font-medium">{{ dept.department }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ dept.total_questions }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="{% if dept.coverage_rate >= 70 %}text-green-600{% elif dept.coverage_rate >= 40 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                                {{ dept.coverage_rate }}%
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="{% if dept.satisfaction_rate >= 80 %}text-green-600{% elif dept.satisfaction_rate >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                                {{ dept.satisfaction_rate }}%
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="{% if dept.negative_feedbacks == 0 %}text-green-600{% elif dept.negative_feedbacks < 10 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                                {{ dept.negative_feedbacks }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">{% trans "暂无数据" %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="{% url 'admin:chat_conversation_changelist' %}" class="text-blue-600 hover:text-blue-800">
+            &larr; {% trans "返回会话列表" %}
+        </a>
+    </div>
+</div>
+{% endblock %}

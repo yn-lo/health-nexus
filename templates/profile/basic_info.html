@@ -1,0 +1,80 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}基础信息 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'care:profile_detail' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">基础信息</h1>
+    </div>
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">身份信息</h3>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">姓名</label>
+                {{ form.name }}
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">性别</label>
+                    {{ form.gender }}
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">出生日期</label>
+                    {{ form.birth_date }}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">联系方式</h3>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">联系电话</label>
+                {{ form.phone }}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">家庭住址</label>
+                {{ form.address }}
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 space-y-4">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">紧急联系人</h3>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">紧急联系人</label>
+                {{ form.emergency_contact }}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">紧急联系电话</label>
+                {{ form.emergency_phone }}
+            </div>
+        </div>
+
+        <div class="flex gap-3 pb-8">
+            <button type="submit" class="flex-1 py-3 px-4 rounded-xl font-medium bg-brand-gradient text-white hover:opacity-90 transition-all">
+                保存
+            </button>
+            <a href="{% url 'care:profile_detail' %}" class="flex-1 py-3 px-4 rounded-xl font-medium text-center bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+                取消
+            </a>
+        </div>
+    </form>
+        </div>
+    </div>
+    </div>
+{% endblock %}

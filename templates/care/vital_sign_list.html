@@ -1,0 +1,127 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}生命体征 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+            <a href="{% url 'care:medical_record_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h1 class="text-xl font-bold text-slate-900">生命体征</h1>
+        </div>
+        <div class="flex gap-2">
+            <a href="{% url 'care:vital_sign_trend' %}" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                趋势图
+            </a>
+            <a href="{% url 'care:vital_sign_create' %}" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-sky-500 text-white hover:bg-sky-600 transition-colors">
+                <img src="{% static 'images/icons/plus.svg' %}" class="w-4 h-4" alt="新增">
+                新增
+            </a>
+        </div>
+    </div>
+
+    {% if records %}
+    <div class="space-y-3">
+        {% for record in records %}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="p-5">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-medium mb-2">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                            </svg>
+                            生命体征
+                        </div>
+                        <p class="text-sm text-slate-500">{{ record.record_date }}{% if record.record_time %} {{ record.record_time }}{% endif %}</p>
+                        {% if record.source %}
+                        <p class="text-xs text-slate-400 mt-0.5">来源：{{ record.source }}</p>
+                        {% endif %}
+                    </div>
+                    <form method="post" action="{% url 'care:vital_sign_delete' record.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                            <img src="{% static 'images/icons/trash.svg' %}" class="w-4 h-4" alt="删除">
+                        </button>
+                    </form>
+                </div>
+
+                <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    {% if record.systolic_bp and record.diastolic_bp %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">血压</span>
+                        <span class="font-medium text-slate-900">{{ record.systolic_bp }}/{{ record.diastolic_bp }} mmHg</span>
+                    </div>
+                    {% endif %}
+                    {% if record.heart_rate %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">心率</span>
+                        <span class="font-medium text-slate-900">{{ record.heart_rate }} 次/分</span>
+                    </div>
+                    {% endif %}
+                    {% if record.pulse %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">脉搏</span>
+                        <span class="font-medium text-slate-900">{{ record.pulse }} 次/分</span>
+                    </div>
+                    {% endif %}
+                    {% if record.temperature %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">体温</span>
+                        <span class="font-medium text-slate-900">{{ record.temperature }}°C</span>
+                    </div>
+                    {% endif %}
+                    {% if record.blood_glucose %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">血糖</span>
+                        <span class="font-medium text-slate-900">{{ record.blood_glucose }} mmol/L</span>
+                    </div>
+                    {% endif %}
+                    {% if record.blood_oxygen %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">血氧</span>
+                        <span class="font-medium text-slate-900">{{ record.blood_oxygen }}%</span>
+                    </div>
+                    {% endif %}
+                    {% if record.weight %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">体重</span>
+                        <span class="font-medium text-slate-900">{{ record.weight }} kg</span>
+                    </div>
+                    {% endif %}
+                    {% if record.pain_score != None %}
+                    <div class="flex justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                        <span class="text-slate-500">疼痛得分</span>
+                        <span class="font-medium text-slate-900">{{ record.pain_score }}/10</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if record.notes %}
+                <p class="text-sm text-slate-600 mt-3">{{ record.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-16">
+        <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+        </svg>
+        <p class="text-sm text-slate-400">暂无生命体征记录</p>
+        <a href="{% url 'care:vital_sign_create' %}" class="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl bg-sky-500 text-white hover:bg-sky-600 transition-colors">
+            <img src="{% static 'images/icons/plus.svg' %}" class="w-4 h-4" alt="新增">
+            添加第一条记录
+        </a>
+    </div>
+    {% endif %}
+        </div>
+    </div>
+    </div>
+{% endblock %}

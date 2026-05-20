@@ -1,0 +1,74 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block after_field_sets %}
+<div class="border rounded-default border-base-200 shadow-xs dark:border-base-800 p-3 mt-4">
+    <div class="flex flex-wrap gap-2 items-center">
+        <button type="button" id="test-connection-btn" class="bg-primary-600 border border-transparent cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="material-symbols-outlined md-18 align-middle mr-1">wifi_find</span>
+            测试连接
+        </button>
+        <span id="test-result" class="text-sm hidden"></span>
+    </div>
+</div>
+
+<script>
+(function() {
+    var apiKeyField = document.getElementById('id_api_key');
+    var baseUrlField = document.getElementById('id_base_url');
+    var modelField = document.getElementById('id_model_name');
+    var dimensionsField = document.getElementById('id_dimensions');
+    var testBtn = document.getElementById('test-connection-btn');
+    var resultSpan = document.getElementById('test-result');
+
+    function getConfigData() {
+        return {
+            base_url: baseUrlField ? baseUrlField.value.trim() : '',
+            api_key: apiKeyField ? apiKeyField.value.trim() : '',
+            model_name: modelField ? modelField.value.trim() : '',
+            dimensions: dimensionsField ? parseInt(dimensionsField.value) || 0 : 0
+        };
+    }
+
+    function showResult(message, isSuccess) {
+        resultSpan.classList.remove('hidden', 'text-green-600', 'text-red-600');
+        resultSpan.textContent = message;
+        resultSpan.classList.add(isSuccess ? 'text-green-600' : 'text-red-600');
+    }
+
+    function setLoading(btn) {
+        btn.disabled = true;
+        btn.dataset.html = btn.innerHTML;
+        btn.innerHTML = '<span class="material-symbols-outlined md-18 align-middle mr-1 animate-spin">progress_activity</span>' + btn.textContent.trim();
+    }
+
+    function resetBtn(btn) {
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.html || btn.innerHTML;
+    }
+
+    if (testBtn) {
+        testBtn.addEventListener('click', function() {
+            var config = getConfigData();
+            if (!config.base_url || !config.model_name) {
+                showResult('请先填写 Base URL 和模型名称', false);
+                return;
+            }
+            setLoading(testBtn);
+            fetch('{% url "admin:config_embeddingproviderconfig_test_connection" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify(config)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { showResult(data.message, data.success); })
+            .catch(function(e) { showResult('请求失败', false); })
+            .finally(function() { resetBtn(testBtn); });
+        });
+    }
+})();
+</script>
+{% endblock %}

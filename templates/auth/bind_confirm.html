@@ -1,0 +1,45 @@
+{% extends "base_h5.html" %}
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-screen px-4">
+    <div class="w-20 h-20 rounded-full bg-sky-100 flex items-center justify-center mb-6 overflow-hidden">
+        {% if target.avatar_url %}
+        <img src="{{ target.avatar_url }}" class="w-full h-full object-cover" alt="头像">
+        {% else %}
+        <svg class="w-10 h-10 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+        {% endif %}
+    </div>
+    <h1 class="text-2xl font-bold text-slate-900 mb-2">确认绑定</h1>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-5 w-full max-w-sm mb-6">
+        <div class="flex items-center gap-3 mb-3">
+            <p class="text-lg font-bold text-slate-900">{{ target.name|default:target.username }}</p>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-600">{{ target.role_display }}</span>
+        </div>
+        <div class="flex gap-4 text-sm text-slate-500">
+            {% if target.gender %}
+            <span>
+                {% if target.gender == 'M' %}男{% elif target.gender == 'F' %}女{% else %}{{ target.gender }}{% endif %}
+            </span>
+            {% endif %}
+            {% if target.age and target.age > 0 %}
+            <span>{{ target.age }}岁</span>
+            {% endif %}
+            {% if not target.gender and not target.age or target.age == 0 %}
+            <span>信息待完善</span>
+            {% endif %}
+        </div>
+    </div>
+    <p class="text-sm text-slate-500 mb-8">对方需要确认后才能完成绑定</p>
+
+    <form method="post" action="{% url 'auth:bind:initiate_bind' qr_code %}" class="w-full max-w-sm">
+        {% csrf_token %}
+        <button type="submit" class="w-full py-3 bg-sky-500 text-white rounded-xl font-medium hover:bg-sky-600 transition-colors">
+            确认发起绑定
+        </button>
+    </form>
+    <a href="javascript:history.back()" class="mt-4 text-slate-500 text-sm">
+        返回上一页
+    </a>
+</div>
+{% endblock %}

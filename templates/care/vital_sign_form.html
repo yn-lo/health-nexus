@@ -1,0 +1,127 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}新增生命体征 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+            <a href="{% url 'care:vital_sign_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h1 class="text-xl font-bold text-slate-900">新增生命体征</h1>
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="flex items-center gap-2 px-4 py-3 rounded-xl {% if message.tags == 'success' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+            <img src="{% static 'images/icons/check-circle.svg' %}" class="w-5 h-5" alt="">
+            <span class="text-sm">{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">测量日期</label>
+            <input type="date" name="record_date" value="{{ today }}"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">测量时间</label>
+            <input type="time" name="record_time" value="{{ current_time|time:'H:i' }}"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+        </div>
+
+        <div class="p-4 bg-slate-50 rounded-xl">
+            <h3 class="text-sm font-medium text-slate-700 mb-3">基础体征</h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">体温 (°C)</label>
+                    <input type="number" step="0.1" name="temperature"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="36.5">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">心率 (次/分)</label>
+                    <input type="number" name="heart_rate"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="75">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">脉搏 (次/分)</label>
+                    <input type="number" name="pulse"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="72">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">血氧 (%)</label>
+                    <input type="number" step="0.1" name="blood_oxygen"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="98">
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-50 rounded-xl">
+            <h3 class="text-sm font-medium text-slate-700 mb-3">血压</h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">收缩压 (mmHg)</label>
+                    <input type="number" name="systolic_bp"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="120">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">舒张压 (mmHg)</label>
+                    <input type="number" name="diastolic_bp"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="80">
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-50 rounded-xl">
+            <h3 class="text-sm font-medium text-slate-700 mb-3">其他</h3>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">血糖 (mmol/L)</label>
+                    <input type="number" step="0.1" name="blood_glucose"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="5.0">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">体重 (kg)</label>
+                    <input type="number" step="0.1" name="weight"
+                           class="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                           placeholder="65.0">
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">备注</label>
+            <textarea name="notes" rows="3"
+                      class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                      placeholder="如：测量前是否运动、用药等"></textarea>
+        </div>
+
+        <div>
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-medium bg-brand-gradient text-white hover:opacity-90 transition-all">
+                保存记录
+            </button>
+        </div>
+    </form>
+        </div>
+    </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+    <div class="flex flex-col gap-6">
+        <div class="bg-white border border-base-200 rounded-default overflow-hidden dark:bg-base-900 dark:border-base-800">
+            <h2 class="border-b border-base-200 font-semibold text-font-important-light px-3 py-4.5 dark:text-font-important-dark dark:border-base-800">
+                {% trans "批量导入用户" %}
+            </h2>
+
+            <div class="px-3 py-4.5 flex flex-col gap-5">
+                <div>
+                    <a href="{% url 'admin:auth_custom_userprofile_bulk_import_template' %}" class="bg-primary-600 border border-transparent cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-white inline-flex items-center gap-1 hover:bg-primary-700">
+                        <span class="material-symbols-outlined text-base">download</span>
+                        {% trans "下载标准Excel模板" %}
+                    </a>
+                </div>
+
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+
+                    <div class="flex flex-col group mb-5">
+                        <div class="flex flex-col gap-2">
+                            <label for="id_excel_file" class="block font-semibold text-font-important-light dark:text-font-important-dark">
+                                {% trans "选择Excel文件" %}
+                                <span class="text-red-600">*</span>
+                            </label>
+                            <input type="file" name="excel_file" id="id_excel_file" accept=".xlsx,.xls" required
+                                class="block w-full border border-base-200 rounded-default px-3 py-2 text-sm bg-white dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark file:mr-3 file:py-1 file:px-3 file:rounded-default file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100">
+                        </div>
+                    </div>
+
+                    <div class="bg-base-50 border border-base-200 rounded-default px-3 py-4.5 mb-5 dark:bg-base-800 dark:border-base-700">
+                        <h3 class="font-semibold text-font-important-light mb-3 dark:text-font-important-dark">{% trans "Excel格式要求" %}</h3>
+                        <ul class="text-sm text-font-default-light dark:text-font-default-dark space-y-1.5 list-disc list-inside">
+                            <li>{% trans "必需列" %}: 姓名, 手机号, 科室, 性别, 角色</li>
+                            <li>{% trans "可选列" %}: 出生日期（仅患者需要）</li>
+                            <li>{% trans "角色" %}: 患者 / 医生 / 护士</li>
+                            <li>{% trans "性别格式" %}: M(男)/F(女)/O(其他) 或 男/女/其他</li>
+                            <li>{% trans "出生日期格式" %}: YYYY-MM-DD (如: 1990-01-01)</li>
+                            <li>{% trans "科室必须已存在于系统中" %}</li>
+                        </ul>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button type="submit" class="bg-primary-600 border border-transparent cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-white hover:bg-primary-700">
+                            {% trans "导入" %}
+                        </button>
+                        <a href="{% url 'admin:auth_custom_userprofile_changelist' %}" class="bg-white border border-base-200 cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-font-default-light hover:bg-base-50 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                            {% trans "取消" %}
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="bg-white border border-base-200 rounded-default overflow-hidden dark:bg-base-900 dark:border-base-800">
+            <h2 class="border-b border-base-200 font-semibold text-font-important-light px-3 py-4.5 dark:text-font-important-dark dark:border-base-800">
+                {% trans "示例Excel内容" %}
+            </h2>
+            <div class="px-3 py-4.5 overflow-x-auto">
+                <table class="w-full text-sm border-collapse">
+                    <thead>
+                        <tr class="border-b border-base-200 dark:border-base-700">
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "姓名" %}</th>
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "手机号" %}</th>
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "科室" %}</th>
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "性别" %}</th>
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "角色" %}</th>
+                            <th class="px-3 py-2 text-left font-semibold text-font-important-light dark:text-font-important-dark">{% trans "出生日期" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="border-b border-base-100 dark:border-base-800">
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">李医生</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">13800138001</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">心内科</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">M</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">医生</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">-</td>
+                        </tr>
+                        <tr class="border-b border-base-100 dark:border-base-800">
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">王护士</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">13800138002</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">骨科</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">F</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">护士</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">-</td>
+                        </tr>
+                        <tr>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">张三</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">13800138003</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">心内科</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">M</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">患者</td>
+                            <td class="px-3 py-2 text-font-default-light dark:text-font-default-dark">1990-01-01</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

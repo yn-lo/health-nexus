@@ -1,0 +1,86 @@
+{% extends "base_h5.html" %}
+
+{% block title %}审计日志 - {{ department.name }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-900">审计日志 - {{ department.name }}</h2>
+        <a href="{% url 'departments:department_list' %}" class="text-sm text-slate-600 hover:text-slate-900">返回</a>
+    </div>
+
+    <div class="flex gap-2">
+        <a href="?action_type=" class="px-3 py-1.5 rounded text-sm {% if not action_type %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            全部
+        </a>
+        <a href="?action_type=create" class="px-3 py-1.5 rounded text-sm {% if action_type == 'create' %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            创建
+        </a>
+        <a href="?action_type=update" class="px-3 py-1.5 rounded text-sm {% if action_type == 'update' %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            更新
+        </a>
+        <a href="?action_type=delete" class="px-3 py-1.5 rounded text-sm {% if action_type == 'delete' %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            删除
+        </a>
+        <a href="?action_type=add_member" class="px-3 py-1.5 rounded text-sm {% if action_type == 'add_member' %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            添加成员
+        </a>
+        <a href="?action_type=remove_member" class="px-3 py-1.5 rounded text-sm {% if action_type == 'remove_member' %}bg-primary text-white{% else %}bg-slate-200 text-slate-700{% endif %}">
+            移除成员
+        </a>
+    </div>
+
+    <div class="space-y-3">
+        {% for log in logs %}
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200/50">
+            <div class="flex items-center justify-between mb-2">
+                <span class="badge badge-outline badge-sm">
+                    {% if log.action_type == 'create' %}
+                        <span class="badge badge-success badge-sm">创建</span>
+                    {% elif log.action_type == 'update' %}
+                        <span class="badge badge-info badge-sm">更新</span>
+                    {% elif log.action_type == 'delete' %}
+                        <span class="badge badge-error badge-sm">删除</span>
+                    {% elif log.action_type == 'add_member' %}
+                        <span class="badge badge-warning badge-sm">添加成员</span>
+                    {% elif log.action_type == 'remove_member' %}
+                        <span class="badge badge-ghost badge-sm">移除成员</span>
+                    {% else %}
+                        {{ log.action_type }}
+                    {% endif %}
+                </span>
+                <span class="text-xs text-slate-500">{{ log.created_at|date:"Y-m-d H:i:s" }}</span>
+            </div>
+            <div class="text-sm">
+                <p class="font-medium text-slate-900">操作目标: {{ log.target }}</p>
+                <p class="text-slate-500 mt-1">操作人: {{ log.performed_by.username|default:"未知" }}</p>
+                {% if log.details %}
+                <details class="mt-2">
+                    <summary class="text-xs text-slate-500 cursor-pointer">查看详情</summary>
+                    <pre class="text-xs bg-slate-50 p-2 rounded mt-1 overflow-auto">{{ log.details|safe }}</pre>
+                </details>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="text-center py-8 text-slate-500 bg-white rounded-xl border border-slate-200/50">暂无审计日志</div>
+        {% endfor %}
+    </div>
+
+    {% if has_prev or has_next %}
+    <div class="flex justify-center gap-2">
+        {% if has_prev %}
+        <a href="?page={{ page|add:"-1" }}&action_type={{ action_type }}" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded text-sm hover:bg-slate-300">
+            上一页
+        </a>
+        {% endif %}
+        <span class="px-3 py-1.5 text-sm text-slate-500">第 {{ page }} 页</span>
+        {% if has_next %}
+        <a href="?page={{ page|add:"1" }}&action_type={{ action_type }}" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded text-sm hover:bg-slate-300">
+            下一页
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

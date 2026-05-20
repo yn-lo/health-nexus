@@ -1,0 +1,113 @@
+{% extends "staff/base_staff.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{{ patient.name }} - 患者详情 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto px-4 py-6">
+    <div class="max-w-2xl mx-auto w-full">
+        <div class="flex items-center gap-4 mb-6">
+            <a href="{% url 'staff:care:staff_patient_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h2 class="text-xl font-bold text-slate-900">{{ patient.name }}</h2>
+        </div>
+
+        {# 基本信息 #}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{% trans "基本信息" %}</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "性别" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.get_gender_display|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "年龄" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.age|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "血型" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.get_blood_type_display|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "就诊科室" %}</label>
+                    <p class="text-sm font-medium text-slate-900">
+                        {% for dept in patient.departments.all %}{{ dept.name }}{% if not forloop.last %}, {% endif %}{% empty %}未设置{% endfor %}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        {# 联系方式 #}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{% trans "联系方式" %}</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "联系电话" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.phone|default:"未设置" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "家庭住址" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.address|default:"未设置" }}</p>
+                </div>
+            </div>
+        </div>
+
+        {# 社会信息 #}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{% trans "社会信息" %}</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "文化程度" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.get_education_display|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "婚姻状况" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.get_marital_status_display|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "职业" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.occupation|default:"未知" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "紧急联系人" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{{ patient.emergency_contact|default:"未设置" }}</p>
+                </div>
+            </div>
+        </div>
+
+        {# 健康档案 #}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{% trans "健康档案" %}</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "既往病史" %}</label>
+                    <p class="text-sm text-slate-700">{{ patient.medical_history_summary|default:"无" }}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "过敏史" %}</label>
+                    <p class="text-sm text-slate-700">{{ patient.allergies_summary|default:"无" }}</p>
+                </div>
+            </div>
+        </div>
+
+        {# 身体指标 #}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">{% trans "身体指标" %}</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "身高" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{% if patient.height %}{{ patient.height }} cm{% else %}未记录{% endif %}</p>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">{% trans "体重" %}</label>
+                    <p class="text-sm font-medium text-slate-900">{% if patient.weight %}{{ patient.weight }} kg{% else %}未记录{% endif %}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="pb-8"></div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}注册 - Health Nexus{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block main %}
+<div class="login-bg absolute inset-0 flex flex-col items-center justify-center px-4">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-4 animate-fade-in">
+            <div class="w-12 h-12 mx-auto mb-4 rounded-2xl flex items-center justify-center shadow-xl ai-avatar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M25 20 L25 80"/>
+                        <path d="M25 50 L42 50"/>
+                        <path d="M42 20 L42 80"/>
+                        <path d="M55 80 L55 20"/>
+                        <path d="M55 80 L72 20"/>
+                        <path d="M72 80 L72 20"/>
+                    </g>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-1 tracking-tight">创建新账号</h2>
+            <p class="text-white/70 text-sm font-light tracking-wide">开启您的专属健康管理体验</p>
+        </div>
+
+        <div class="login-card rounded-2xl px-5 py-6 animate-slide-up">
+            {% if form.errors %}
+            <div class="mb-4 p-3 rounded-xl bg-red-50 border border-red-200">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <p class="text-sm text-red-700">{{ error }}</p>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <form method="post" class="space-y-4" id="register-form">
+                {% csrf_token %}
+
+                <div class="space-y-3">
+                    <div class="relative">
+                        <img src="{% static 'images/icons/user.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="用户名">
+                        <input type="text" name="username" id="id_username" required
+                            class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            placeholder="请设置用户名" autocomplete="healthnexus-username">
+                    </div>
+
+                    <div class="relative">
+                        <img src="{% static 'images/icons/phone.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="手机号">
+                        <input type="tel" name="phone" id="id_phone" required maxlength="20"
+                            class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            placeholder="请输入手机号" autocomplete="healthnexus-tel">
+                    </div>
+
+                    <div class="flex gap-3">
+                        <div class="relative flex-1">
+                            <img src="{% static 'images/icons/lock-closed.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="验证码">
+                            <input type="text" name="verification_code" id="id_verification_code" required maxlength="6"
+                                class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                                placeholder="请输入验证码" autocomplete="healthnexus-one-time-code">
+                        </div>
+                        <button type="button" id="send-code-btn" x-data="{ sendSms() { sendSmsCode($el, 'id_phone', 'register'); } }" @click="sendSms()"
+                            class="flex-shrink-0 px-4 py-3.5 rounded-xl text-sm font-medium bg-sky-50 border border-sky-200 text-sky-600 hover:bg-sky-100 transition-colors">
+                            获取验证码
+                        </button>
+                    </div>
+
+                    <div class="relative">
+                        <img src="{% static 'images/icons/lock-closed.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="密码">
+                        <input type="password" name="password1" id="id_password1" required
+                            class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            placeholder="请设置密码（8位以上）" autocomplete="healthnexus-new-password">
+                    </div>
+
+                    <div class="relative">
+                        <img src="{% static 'images/icons/lock-closed.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="确认密码">
+                        <input type="password" name="password2" id="id_password2" required
+                            class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            placeholder="请再次输入密码" autocomplete="healthnexus-new-password">
+                    </div>
+                </div>
+
+                <div class="flex items-start gap-2 pt-1">
+                    <input type="checkbox" name="agreed_terms" id="id_agreed_terms" value="true"
+                           class="w-4 h-4 mt-0.5 text-sky-600 border border-slate-300 rounded focus:ring-sky-500 focus:ring-offset-0 cursor-pointer" required>
+                    <label for="id_agreed_terms" class="text-xs text-slate-600 leading-relaxed cursor-pointer">
+                        我已阅读并同意<a href="/accounts/terms/" class="text-sky-600 hover:text-sky-700 underline">《知情同意书与免责声明》</a>
+                    </label>
+                </div>
+
+                <button type="submit" id="submit-btn"
+                    class="w-full py-3.5 text-base font-semibold rounded-xl text-white shadow-md transition-all duration-200 hover:shadow-lg active:scale-[0.98] btn-gradient">
+                    立即注册
+                </button>
+
+                <div class="text-center pt-1">
+                    <a href="{% url 'auth:login' %}" class="text-xs font-medium text-slate-500 hover:text-sky-600">
+                        已有账号？去登录
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

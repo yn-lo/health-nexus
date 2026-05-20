@@ -1,0 +1,62 @@
+{% extends "base_h5.html" %}
+
+{% block title %}成员管理 - {{ department.name }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-900">成员管理 - {{ department.name }}</h2>
+        <div class="flex gap-2">
+            <a href="{% url 'departments:department_member_add' department.id %}" class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                添加成员
+            </a>
+            <a href="{% url 'departments:department_list' %}" class="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-300 transition-colors">
+                返回
+            </a>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200/50 overflow-hidden">
+        <table class="table w-full">
+            <thead>
+                <tr class="bg-slate-50">
+                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">用户名</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">角色</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+                {% for member in members %}
+                <tr class="hover:bg-slate-50">
+                    <td class="px-4 py-3">
+                        <div class="text-sm font-medium text-slate-900">{{ member.username }}</div>
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if member.role == 'ADMIN' %}
+                            <span class="badge badge-warning badge-sm">管理员</span>
+                        {% elif member.role == 'MEMBER' %}
+                            <span class="badge badge-primary badge-sm">成员</span>
+                        {% elif member.role == 'VIEWER' %}
+                            <span class="badge badge-ghost badge-sm">只读成员</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                        <a href="{% url 'departments:department_member_remove' department.id member.user_id %}" 
+                           class="text-sm text-red-600 hover:text-red-700"
+                           onclick="return confirm('确认移除此成员?')">
+                            移除
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3" class="px-4 py-8 text-center text-slate-500">
+                        暂无成员，点击"添加成员"开始
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

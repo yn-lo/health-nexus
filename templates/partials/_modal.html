@@ -1,0 +1,57 @@
+{% comment %}
+  Partial: _modal.html
+  所需上下文:
+    - modal_id: str, 模态框唯一 ID（必填）
+    - modal_title: str, 模态框标题（可选）
+    - content_id: str, HTMX 内容加载目标 ID（可选）
+  HTMX: 可选，通过 content_id 加载异步内容
+  Alpine: 是，控制模态框显隐
+  职责: 标准模态框结构，支持静态内容和 HTMX 动态加载
+{% endcomment %}
+<div x-data="{ open: false }" @keydown.escape.window="open = false">
+    <div id="{{ modal_id }}" 
+         x-show="open" 
+         x-cloak
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 z-50 overflow-y-auto"
+         role="dialog"
+         aria-modal="true">
+        
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div @click="open = false" class="fixed inset-0 bg-black/50 transition-opacity"></div>
+            
+            <div class="relative bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 transform transition-all">
+                {% if modal_title %}
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-slate-900">{{ modal_title }}</h3>
+                    <button @click="open = false" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors">
+                        <svg class="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                {% endif %}
+                
+                {% if content_id %}
+                <div id="{{ content_id }}">
+                    <div class="flex items-center justify-center py-8">
+                        <svg class="w-6 h-6 animate-spin text-primary" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                </div>
+                {% else %}
+                <div class="modal-content">
+                    {{ modal_content|safe }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

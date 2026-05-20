@@ -1,0 +1,98 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}隐私设置 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'auth:settings_index' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">隐私设置</h1>
+    </div>
+
+    <form method="post" action="{% url 'auth:privacy_settings' %}">
+        {% csrf_token %}
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+            <div class="p-5">
+                <h3 class="text-base font-semibold text-slate-900 mb-4">数据共享</h3>
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start gap-3 flex-1">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-brand-light shrink-0">
+                            <img src="{% static 'images/icons/share.svg' %}" class="w-5 h-5 text-brand" alt="共享">
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <p class="text-sm font-medium text-slate-900">健康数据共享</p>
+                                <button type="button" class="w-4 h-4 rounded-full bg-slate-200 text-slate-500 text-xs flex items-center justify-center cursor-help" title="说明">
+                                    ?
+                                </button>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">开启后，您的病史、过敏史、用药情况等健康信息将作为 AI 健康问答的个性化参考。如不需要，可随时关闭。</p>
+                        </div>
+                    </div>
+                    <label class="relative inline-flex h-6 w-11 items-center cursor-pointer shrink-0 mt-1">
+                        <input type="checkbox" name="health_data_share_enabled" value="true" class="sr-only peer"
+                            {% if health_data_sharing_enabled %}checked{% endif %}
+                            onchange="this.form.submit()">
+                        <div class="peer h-6 w-11 rounded-full bg-slate-200 peer-checked:bg-sky-500 transition-colors"></div>
+                        <div class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-6"></div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100"></div>
+
+            <div class="p-5">
+                <h3 class="text-base font-semibold text-slate-900 mb-4">数据管理</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-primary-light">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-white">
+                                <img src="{% static 'images/icons/document-text.svg' %}" class="w-4 h-4 text-brand" alt="档案">
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">健康档案</p>
+                                <p class="text-xs text-slate-500">包括个人信息和体检报告</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 rounded-xl bg-primary-light">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-white">
+                                <img src="{% static 'images/icons/heart.svg' %}" class="w-4 h-4 text-brand" alt="体征">
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-900">体征数据</p>
+                                <p class="text-xs text-slate-500">包括血压、血糖、心率等</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <h3 class="text-base font-semibold text-slate-900 mb-4">数据导出</h3>
+            <p class="text-sm text-slate-500 mb-4">导出您的所有健康数据，包括个人档案、体征记录和就诊历史。</p>
+            <button type="submit" class="w-full py-3 text-base font-medium rounded-xl transition-all flex items-center justify-center gap-2 bg-primary-light text-brand">
+                <img src="{% static 'images/icons/arrow-down-tray.svg' %}" class="w-5 h-5" alt="导出">
+                导出我的数据
+            </button>
+        </div>
+    </form>
+
+    <div class="mt-6 p-4 rounded-xl bg-red-50 border border-red-200">
+        <h4 class="text-sm font-medium text-red-600 mb-2">危险区域</h4>
+        <p class="text-xs text-slate-500 mb-3">注销账户将永久删除您的所有数据，此操作不可撤销。</p>
+        <button type="button" class="w-full py-2.5 text-sm font-medium rounded-xl border border-red-500 text-red-500 transition-colors">
+            注销账户
+        </button>
+    </div>
+        </div>
+    </div>
+    </div>
+{% endblock %}

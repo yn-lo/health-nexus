@@ -1,0 +1,59 @@
+{% extends "staff/base_staff.html" %}
+{% load static %}
+
+{% block title %}安全设置 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto px-4 py-6">
+    <div class="max-w-2xl mx-auto w-full">
+        <div class="flex items-center gap-4 mb-6">
+            <a href="{% url 'staff:profile' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h2 class="text-xl font-bold text-slate-900">安全设置</h2>
+        </div>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div class="mb-4 p-3 rounded-xl {% if message.tags == 'error' %}bg-red-50 text-red-600{% else %}bg-green-50 text-green-600{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+            <h3 class="text-base font-bold text-slate-900 mb-4">修改密码</h3>
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">原密码</label>
+                    <input type="password" name="old_password" required
+                        class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">新密码</label>
+                    <input type="password" name="new_password" required minlength="8"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">确认新密码</label>
+                    <input type="password" name="confirm_password" required minlength="8"
+                        class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+                <button type="submit" class="w-full py-3 text-sm font-bold rounded-xl text-white bg-brand-gradient hover:opacity-90 transition-colors">
+                    修改密码
+                </button>
+            </form>
+        </div>
+
+        <div class="pb-8 space-y-3">
+            <form method="post" action="{% url 'auth:logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="block w-full py-3 text-center text-sm font-medium text-red-500 bg-white rounded-xl border border-red-200 hover:bg-red-50 transition-colors">
+                    退出登录
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

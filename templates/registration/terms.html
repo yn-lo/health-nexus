@@ -1,0 +1,113 @@
+{% extends "base_h5.html" %}
+
+{% block title %}知情同意书与免责声明 - Health Nexus{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block main %}
+<main class="flex-1 min-h-0 relative flex flex-col">
+{% block content %}
+<div class="min-h-screen">
+    {% if not user.is_authenticated %}
+    <div class="login-bg pt-6 pb-12 px-4">
+        <div class="text-center animate-fade-in">
+            <div class="w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center shadow-xl floating"
+                 style="background: rgba(255,255,255,0.2);">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M25 20 L25 80"/>
+                        <path d="M25 50 L42 50"/>
+                        <path d="M42 20 L42 80"/>
+                        <path d="M55 80 L55 20"/>
+                        <path d="M55 80 L72 20"/>
+                        <path d="M72 80 L72 20"/>
+                    </g>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-white">知情同意书</h1>
+            <p class="mt-1 text-white/80 text-sm">请仔细阅读以下条款后再进行注册</p>
+        </div>
+    </div>
+    {% else %}
+    <div class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3">
+        <div class="flex items-center justify-between max-w-4xl mx-auto">
+            <a href="javascript:history.back()" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors -ml-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+            </a>
+            <h1 class="text-lg font-bold text-slate-900">知情同意书</h1>
+            <div class="w-10"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="px-4 py-6 max-w-4xl mx-auto -mt-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <h2 class="text-xl font-bold text-slate-900 mb-4">Health Nexus 智能健康问诊系统</h2>
+            <h3 class="text-lg font-semibold text-slate-800 mb-3">知情同意书与免责声明</h3>
+
+            <div class="prose prose-sm max-w-none text-slate-600 space-y-4">
+                <p><strong>一、服务说明</strong></p>
+                <p>Health Nexus（以下简称"本系统"）是一款基于人工智能技术的智能健康问诊系统，旨在为用户提供健康信息咨询、健康管理建议等服务。本系统通过先进的自然语言处理技术，能够理解用户的健康诉求并提供科学的健康建议。</p>
+
+                <p><strong>二、用户知情</strong></p>
+                <p>1. 用户了解并确认，本系统提供的所有健康信息仅供参考，不能作为临床诊断及治疗的依据。</p>
+                <p>2. 用户知悉，AI技术的局限性可能导致系统提供的回复存在不准确、不完整或不适当的情况。</p>
+                <p>3. 用户确认，使用本系统即表示同意遵守本知情同意书的所有条款。</p>
+
+                <p><strong>三、免责声明</strong></p>
+                <p>1. <strong>诊断限制</strong>：本系统明确声明，不能替代专业医疗人员的诊断、治疗或建议。如有身体不适、疾病症状或疑似健康问题，用户应立即寻求专业医疗帮助。</p>
+                <p>2. <strong>信息准确性</strong>：本系统会尽力确保提供信息的准确性和可靠性，但不对因使用本系统而产生的信息偏差、误解或损失承担责任。</p>
+                <p>3. <strong>紧急情况</strong>：对于紧急医疗情况（包括但不限于胸痛、呼吸困难、严重出血、意识丧失等），用户应立即拨打当地急救电话或前往最近的医疗机构就诊。</p>
+                <p>4. <strong>第三方责任</strong>：本系统不对因用户基于本系统信息做出的任何决策或行为导致的后果承担责任。</p>
+
+                <p><strong>四、用户责任</strong></p>
+                <p>1. 用户应确保在系统中所提供的个人信息（健康状况、病史等）真实、准确。</p>
+                <p>2. 用户应对自己的健康状况有合理认知，不应完全依赖本系统进行健康决策。</p>
+                <p>3. 用户应遵守使用本系统的相关法律法规，不得利用本系统进行任何违法活动。</p>
+
+                <p><strong>五、隐私保护</strong></p>
+                <p>本系统将严格按照隐私政策保护用户的个人信息安全。用户的健康数据将仅用于提供和改进服务，不会被用于任何未经授权的商业目的。</p>
+
+                <p><strong>六、服务变更</strong></p>
+                <p>本系统保留随时修改服务内容、功能或本知情同意书条款的权利。修改后的内容将在本页面公布，继续使用本服务即表示用户接受修改后的条款。</p>
+
+                <p><strong>七、联系我们</strong></p>
+                <p>如您对本知情同意书有任何疑问，请通过以下方式联系我们：</p>
+                <p>邮箱：{{ brand.contact_email|default:"ynlo@ynlo.top" }}</p>
+
+                <p class="text-slate-400 text-xs mt-6">最后更新日期：2026年5月1日</p>
+            </div>
+
+            <div class="mt-8 pt-6 border-t border-slate-100">
+                {% if user.is_authenticated and form %}
+                <form method="post" action="/accounts/terms/">
+                    {% csrf_token %}
+                    <input type="hidden" name="agreed_terms" value="true">
+                    <button type="submit" class="block w-full py-3 text-center text-base font-medium rounded-xl text-white btn-gradient">
+                        我已知晓并同意
+                    </button>
+                </form>
+                <form method="post" action="/accounts/terms/" class="mt-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="reject">
+                    <button type="submit" class="block w-full py-3 text-center text-base font-medium rounded-xl text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors">
+                        拒绝并退出登录
+                    </button>
+                </form>
+                {% else %}
+                <a href="/accounts/register/" class="block w-full py-3 text-center text-base font-medium rounded-xl text-white btn-gradient">
+                    注册账号即表示同意
+                </a>
+                <p class="text-center text-slate-500 text-sm mt-3">
+                    登录即表示同意 <a href="{% url 'auth:login' %}" class="text-sky-600 hover:underline">已有账号？去登录</a>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+</main>
+{% endblock %}
+{% endblock %}

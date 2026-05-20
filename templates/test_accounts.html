@@ -1,0 +1,174 @@
+{% extends "layout.html" %}
+{% load static %}
+
+{% block title %}测试账号 - {{ brand.name }}{% endblock %}
+
+{% block extra_head %}
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('testAccounts', () => ({
+            copyFeedback: null,
+            async copyToClipboard(text, label) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    this.copyFeedback = label;
+                    setTimeout(() => { this.copyFeedback = null; }, 1500);
+                } catch (err) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    this.copyFeedback = label;
+                    setTimeout(() => { this.copyFeedback = null; }, 1500);
+                }
+            },
+            roleIcon(role) {
+                const icons = {
+                    '患者': 'user-circle',
+                    '医生': 'user-doctor',
+                    '护士': 'clipboard',
+                    '管理员': 'cog',
+                };
+                return icons[role] || 'user';
+            },
+            roleColor(role) {
+                const colors = {
+                    '患者': 'bg-sky-50 border-sky-200',
+                    '医生': 'bg-emerald-50 border-emerald-200',
+                    '护士': 'bg-violet-50 border-violet-200',
+                    '管理员': 'bg-amber-50 border-amber-200',
+                };
+                return colors[role] || 'bg-slate-50 border-slate-200';
+            },
+            roleBadgeColor(role) {
+                const colors = {
+                    '患者': 'bg-sky-100 text-sky-700',
+                    '医生': 'bg-emerald-100 text-emerald-700',
+                    '护士': 'bg-violet-100 text-violet-700',
+                    '管理员': 'bg-amber-100 text-amber-700',
+                };
+                return colors[role] || 'bg-slate-100 text-slate-700';
+            }
+        }));
+    });
+</script>
+{% endblock %}
+
+{% block body %}
+<div x-data="testAccounts()" class="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div class="max-w-2xl mx-auto px-4 py-8">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-slate-900">测试账号</h1>
+            <p class="text-sm text-slate-500 mt-2">用于测试环境的账号信息，生产环境自动隐藏</p>
+        </div>
+
+        <div class="space-y-4">
+            {% for key, account in accounts.items %}
+            <div class="rounded-2xl border p-5 {{ account.role|default:''|yesno:'bg-white border-slate-100,' }}">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center {% if account.role == '患者' %}bg-sky-100{% elif account.role == '医生' %}bg-emerald-100{% elif account.role == '护士' %}bg-violet-100{% elif account.role == '管理员' %}bg-amber-100{% else %}bg-slate-100{% endif %}">
+                        {% if account.role == '患者' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                        </svg>
+                        {% elif account.role == '医生' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                        </svg>
+                        {% elif account.role == '护士' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h3.75m-3.75 0H9m0 0a3.75 3.75 0 010-7.5m0 1.5h3.75M12 15v-3m0 0a3.75 3.75 0 003.75 3.75m0-3.75H15m0 0a3.75 3.75 0 000-7.5m0 1.5h-3.75" />
+                        </svg>
+                        {% elif account.role == '管理员' %}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.242a1.125 1.125 0 01-.11 1.15l-.866.866c-.276.276-.418.668-.368 1.048.014.108.022.218.022.328v.048c0 .38.022.756.064 1.127.065.575.487 1.052 1.045 1.227l1.292.413c.54.173.876.712.804 1.273l-.402 3.13a1.125 1.125 0 01-.884.968c-.398.086-.812.176-1.24.268-.428.092-.812.318-1.087.654-.06.074-.123.144-.188.212-.298.312-.493.723-.543 1.167l-.137 1.222a1.125 1.125 0 01-1.044 1.001h-2.586a1.125 1.125 0 01-1.044-1.001l-.137-1.222a2.628 2.628 0 00-.543-1.167 3.358 3.358 0 00-.188-.212 1.988 1.988 0 00-1.087-.654 27.284 27.284 0 00-1.24-.268c-.375-.08-.69-.333-.84-.704a1.125 1.125 0 00-1.336-.646l-1.292.413c-.54.173-1.11-.037-1.406-.504l-1.296-2.242a1.125 1.125 0 01.11-1.15l.866-.866c.276-.276.418-.668.368-1.048a9.176 9.176 0 01-.022-.328v-.048c0-.38-.022-.756-.064-1.127a1.125 1.125 0 01.842-1.227l1.292-.413c.375-.12.666-.418.766-.802.055-.21.085-.428.085-.65v-.048c0-.275-.043-.54-.125-.791a1.125 1.125 0 01.446-1.277l2.24-1.296a1.125 1.125 0 011.277.446l.866.866" />
+                        </svg>
+                        {% else %}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                        </svg>
+                        {% endif %}
+                    </div>
+                    <h2 class="text-lg font-semibold text-slate-900">{{ account.role }}</h2>
+                    <span class="ml-auto text-xs px-2 py-0.5 rounded-full {{ account.role|default:''|yesno:'bg-sky-100 text-sky-700,' }}">
+                        测试
+                    </span>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500">用户名</span>
+                            <span class="text-sm font-medium text-slate-900">{{ account.username }}</span>
+                        </div>
+                        <button @click="copyToClipboard('{{ account.username }}', '用户名已复制')" class="text-xs text-sky-600 hover:text-sky-700 transition-colors">
+                            复制
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500">密码</span>
+                            <span class="text-sm font-medium text-slate-900">{{ account.password }}</span>
+                        </div>
+                        <button @click="copyToClipboard('{{ account.password }}', '密码已复制')" class="text-xs text-sky-600 hover:text-sky-700 transition-colors">
+                            复制
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <a href="{{ account.login_url }}" class="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3" />
+                        </svg>
+                        登录入口
+                    </a>
+                    {% if account.home_url %}
+                    <a href="{{ account.home_url }}" class="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                        </svg>
+                        工作台
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <div>
+                    <h3 class="text-sm font-medium text-amber-800">注意</h3>
+                    <p class="text-xs text-amber-700 mt-1">此页面仅用于测试环境。生产环境自动隐藏，访问将返回 404。</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center">
+            <span x-show="copyFeedback" x-transition class="inline-block text-xs text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                <span x-text="copyFeedback"></span>
+            </span>
+        </div>
+
+        <div class="mt-8 text-center">
+            <a href="/" class="inline-flex items-center gap-1 text-sm text-sky-600 hover:text-sky-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M21 12H3" />
+                </svg>
+                返回首页
+            </a>
+        </div>
+
+        <div class="text-center py-6">
+            <p class="text-xs text-slate-400">© 2024 {{ brand.name }}. All rights reserved.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

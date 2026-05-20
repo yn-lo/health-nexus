@@ -1,0 +1,97 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}新增用药记录 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'care:medication_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">新增用药记录</h1>
+    </div>
+
+    {% if messages %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="flex items-center gap-2 px-4 py-3 rounded-xl {% if message.tags == 'success' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+            <img src="{% static 'images/icons/check-circle.svg' %}" class="w-5 h-5" alt="">
+            <span class="text-sm">{{ message }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">药物名称</label>
+            <input type="text" name="medication_name"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                   placeholder="如：阿莫西林胶囊">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">开始日期</label>
+                <input type="date" name="start_date" value="{{ today }}"
+                       class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">结束日期</label>
+                <input type="date" name="end_date"
+                       class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">剂量</label>
+                <input type="text" name="dosage"
+                       class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                       placeholder="如：500mg">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">频次</label>
+                <input type="text" name="frequency"
+                       class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                       placeholder="如：一日三次">
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">给药途径</label>
+            <select name="route"
+                    class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                <option value="">选择给药途径</option>
+                <option value="OR">口服</option>
+                <option value="IV">静脉注射</option>
+                <option value="IM">肌肉注射</option>
+                <option value="SC">皮下注射</option>
+                <option value="TOPICAL">外用</option>
+                <option value="INHALATION">吸入</option>
+                <option value="SUBLINGUAL">舌下含服</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">开药医生/医院</label>
+            <input type="text" name="prescriber"
+                   class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                   placeholder="如：张医生 / 北京协和医院">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">备注</label>
+            <textarea name="notes" rows="3"
+                      class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                      placeholder="如：饭后服用，避免与牛奶同服"></textarea>
+        </div>
+        <div>
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-medium bg-brand-gradient text-white hover:opacity-90 transition-all">
+                保存记录
+            </button>
+        </div>
+    </form>
+        </div>
+    </div>
+    </div>
+{% endblock %}

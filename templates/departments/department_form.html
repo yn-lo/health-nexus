@@ -1,0 +1,54 @@
+{% extends "base_h5.html" %}
+
+{% block title %}{{ department|default:"新建科室" }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4">
+    <h2 class="text-xl font-bold text-slate-900 mb-4">{{ department|default:"新建科室" }}</h2>
+
+    <form method="post" class="space-y-4">
+        {% csrf_token %}
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">科室名称</label>
+            <input type="text" name="name" value="{{ department.name|default:"" }}"
+                   class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                   required>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">租户编码</label>
+            <input type="text" name="tenant_code" value="{{ department.tenant_code|default:"" }}"
+                   class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">描述</label>
+            <textarea name="description" rows="3"
+                      class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">{{ department.description|default:"" }}</textarea>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">上级科室</label>
+            <select name="parent"
+                    class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                <option value="">无</option>
+                {% for parent in parents %}
+                <option value="{{ parent.id }}" {% if department.parent_id == parent.id %}selected{% endif %}>
+                    {{ parent.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="flex items-center gap-3 pt-4">
+            <button type="submit" class="flex-1 bg-primary text-white rounded-lg py-2 font-medium hover:bg-primary-dark transition-colors">
+                保存
+            </button>
+            <a href="{% url 'departments:department_list' %}" class="flex-1 bg-slate-100 text-slate-700 rounded-lg py-2 font-medium text-center hover:bg-slate-200 transition-colors">
+                取消
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

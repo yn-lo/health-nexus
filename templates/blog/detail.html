@@ -1,0 +1,77 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}{{ article.title }}{% endblock %}
+
+{% block extra_head %}
+<link href="{% static 'css/article-content.css' %}" rel="stylesheet" type="text/css" />
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-white">
+
+    {# Header - fixed with back button #}
+    <div class="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200/50">
+        <div class="flex items-center justify-between px-4 py-3 max-w-4xl mx-auto">
+            <a href="javascript:history.back()" class="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+                </svg>
+                返回
+            </a>
+        </div>
+    </div>
+
+    {# Article content #}
+    <article class="max-w-2xl mx-auto px-4 py-6">
+
+        {# Title #}
+        <h1 class="text-xl font-bold text-slate-900 leading-snug mb-3">{{ article.title }}</h1>
+
+        {# Meta info - clean line #}
+        <div class="flex items-center gap-2 text-xs text-slate-400 mb-6 pb-4 border-b border-slate-100">
+            {% if article.author %}
+            <span class="text-slate-600 font-medium">{{ article.author.username }}</span>
+            <span>·</span>
+            {% endif %}
+            <span>{{ article.department.name }}</span>
+            <span>·</span>
+            <span>{{ article.created_at|date:"Y-m-d" }}</span>
+            <span>·</span>
+            <span>{{ article.view_count }}阅读</span>
+        </div>
+
+        {# Content #}
+        <div class="article-content leading-relaxed text-slate-700">
+            {{ content|safe }}
+        </div>
+
+        {# Related Articles - minimal list #}
+        {% if related_articles %}
+        <div class="py-6 border-t border-slate-100">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">相关阅读</h3>
+            <div class="space-y-2">
+                {% for related in related_articles %}
+                <a href="{% url 'wiki:article_detail' related.pk %}" class="block py-2 text-sm text-slate-600 hover:text-slate-900 transition-colors">
+                    {{ related.title }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# Footer #}
+        <div class="py-4 text-xs text-slate-400 text-center">
+            本文由 {{ brand.name|default:"Health Nexus" }} 提供
+        </div>
+    </article>
+
+    {# Scroll to top - minimal #}
+    <button type="button" @click="window.scrollTo({top: 0, behavior: 'smooth'})"
+            class="fixed bottom-6 right-4 w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-full shadow-sm text-slate-400 hover:text-slate-600" aria-label="回到顶部">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+        </svg>
+    </button>
+</div>
+{% endblock %}

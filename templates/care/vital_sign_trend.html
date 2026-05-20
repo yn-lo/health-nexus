@@ -1,0 +1,106 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}体征趋势 - Health Nexus{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-4">
+                    <a href="{% url 'care:vital_sign_list' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+                        <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+                    </a>
+                    <h1 class="text-xl font-bold text-slate-900">体征趋势</h1>
+                </div>
+            </div>
+
+            <div class="flex gap-2 mb-4">
+                <select id="indicator-select" class="text-sm border rounded-lg px-3 py-2">
+                    <option value="blood_pressure">血压</option>
+                    <option value="heart_rate">心率</option>
+                    <option value="blood_glucose">血糖</option>
+                    <option value="temperature">体温</option>
+                    <option value="blood_oxygen">血氧</option>
+                    <option value="weight">体重</option>
+                </select>
+                <select id="days-select" class="text-sm border rounded-lg px-3 py-2">
+                    <option value="7">近7天</option>
+                    <option value="30">近30天</option>
+                    <option value="90">近90天</option>
+                </select>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                <canvas id="trend-chart" height="200"></canvas>
+                <p id="empty-msg" class="text-center text-sm text-slate-400 py-8 hidden">暂无数据</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const ctx = document.getElementById('trend-chart').getContext('2d');
+let chart;
+
+async function loadTrend() {
+    const indicator = document.getElementById('indicator-select').value;
+    const days = document.getElementById('days-select').value;
+    const resp = await fetch(`/care/vitals/trend/?indicator=${indicator}&days=${days}`);
+    const data = await resp.json();
+
+    const emptyMsg = document.getElementById('empty-msg');
+    const canvas = document.getElementById('trend-chart');
+
+    if (!data.data_points || data.data_points.length === 0) {
+        emptyMsg.classList.remove('hidden');
+        canvas.classList.add('hidden');
+        if (chart) { chart.destroy(); chart = null; }
+        return;
+    }
+
+    emptyMsg.classList.add('hidden');
+    canvas.classList.remove('hidden');
+
+    const labels = data.labels;
+    const configs = {
+        blood_pressure: { label: '血压 (mmHg)', keys: ['systolicbp', 'diastolicbp'], borderColor: ['#ef4444', '#3b82f6'] },
+        heart_rate: { label: '心率 (次/分)', keys: ['heartrate'], borderColor: ['#f97316'] },
+        blood_glucose: { label: '血糖 (mmol/L)', keys: ['bloodglucose'], borderColor: ['#a855f7'] },
+        temperature: { label: '体温 (°C)', keys: ['temperature'], borderColor: ['#eab308'] },
+        blood_oxygen: { label: '血氧 (%)', keys: ['bloodoxygen'], borderColor: ['#22c55e'] },
+        weight: { label: '体重 (kg)', keys: ['weight'], borderColor: ['#06b6d4'] },
+    };
+    const cfg = configs[indicator] || configs.blood_pressure;
+
+    const datasets = cfg.keys.map((key, i) => ({
+        label: cfg.label,
+        data: data[key] || [],
+        borderColor: cfg.borderColor[i] || cfg.borderColor[0],
+        backgroundColor: 'transparent',
+        tension: 0.3,
+        fill: false,
+    }));
+
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: false } }
+        }
+    });
+}
+
+document.getElementById('indicator-select').addEventListener('change', loadTrend);
+document.getElementById('days-select').addEventListener('change', loadTrend);
+loadTrend();
+</script>
+{% endblock %}

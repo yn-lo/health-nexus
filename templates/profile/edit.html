@@ -1,0 +1,125 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}健康档案 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'care:profile_detail' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">健康档案</h1>
+    </div>
+
+    <form method="post" class="space-y-6">
+        {% csrf_token %}
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">身体信息</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">身高 (cm)</label>
+                    <input type="number" step="0.1" name="height" value="{{ form.height.value|default:'' }}"
+                        placeholder="如：170"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">体重 (kg)</label>
+                    <input type="number" step="0.1" name="weight" value="{{ form.weight.value|default:'' }}"
+                        placeholder="如：65"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">血型</label>
+                    <select name="blood_type"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                        <option value="">请选择</option>
+                        <option value="A" {% if form.blood_type.value == 'A' %}selected{% endif %}>A型</option>
+                        <option value="B" {% if form.blood_type.value == 'B' %}selected{% endif %}>B型</option>
+                        <option value="AB" {% if form.blood_type.value == 'AB' %}selected{% endif %}>AB型</option>
+                        <option value="O" {% if form.blood_type.value == 'O' %}selected{% endif %}>O型</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">社会信息</h3>
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">文化程度</label>
+                    <select name="education"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                        <option value="">请选择</option>
+                        {% for value, label in form.education.field.choices %}
+                        <option value="{{ value }}" {% if form.education.value == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">婚姻状况</label>
+                    <select name="marital_status"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                        <option value="">请选择</option>
+                        {% for value, label in form.marital_status.field.choices %}
+                        <option value="{{ value }}" {% if form.marital_status.value == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">职业</label>
+                    <input type="text" name="occupation" value="{{ form.occupation.value|default:'' }}"
+                        placeholder="如：教师、工程师"
+                        class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all" />
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5"
+             x-data="diseaseSelector('{{ form.medical_history_summary.value|default:''|escapejs }}')">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">既往病史</h3>
+            <div class="flex flex-wrap gap-2 mb-3">
+                {% for disease in common_diseases %}
+                <button type="button" @click="toggleDisease('{{ disease }}')"
+                    :class="isSelected('{{ disease }}') ? 'bg-brand-gradient text-white border-transparent' : 'text-slate-600 border-slate-200 bg-white'"
+                    class="px-4 py-2 rounded-full text-sm font-medium border transition-all cursor-pointer">
+                    {{ disease }}
+                </button>
+                {% endfor %}
+            </div>
+            <textarea name="medical_history_summary" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all h-20 text-sm"
+                placeholder="也可手动输入其他病史..." x-model="customText"></textarea>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5"
+             x-data="allergySelector('{{ form.allergies_summary.value|default:''|escapejs }}')">
+            <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">过敏史</h3>
+            <div class="flex flex-wrap gap-2 mb-3">
+                {% for allergy in common_allergies %}
+                <button type="button" @click="toggleAllergy('{{ allergy }}')"
+                    :class="isSelected('{{ allergy }}') ? 'text-white border-transparent bg-red-500' : 'text-red-600 border-red-200 bg-red-50'"
+                    class="px-4 py-2 rounded-full text-sm font-medium border transition-all cursor-pointer">
+                    {{ allergy }}
+                </button>
+                {% endfor %}
+            </div>
+            <textarea name="allergies_summary" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all h-20 text-sm"
+                placeholder="也可手动输入其他过敏源..." x-model="customText"></textarea>
+        </div>
+
+        <div class="pt-4 pb-8 space-y-3">
+            <button type="submit" class="w-full py-3 px-4 rounded-xl font-medium bg-brand-gradient text-white hover:opacity-90 transition-all">
+                保存档案
+            </button>
+            <a href="{% url 'care:profile_detail' %}" class="block w-full py-3 text-sm font-medium rounded-xl text-center text-slate-600 hover:text-slate-800 transition-colors">
+                取消
+            </a>
+        </div>
+    </form>
+        </div>
+    </div>
+    </div>
+{% endblock %}

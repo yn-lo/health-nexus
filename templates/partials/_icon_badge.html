@@ -1,0 +1,22 @@
+{% comment %}
+  Partial: _icon_badge.html
+  Gradient icon badge for settings lists, feature cards, etc.
+
+  Usage:
+    {% include "partials/_icon_badge.html" with icon_url="/static/images/icons/xxx.svg" icon_alt="图标" size="normal" %}
+
+  Variables:
+    - icon_url: SVG icon URL (required)
+    - icon_alt: Alt text for icon (required)
+    - size: "normal" (default) or "small"
+    - extra_classes: Additional CSS classes (optional)
+{% endcomment %}
+{% if size == "small" %}
+<div class="w-8 h-8 rounded-lg flex items-center justify-center bg-brand-light {{ extra_classes }}">
+    <img src="{{ icon_url }}" class="w-4 h-4 text-brand" alt="{{ icon_alt }}">
+</div>
+{% else %}
+<div class="w-10 h-10 rounded-xl flex items-center justify-center bg-brand-light {{ extra_classes }}">
+    <img src="{{ icon_url }}" class="w-5 h-5 text-brand" alt="{{ icon_alt }}">
+</div>
+{% endif %}

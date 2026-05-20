@@ -1,0 +1,85 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}{% if phone %}解绑手机号{% else %}绑定手机号{% endif %} - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'auth:settings_index' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900">{% if phone %}解绑手机号{% else %}绑定手机号{% endif %}</h1>
+    </div>
+
+    {% if phone %}
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-6">
+        <div class="flex items-center gap-4 mb-4">
+            <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-green-100">
+                <img src="{% static 'images/icons/check-circle.svg' %}" class="w-6 h-6 text-green-500" alt="已绑定">
+            </div>
+            <div>
+                <p class="text-sm text-slate-500">当前绑定的手机号</p>
+                <p class="text-lg font-semibold text-slate-900">{{ phone }}</p>
+            </div>
+        </div>
+        <p class="text-sm text-slate-500 mb-4">解绑后您将无法通过手机号登录，需要通过邮箱或其他方式登录。</p>
+        <form method="post" action="{% url 'auth:phone_binding' %}">
+            {% csrf_token %}
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-slate-700 mb-2">验证码</label>
+                <input type="text" name="verification_code" placeholder="请输入验证码" maxlength="6"
+                    class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                    required />
+            </div>
+            <button type="submit" class="w-full py-3 text-base font-medium rounded-xl border-2 border-red-500 text-red-500 hover:bg-red-50 transition-colors">
+                确认解绑
+            </button>
+        </form>
+    </div>
+    {% else %}
+    <form method="post" action="{% url 'auth:phone_binding' %}" class="space-y-6">
+        {% csrf_token %}
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+            <div class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">手机号</label>
+                    <input type="tel" name="phone" placeholder="请输入手机号" maxlength="11"
+                        class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                        required />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">验证码</label>
+                    <input type="text" name="verification_code" placeholder="请输入验证码" maxlength="6"
+                        class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                        required />
+                </div>
+            </div>
+        </div>
+
+        {% if binding_form.non_field_errors %}
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+            {% for error in binding_form.non_field_errors %}
+            <p class="text-sm text-red-600">{{ error }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="pt-4 pb-8">
+            <button type="submit" class="w-full py-4 text-base font-bold rounded-xl text-white shadow-lg transition-all duration-200 hover:shadow-xl active:scale-[0.98] btn-gradient">
+                绑定手机号
+            </button>
+            <a href="{% url 'auth:settings_index' %}" class="block w-full py-3 text-base font-medium rounded-xl text-center text-slate-600 hover:text-slate-800 transition-colors mt-3">
+                取消
+            </a>
+        </div>
+    </form>
+    {% endif %}
+        </div>
+    </div>
+    </div>
+{% endblock %}

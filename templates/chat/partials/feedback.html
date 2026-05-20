@@ -1,0 +1,25 @@
+{% load static %}
+<div class="flex items-center gap-1.5 shrink-0 whitespace-nowrap relative">
+    <button type="button" id="feedback-up-{{ message_id }}"
+        class="feedback-btn feedback-up inline-flex items-center gap-0.5 text-[11px] px-2 py-1 rounded-full border-0 cursor-pointer
+        {% if feedback == 1 %}text-sky-500 hover:text-sky-600 hover:bg-sky-50{% else %}text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors{% endif %}"
+        data-message-id="{{ message_id }}" data-feedback-value="1">
+        <img src="{% static 'images/icons/hand-thumb-up.svg' %}" class="w-3 h-3" alt="有用">
+        有用
+    </button>
+    <button type="button" id="feedback-down-{{ message_id }}"
+        class="feedback-btn feedback-down inline-flex items-center gap-0.5 text-[11px] px-2 py-1 rounded-full border-0 cursor-pointer
+        {% if feedback == -1 %}text-red-500 hover:text-red-600 hover:bg-red-50{% else %}text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors{% endif %}"
+        data-message-id="{{ message_id }}" data-feedback-value="-1">
+        <img src="{% static 'images/icons/hand-thumb-down.svg' %}" class="w-3 h-3" alt="无用">
+        无用
+    </button>
+    <div id="feedback-reason-panel-{{ message_id }}" class="hidden absolute bottom-full left-0 mb-1 bg-white rounded-lg shadow-lg border border-slate-200 p-2 z-50 min-w-[160px]">
+        <p class="text-xs text-slate-500 mb-1.5">请选择差评原因：</p>
+        <button type="button" class="feedback-reason-btn block w-full text-left text-xs px-2 py-1 hover:bg-slate-100 rounded" data-reason="INACCURATE">回答不准确</button>
+        <button type="button" class="feedback-reason-btn block w-full text-left text-xs px-2 py-1 hover:bg-slate-100 rounded" data-reason="INCOMPLETE">回答不完整</button>
+        <button type="button" class="feedback-reason-btn block w-full text-left text-xs px-2 py-1 hover:bg-slate-100 rounded" data-reason="IRRELEVANT">回答不相关</button>
+        <button type="button" class="feedback-reason-btn block w-full text-left text-xs px-2 py-1 hover:bg-slate-100 rounded" data-reason="UNSAFE">内容不安全</button>
+        <button type="button" class="feedback-reason-btn block w-full text-left text-xs px-2 py-1 hover:bg-slate-100 rounded" data-reason="OTHER">其他</button>
+    </div>
+</div>

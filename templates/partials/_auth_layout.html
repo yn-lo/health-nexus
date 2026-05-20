@@ -1,0 +1,27 @@
+{% comment %}
+  Partial: _auth_layout.html
+  Reusable auth page layout wrapper.
+  Usage:
+    {% include "partials/_auth_layout.html" with auth_title="欢迎回来" auth_subtitle="登录以同步您的健康咨询记录" %}
+      ... form content ...
+    {% endinclude %}
+{% endcomment %}
+<div class="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 px-4 py-6">
+    <div class="w-full max-w-md">
+        <!-- Logo 和标题 -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-secondary shadow-lg mb-4">
+                <svg class="w-10 h-10 text-white" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <text x="50" y="68" text-anchor="middle" fill="white" font-size="55" font-weight="bold" font-family="system-ui, -apple-system, sans-serif">HN</text>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-900 mb-2">{{ auth_title|default:"欢迎回来" }}</h1>
+            <p class="text-sm text-slate-600">{{ auth_subtitle|default:"登录以同步您的健康咨询记录" }}</p>
+        </div>
+        
+        <!-- 登录卡片 -->
+        <div class="bg-white rounded-2xl shadow-xl p-8">
+            {{ children|default:"" }}
+        </div>
+    </div>
+</div>

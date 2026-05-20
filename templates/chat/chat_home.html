@@ -1,0 +1,107 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}AI健康咨询 - Health Nexus{% endblock %}
+
+{% block extra_head %}
+<script>
+    window.__HOT_QUESTIONS__ = {{ hot_questions_json|safe }};
+</script>
+{% endblock %}
+
+{% block alpine_components %}
+<script src="{% static 'js/alpine/chatHome.js' %}"></script>
+<script src="{% static 'js/alpine/deptModalData.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+<div x-data="chatHome()" class="flex flex-1 min-h-0 flex-col overflow-hidden relative">
+    {% if conversations %}
+    <div x-show="showHistory"
+         x-cloak
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         @click.outside="showHistory = false"
+         class="absolute top-0 left-0 right-0 z-50 bg-white border-b border-slate-200 shadow-lg max-h-[60vh] overflow-y-auto">
+        <div class="p-4 max-w-4xl mx-auto">
+            <div class="flex items-center mb-3">
+                <span class="text-sm font-medium text-slate-600">历史记录</span>
+            </div>
+            {% include 'chat/partials/conversation_list.html' with conversations=conversations %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="absolute top-3 right-4 z-50 flex items-center gap-2">
+        {% if conversations %}
+        <button @click="showHistory = !showHistory" class="w-10 h-10 flex items-center justify-center rounded-lg transition-colors" title="历史记录" :class="showHistory ? 'bg-primary-light' : 'hover:bg-slate-100'">
+            <img src="{% static 'images/icons/clock.svg' %}" class="w-5 h-5 transition-colors" :class="showHistory ? 'icon-primary' : 'icon-slate'" alt="历史记录">
+        </button>
+        {% endif %}
+        
+        {% include 'partials/_dept_filter_button.html' with dept_filter_mode="chat_home" %}
+        <div x-show="deptValidationError" x-cloak x-transition class="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap" x-text="deptValidationError"></div>
+    </div>
+
+    <div class="flex-1 flex flex-col items-center justify-center px-6 py-8">
+
+        <div class="w-full max-w-lg space-y-8">
+
+            <div class="text-center space-y-4">
+                <div class="w-20 h-20 rounded-2xl mx-auto flex items-center justify-center shadow-lg ai-avatar">
+                    <img src="{% static 'images/icons/sparkles.svg' %}" class="w-10 h-10" alt="AI">
+                </div>
+                <h1 class="text-3xl font-bold gradient-text">您好，我是智能健康助手</h1>
+                <p class="text-slate-500 text-lg">我可以帮您了解健康知识、解答医学问题</p>
+            </div>
+
+            <div class="relative">
+                <form @submit.prevent="handleSubmit" class="relative">
+                    <input type="text"
+                           x-model="inputValue"
+                           :disabled="isSubmitting"
+                           placeholder="请输入您的问题..."
+                           class="w-full px-5 py-4 pr-14 rounded-2xl border border-slate-200 bg-white shadow-md text-base focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all disabled:bg-slate-50 disabled:text-slate-400">
+                    <button type="submit"
+                            :disabled="isSubmitting || !inputValue.trim()"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center transition-all disabled:bg-slate-200"
+                            :class="inputValue.trim() ? 'bg-gradient-to-br from-sky-500 to-cyan-500 hover:shadow-lg' : 'bg-slate-200'">
+                        <svg x-show="isSubmitting" class="animate-spin w-5 h-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <svg x-show="!isSubmitting" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" :class="inputValue.trim() ? 'text-white' : 'text-slate-400'" viewBox="0 0 100 100" fill="none">
+                            <path d="M10 50 L90 50 M60 20 L90 50 L60 80" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
+            <div class="space-y-3">
+                <p class="text-sm text-slate-400 text-center">试试这样问</p>
+                <div class="grid grid-cols-1 gap-2">
+                    <template x-for="q in suggestedQuestions" :key="q">
+                        <button @click="askQuestion(q)"
+                                class="w-full p-4 text-left text-sm text-slate-600 bg-white rounded-xl border border-slate-100 hover:border-sky-300 hover:shadow-sm transition-all hover:text-sky-600">
+                            <span class="text-sky-500 mr-2">›</span>
+                            <span x-text="q"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="px-6 py-4 text-center">
+        <p class="text-xs text-slate-400">
+            AI 回答仅供参考，不能作为诊断及治疗依据
+        </p>
+    </div>
+
+</div>
+{% endblock %}

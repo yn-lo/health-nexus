@@ -1,0 +1,129 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}登录 - Health Nexus{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block main %}
+<div class="login-bg absolute inset-0 flex flex-col items-center justify-center px-6">
+    <div class="w-full max-w-sm">
+        <!-- 头部 -->
+        <div class="text-center mb-4 animate-fade-in">
+            <div class="w-12 h-12 mx-auto mb-4 rounded-2xl flex items-center justify-center shadow-xl ai-avatar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M25 20 L25 80"/>
+                        <path d="M25 50 L42 50"/>
+                        <path d="M42 20 L42 80"/>
+                        <path d="M55 80 L55 20"/>
+                        <path d="M55 80 L72 20"/>
+                        <path d="M72 80 L72 20"/>
+                    </g>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-1 tracking-tight">欢迎回来</h2>
+            <p class="text-white/70 text-sm font-light tracking-wide">登录以继续您的健康之旅</p>
+        </div>
+
+        <!-- 登录卡片 -->
+        <div class="login-card rounded-2xl px-5 py-6 animate-slide-up" x-data="{ activeTab: '{{ active_role|default:"patient" }}' }">
+            <!-- 角色切换标签 -->
+            <div class="flex items-center justify-center mb-5">
+                <div class="relative flex bg-white/60 backdrop-blur-sm rounded-full p-1" style="overflow: hidden;">
+                    <span class="absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-brand-gradient shadow-md transition-all duration-200"
+                          :style="activeTab === 'staff' ? 'transform: translateX(100%)' : 'transform: translateX(0)'"></span>
+                    <a href="{% url 'auth:patient_login' %}?role=patient"
+                       @click.prevent="activeTab = 'patient'"
+                       :class="activeTab === 'patient' ? 'text-white' : 'text-slate-500'"
+                       class="relative z-10 flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-full transition-colors duration-200 cursor-pointer">
+                        <img src="{% static 'images/icons/user.svg' %}" class="w-4 h-4" alt="患者">
+                        患者
+                    </a>
+                    <a href="{% url 'auth:staff_login' %}"
+                       @click.prevent="activeTab = 'staff'"
+                       :class="activeTab === 'staff' ? 'text-white' : 'text-slate-500'"
+                       class="relative z-10 flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-full transition-colors duration-200 cursor-pointer">
+                        <img src="{% static 'images/icons/identification.svg' %}" class="w-4 h-4" alt="医护">
+                        医护
+                    </a>
+                </div>
+            </div>
+
+            <!-- 消息提示 -->
+            {% if messages %}
+            <div class="mb-4 space-y-2">
+                {% for message in messages %}
+                <div class="px-4 py-3 rounded-xl {% if message.tags == 'error' %}bg-red-50 border border-red-200{% elif message.tags == 'success' %}bg-emerald-50 border border-emerald-200{% else %}bg-blue-50 border border-blue-200{% endif %}">
+                    <p class="text-sm {% if message.tags == 'error' %}text-red-700{% elif message.tags == 'success' %}text-emerald-700{% else %}text-blue-700{% endif %}">{{ message }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- 统一登录表单 -->
+            <div>
+                <form :action="activeTab === 'patient' ? '{% url 'auth:patient_login' %}' : '{% url 'auth:staff_login' %}'" method="post" class="space-y-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <img src="{% static 'images/icons/user.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="用户名">
+                            <input id="username" name="username" type="text" required
+                                class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                                :placeholder="activeTab === 'patient' ? '请输入账号' : '请输入工作账号'"
+                                :autocomplete="activeTab === 'patient' ? 'healthnexus-username' : 'healthnexus-staff-username'">
+                        </div>
+                        <div class="relative">
+                            <img src="{% static 'images/icons/lock-closed.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="密码">
+                            <input id="password" name="password" type="password" required
+                                class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                                placeholder="请输入密码"
+                                :autocomplete="activeTab === 'patient' ? 'healthnexus-current-password' : 'healthnexus-staff-current-password'">
+                        </div>
+                        <div class="flex justify-end">
+                            <a href="{% url 'auth:password_reset' %}" class="text-xs text-slate-400 hover:text-sky-600 transition-colors">忘记密码</a>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full py-3.5 text-base font-semibold rounded-xl text-white shadow-md transition-all duration-200 hover:shadow-lg active:scale-[0.98] btn-gradient" x-text="activeTab === 'patient' ? '患者登录' : '医护登录'">
+                    </button>
+
+                    <!-- 患者模式下的链接 -->
+                    <div x-show="activeTab === 'patient'" class="flex items-center justify-center gap-4 pt-1">
+                        <a href="/accounts/phone-login/" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-sky-600 transition-colors">
+                            <img src="{% static 'images/icons/phone.svg' %}" class="w-4 h-4" alt="手机">
+                            验证码登录
+                        </a>
+                        <span class="text-slate-300 text-xs">|</span>
+                        <a href="/accounts/register/" class="flex items-center gap-1.5 text-xs font-medium text-sky-600 hover:text-sky-700 transition-colors">
+                            <img src="{% static 'images/icons/user-plus.svg' %}" class="w-4 h-4" alt="注册">
+                            注册新账号
+                        </a>
+                    </div>
+
+                    <!-- 患者模式下的咨询链接 -->
+                    <div x-show="activeTab === 'patient'" class="flex items-center justify-center pt-2">
+                        <a href="/chat/" class="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-full text-sky-600 bg-sky-50 hover:bg-sky-100 active:scale-[0.98] transition-all duration-200">
+                            <img src="{% static 'images/icons/sparkles.svg' %}" class="w-4 h-4" alt="咨询">
+                            暂不登录，直接咨询
+                        </a>
+                    </div>
+
+                    <!-- 医护模式下的链接 -->
+                    <div x-show="activeTab === 'staff'" class="flex items-center justify-center pt-2">
+                        <a href="/admin/login/" class="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-full text-slate-500 bg-slate-50 hover:bg-slate-100 active:scale-[0.98] transition-all duration-200">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            系统管理后台
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

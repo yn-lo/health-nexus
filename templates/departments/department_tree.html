@@ -1,0 +1,53 @@
+{% extends "base_h5.html" %}
+
+{% block title %}科室层级树{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-900">科室层级结构</h2>
+        <a href="{% url 'departments:department_list' %}" class="text-sm text-slate-600 hover:text-slate-900">返回列表</a>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200/50 p-4">
+        {% if tree %}
+        <ul class="space-y-3">
+            {% for node in tree %}
+            <li>
+                <div class="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
+                    <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                    </svg>
+                    <span class="font-medium text-slate-900">{{ node.name }}</span>
+                    {% if node.is_public %}
+                    <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">公共</span>
+                    {% endif %}
+                    <span class="text-sm text-slate-500 ml-auto">{{ node.tenant_code }}</span>
+                </div>
+                {% if node.children %}
+                <ul class="ml-6 mt-2 space-y-2 border-l-2 border-slate-200 pl-4">
+                    {% for child in node.children %}
+                    <li>
+                        <div class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100">
+                            <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                            <span class="text-sm text-slate-700">{{ child.name }}</span>
+                            {% if child.is_public %}
+                            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">公共</span>
+                            {% endif %}
+                            <span class="text-xs text-slate-400 ml-auto">{{ child.tenant_code }}</span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center py-8 text-slate-500">暂无科室</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

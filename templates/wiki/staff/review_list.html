@@ -1,0 +1,93 @@
+{% extends "staff/base_staff.html" %}
+{% load static %}
+
+{% block title %}{% if tab == 're_review' %}文章复审{% else %}文章审核{% endif %} - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto px-4 py-6">
+    <div class="max-w-2xl mx-auto w-full">
+        <div class="flex items-center gap-4 mb-6">
+            <a href="{% url 'staff:dashboard' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h2 class="text-xl font-bold text-slate-900">{% if tab == 're_review' %}文章复审{% else %}文章审核{% endif %}</h2>
+            <div class="flex gap-2 ml-auto">
+                <a href="{% url 'wiki:review_list' %}"
+                   class="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {% if tab != 're_review' %}bg-blue-500 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    新文章审核
+                </a>
+                <a href="{% url 'wiki:re_review_list' %}"
+                   class="px-3 py-1.5 rounded-xl text-xs font-medium transition-colors {% if tab == 're_review' %}bg-orange-500 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
+                    待复审文章
+                </a>
+            </div>
+        </div>
+        {% if articles %}
+        <div class="space-y-3">
+            {% for article in articles %}
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-base font-medium text-slate-900 truncate">{{ article.title }}</h3>
+                        <p class="text-sm text-slate-500 mt-1 line-clamp-2">{{ article.summary|truncatechars:80 }}</p>
+                        <div class="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                            <span>作者: {{ article.author.username|default:"未知" }}</span>
+                            <span>科室: {{ article.department.name }}</span>
+                            <span>{{ article.created_at|date:"m-d H:i" }}</span>
+                            {% if tab == 're_review' %}
+                            <span class="text-orange-500 font-medium">复审到期: {{ article.review_due_date|date:"Y-m-d" }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="flex gap-2 ml-3 shrink-0">
+                        {% if tab == 're_review' %}
+                        <form method="post" action="{% url 'wiki:re_review_approve' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="article_id" value="{{ article.id }}">
+                            <input type="hidden" name="action" value="approve">
+                            <button type="submit" class="px-3 py-1.5 bg-green-500 text-white rounded-xl text-xs font-medium hover:bg-green-600 transition-colors">
+                                复审通过
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'wiki:re_review_reject' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="article_id" value="{{ article.id }}">
+                            <input type="hidden" name="action" value="reject">
+                            <button type="submit" class="px-3 py-1.5 bg-slate-100 text-red-500 rounded-xl text-xs font-medium hover:bg-red-50 transition-colors">
+                                复审拒绝
+                            </button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="{% url 'wiki:review_approve' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="article_id" value="{{ article.id }}">
+                            <input type="hidden" name="action" value="approve">
+                            <button type="submit" class="px-3 py-1.5 bg-green-500 text-white rounded-xl text-xs font-medium hover:bg-green-600 transition-colors">
+                                通过
+                            </button>
+                        </form>
+                        <form method="post" action="{% url 'wiki:review_reject' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="article_id" value="{{ article.id }}">
+                            <input type="hidden" name="action" value="reject">
+                            <button type="submit" class="px-3 py-1.5 bg-slate-100 text-red-500 rounded-xl text-xs font-medium hover:bg-red-50 transition-colors">
+                                驳回
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="flex flex-col items-center justify-center py-16">
+            <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <p class="text-sm text-slate-400">{% if tab == 're_review' %}暂无待复审文章{% else %}暂无待审核文章{% endif %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

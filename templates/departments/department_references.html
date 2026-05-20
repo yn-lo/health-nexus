@@ -1,0 +1,155 @@
+{% extends "base_h5.html" %}
+
+{% block title %}引用管理 - {{ department.name }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-900">引用管理 - {{ department.name }}</h2>
+        <a href="{% url 'departments:department_list' %}" class="text-sm text-slate-600 hover:text-slate-900">返回</a>
+    </div>
+
+    <div class="tabs tabs-bordered">
+        <a href="#tab-available" class="tab tab-active" id="tab-btn-available">可引用文章</a>
+        <a href="#tab-pending" class="tab" id="tab-btn-pending">待审核</a>
+        <a href="#tab-approved" class="tab" id="tab-btn-approved">已授权</a>
+        <a href="#tab-rejected" class="tab" id="tab-btn-rejected">已拒绝</a>
+    </div>
+
+    <div id="tab-available" class="tab-content">
+        <div class="space-y-3">
+            {% for article in available_articles %}
+            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200/50">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-slate-900">{{ article.title }}</h3>
+                        <p class="text-sm text-slate-500 mt-1">来源: {{ article.department.name }}</p>
+                    </div>
+                    <form method="post" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="request">
+                        <input type="hidden" name="article_id" value="{{ article.id }}">
+                        <button type="submit" class="px-3 py-1.5 bg-primary text-white rounded text-sm hover:bg-primary-dark">
+                            申请引用
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center py-8 text-slate-500 bg-white rounded-xl border border-slate-200/50">
+                <p>暂无可引用文章</p>
+                <p class="text-sm mt-1">公共科室发布 allow_reference 文章后可见</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="tab-pending" class="tab-content hidden">
+        <div class="space-y-3">
+            {% for ref in pending_refs %}
+            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200/50">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h3 class="font-semibold text-slate-900">{{ ref.source_article.title }}</h3>
+                        <p class="text-sm text-slate-500 mt-1">来源: {{ ref.source_article.department.name }}</p>
+                    </div>
+                    <span class="badge badge-warning">待审核</span>
+                </div>
+                <div class="flex gap-2">
+                    <form method="post" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="approve">
+                        <input type="hidden" name="article_id" value="{{ ref.source_article.id }}">
+                        <button type="submit" class="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                            通过
+                        </button>
+                    </form>
+                    <button type="button" class="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700" onclick="showRejectForm('{{ ref.source_article.id }}')">
+                        拒绝
+                    </button>
+                </div>
+                <div id="reject-form-{{ ref.source_article.id }}" class="hidden mt-3 pt-3 border-t border-slate-100">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="reject">
+                        <input type="hidden" name="article_id" value="{{ ref.source_article.id }}">
+                        <textarea name="reason" class="textarea textarea-bordered w-full" placeholder="拒绝原因（至少5个字符）" required minlength="5"></textarea>
+                        <div class="flex gap-2 mt-2">
+                            <button type="submit" class="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                                确认拒绝
+                            </button>
+                            <button type="button" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded text-sm hover:bg-slate-300" onclick="hideRejectForm('{{ ref.source_article.id }}')">
+                                取消
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center py-8 text-slate-500">暂无待审核引用</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="tab-approved" class="tab-content hidden">
+        <div class="space-y-3">
+            {% for ref in approved_refs %}
+            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200/50">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-slate-900">{{ ref.source_article.title }}</h3>
+                        <p class="text-sm text-slate-500 mt-1">
+                            授权人: {{ ref.authorized_by.username|default:"未知" }} | 
+                            授权时间: {{ ref.authorized_at|date:"Y-m-d H:i" }}
+                        </p>
+                    </div>
+                    <span class="badge badge-success">已授权</span>
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center py-8 text-slate-500">暂无已授权引用</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="tab-rejected" class="tab-content hidden">
+        <div class="space-y-3">
+            {% for ref in rejected_refs %}
+            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200/50">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-slate-900">{{ ref.source_article.title }}</h3>
+                        <p class="text-sm text-slate-500 mt-1">拒绝原因: {{ ref.reason|default:"无" }}</p>
+                    </div>
+                    <span class="badge badge-error">已拒绝</span>
+                </div>
+            </div>
+            {% empty %}
+            <div class="text-center py-8 text-slate-500">暂无已拒绝引用</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+function showRejectForm(articleId) {
+    document.getElementById('reject-form-' + articleId).classList.remove('hidden');
+}
+function hideRejectForm(articleId) {
+    document.getElementById('reject-form-' + articleId).classList.add('hidden');
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', function(e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
+        this.classList.add('tab-active');
+        
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+        document.getElementById(targetId).classList.remove('hidden');
+    });
+});
+</script>
+{% endblock %}

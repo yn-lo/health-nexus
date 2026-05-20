@@ -1,0 +1,32 @@
+{% comment %}
+  Partial: _error_fallback.html
+  所需上下文:
+    - error_message: str, 错误提示文本（可选）
+    - retry_url: str, 重试 URL（可选）
+    - retry_target: str, HTMX 重试目标元素 ID（可选）
+  HTMX: 可选，通过 retry_url 触发重试请求
+  Alpine: 无
+  职责: 标准错误回退展示，支持重试操作
+{% endcomment %}
+<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+        <svg class="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+    </div>
+    <h3 class="text-lg font-semibold text-red-900 mb-2">操作失败</h3>
+    <p class="text-sm text-red-700 mb-4">{{ error_message|default:"请求过程中出现错误，请稍后重试。" }}</p>
+    
+    {% if retry_url %}
+    <button hx-get="{{ retry_url }}"
+            {% if retry_target %}hx-target="#{{ retry_target }}" hx-swap="innerHTML"{% endif %}
+            class="px-6 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors">
+        重试
+    </button>
+    {% else %}
+    <button onclick="window.location.reload()"
+            class="px-6 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors">
+        刷新页面
+    </button>
+    {% endif %}
+</div>

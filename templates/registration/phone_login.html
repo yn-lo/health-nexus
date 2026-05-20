@@ -1,0 +1,81 @@
+{% extends "base_h5.html" %}
+{% load static %}
+
+{% block title %}手机验证码登录 - Health Nexus{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block main %}
+<div class="login-bg absolute inset-0 flex flex-col items-center justify-center px-4">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-4 animate-fade-in">
+            <div class="w-12 h-12 mx-auto mb-4 rounded-2xl flex items-center justify-center shadow-xl ai-avatar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-white" viewBox="0 0 100 100" fill="none">
+                    <g stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M25 20 L25 80"/>
+                        <path d="M25 50 L42 50"/>
+                        <path d="M42 20 L42 80"/>
+                        <path d="M55 80 L55 20"/>
+                        <path d="M55 80 L72 20"/>
+                        <path d="M72 80 L72 20"/>
+                    </g>
+                </svg>
+            </div>
+            <h2 class="text-xl font-bold text-white mb-1">手机号登录</h2>
+            <p class="mt-1 text-white/80 text-sm">使用手机号和验证码快速登录</p>
+        </div>
+
+        <div class="login-card rounded-2xl px-5 py-6 animate-slide-up">
+            {% if form.errors %}
+            <div class="mb-4 p-3 rounded-xl bg-red-50 border border-red-200">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <p class="text-sm text-red-700">{{ error }}</p>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <form method="post" class="space-y-4" id="phone-login-form">
+                {% csrf_token %}
+
+                <div class="relative">
+                    <img src="{% static 'images/icons/phone.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="手机号">
+                    <input type="tel" name="phone" id="id_phone" required maxlength="20"
+                        class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                        placeholder="请输入手机号" autocomplete="healthnexus-tel">
+                </div>
+
+                <div class="flex gap-3">
+                    <div class="relative flex-1">
+                        <img src="{% static 'images/icons/lock-closed.svg' %}" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5" alt="验证码">
+                        <input type="text" name="verification_code" id="id_verification_code" required maxlength="6"
+                            class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all"
+                            placeholder="请输入验证码" autocomplete="healthnexus-one-time-code">
+                    </div>
+                    <button type="button" id="send-sms-btn" x-data="{ sendSms() { sendSmsCode($el, 'id_phone', 'login'); } }" @click="sendSms()"
+                        class="flex-shrink-0 px-4 py-3.5 rounded-xl text-sm font-medium bg-sky-50 border border-sky-200 text-sky-600 hover:bg-sky-100 transition-colors">
+                        获取验证码
+                    </button>
+                </div>
+
+                <button type="submit"
+                    class="w-full py-3.5 text-base font-semibold rounded-xl text-white shadow-md transition-all duration-200 hover:shadow-lg active:scale-[0.98] btn-gradient">
+                    登录
+                </button>
+
+                <div class="flex items-center justify-center gap-4 pt-1">
+                    <a href="{% url 'auth:login' %}" class="text-xs font-medium text-slate-500 hover:text-sky-600">
+                        账号密码登录
+                    </a>
+                    <span class="text-slate-300 text-xs">|</span>
+                    <a href="/accounts/register/" class="text-xs font-medium text-sky-600 hover:text-sky-700">
+                        注册新账号
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

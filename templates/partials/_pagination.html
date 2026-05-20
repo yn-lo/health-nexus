@@ -1,0 +1,42 @@
+{% comment %}
+  Partial: _pagination.html
+  所需上下文:
+    - page: Django Page 对象 (来自 view context)
+    - base_url: str, 分页基础 URL（不含 page 参数）
+  HTMX: 可选，支持 HTMX 分页刷新
+  Alpine: 无
+  职责: 展示分页控件，支持普通翻页和 HTMX 局部刷新
+{% endcomment %}
+{% if page.has_other_pages %}
+<nav id="pagination" class="flex items-center justify-center gap-2 mt-6">
+    {% if page.has_previous %}
+    <a href="{{ base_url }}?page={{ page.previous_page_number }}"
+       {% if is_htmx %}
+       hx-get="{{ base_url }}?page={{ page.previous_page_number }}"
+       hx-target="#{{ htmx_target|default:'results' }}"
+       hx-swap="innerHTML"
+       hx-push-url="true"
+       {% endif %}
+       class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+        上一页
+    </a>
+    {% endif %}
+
+    <span class="px-3 py-2 text-sm text-slate-600">
+        第 {{ page.number }} 页 / 共 {{ page.paginator.num_pages }} 页
+    </span>
+
+    {% if page.has_next %}
+    <a href="{{ base_url }}?page={{ page.next_page_number }}"
+       {% if is_htmx %}
+       hx-get="{{ base_url }}?page={{ page.next_page_number }}"
+       hx-target="#{{ htmx_target|default:'results' }}"
+       hx-swap="innerHTML"
+       hx-push-url="true"
+       {% endif %}
+       class="px-3 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+        下一页
+    </a>
+    {% endif %}
+</nav>
+{% endif %}

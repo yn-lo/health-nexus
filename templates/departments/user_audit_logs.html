@@ -1,0 +1,67 @@
+{% extends "base_h5.html" %}
+
+{% block title %}用户操作审计日志{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-900">用户审计日志 - {{ target_user.username }}</h2>
+        <a href="{% url 'departments:department_list' %}" class="text-sm text-slate-600 hover:text-slate-900">返回</a>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200/50 p-4">
+        {% if logs %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">操作时间</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">操作类型</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">操作目标</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase">所属科室</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                    {% for log in logs %}
+                    <tr>
+                        <td class="px-3 py-2 text-sm text-slate-600">{{ log.created_at|date:"Y-m-d H:i" }}</td>
+                        <td class="px-3 py-2 text-sm">
+                            {% if log.action_type == 'create' %}
+                            <span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">创建</span>
+                            {% elif log.action_type == 'update' %}
+                            <span class="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded-full">更新</span>
+                            {% elif log.action_type == 'delete' %}
+                            <span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">删除</span>
+                            {% elif log.action_type == 'add_member' %}
+                            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">添加成员</span>
+                            {% elif log.action_type == 'remove_member' %}
+                            <span class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded-full">移除成员</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 text-xs bg-slate-100 text-slate-700 rounded-full">{{ log.action_type }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-sm text-slate-700">{{ log.target }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-500">{{ log.department.name }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-4 flex items-center justify-between">
+            <span class="text-sm text-slate-500">共 {{ total }} 条记录</span>
+            <div class="flex gap-2">
+                {% if has_prev %}
+                <a href="?page={{ page|add:"-1" }}&limit={{ limit }}" class="px-3 py-1 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200">上一页</a>
+                {% endif %}
+                {% if has_next %}
+                <a href="?page={{ page|add:"1" }}&limit={{ limit }}" class="px-3 py-1 text-sm bg-slate-100 text-slate-700 rounded hover:bg-slate-200">下一页</a>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-8 text-slate-500">该用户暂无操作记录</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

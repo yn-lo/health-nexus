@@ -1,0 +1,164 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% block after_field_sets %}
+<div class="border rounded-default border-base-200 shadow-xs dark:border-base-800 p-3 mt-4">
+    <div class="flex flex-wrap gap-2 items-center">
+        <button type="button" id="test-connection-btn" class="bg-primary-600 border border-transparent cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="material-symbols-outlined md-18 align-middle mr-1">wifi_find</span>
+            测试连接
+        </button>
+        <button type="button" id="fetch-models-btn" class="bg-base-200 border border-base-300 cursor-pointer font-medium px-3 py-2 rounded-default text-sm text-font-default-light hover:bg-base-300 dark:bg-base-700 dark:border-base-600 dark:text-font-default-dark disabled:opacity-50 disabled:cursor-not-allowed">
+            <span class="material-symbols-outlined md-18 align-middle mr-1">model_training</span>
+            获取模型列表
+        </button>
+        <span id="test-result" class="text-sm hidden"></span>
+    </div>
+
+    <div id="model-selector-container" class="mt-3 hidden">
+        <input type="text" id="model-filter-input" placeholder="筛选模型..." class="border border-base-200 bg-white font-medium placeholder-base-400 rounded-default shadow-xs text-sm px-3 py-2 w-full max-w-md focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600 dark:bg-base-900 dark:border-base-700 dark:placeholder-base-500 mb-2">
+        <span id="model-count" class="text-xs text-base-500"></span>
+        <div id="model-list" class="border border-base-200 rounded-default max-h-48 overflow-y-auto dark:border-base-700"></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var modelField = document.getElementById('id_model_name');
+    var apiKeyField = document.getElementById('id_api_key');
+    var baseUrlField = document.getElementById('id_base_url');
+    var testBtn = document.getElementById('test-connection-btn');
+    var fetchBtn = document.getElementById('fetch-models-btn');
+    var resultSpan = document.getElementById('test-result');
+    var modelContainer = document.getElementById('model-selector-container');
+    var modelList = document.getElementById('model-list');
+    var modelFilter = document.getElementById('model-filter-input');
+    var modelCount = document.getElementById('model-count');
+    var allModels = [];
+
+    function getConfigData() {
+        return {
+            base_url: baseUrlField ? baseUrlField.value.trim() : '',
+            api_key: apiKeyField ? apiKeyField.value.trim() : '',
+            model_name: modelField ? modelField.value.trim() : ''
+        };
+    }
+
+    function showResult(message, isSuccess) {
+        resultSpan.classList.remove('hidden', 'text-green-600', 'text-red-600');
+        resultSpan.textContent = message;
+        resultSpan.classList.add(isSuccess ? 'text-green-600' : 'text-red-600');
+    }
+
+    function setLoading(btn) {
+        btn.disabled = true;
+        btn.dataset.html = btn.innerHTML;
+        btn.innerHTML = '<span class="material-symbols-outlined md-18 align-middle mr-1 animate-spin">progress_activity</span>' + btn.textContent.trim();
+    }
+
+    function resetBtn(btn) {
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.html || btn.innerHTML;
+    }
+
+    if (testBtn) {
+        testBtn.addEventListener('click', function() {
+            var config = getConfigData();
+            if (!config.base_url || !config.model_name) {
+                showResult('请先填写 Base URL 和模型名称', false);
+                return;
+            }
+            setLoading(testBtn);
+            fetch('{% url "admin:config_llmproviderconfig_test_connection" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify(config)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { showResult(data.message, data.success); })
+            .catch(function(e) { showResult('请求失败', false); })
+            .finally(function() { resetBtn(testBtn); });
+        });
+    }
+
+    if (fetchBtn) {
+        fetchBtn.addEventListener('click', function() {
+            var config = getConfigData();
+            if (!config.base_url) {
+                showResult('请先填写 Base URL', false);
+                return;
+            }
+            setLoading(fetchBtn);
+            fetch('{% url "admin:config_llmproviderconfig_fetch_models" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify(config)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    allModels = data.models || [];
+                    renderModels(allModels);
+                    modelContainer.classList.remove('hidden');
+                    showResult(data.message, true);
+                } else {
+                    showResult(data.message, false);
+                }
+            })
+            .catch(function(e) { showResult('请求失败', false); })
+            .finally(function() { resetBtn(fetchBtn); });
+        });
+    }
+
+    function renderModels(models) {
+        modelList.innerHTML = '';
+        if (models.length === 0) {
+            modelList.innerHTML = '<div class="px-3 py-2 text-sm text-base-500">无匹配模型</div>';
+            modelCount.textContent = '0 个';
+            return;
+        }
+        modelCount.textContent = models.length + ' 个';
+        var currentModel = modelField ? modelField.value : '';
+        for (var i = 0; i < models.length; i++) {
+            var model = models[i];
+            var div = document.createElement('div');
+            div.className = 'px-3 py-2 text-sm cursor-pointer hover:bg-base-100';
+            if (model === currentModel) {
+                div.className += ' bg-primary-50 text-primary-600 font-medium';
+            }
+            div.textContent = model;
+            div.addEventListener('click', (function(m) {
+                return function() {
+                    if (modelField) modelField.value = m;
+                    var items = modelList.querySelectorAll('div');
+                    for (var j = 0; j < items.length; j++) {
+                        items[j].className = 'px-3 py-2 text-sm cursor-pointer hover:bg-base-100';
+                    }
+                    this.className = 'px-3 py-2 text-sm cursor-pointer hover:bg-base-100 bg-primary-50 text-primary-600 font-medium';
+                };
+            })(model));
+            modelList.appendChild(div);
+        }
+    }
+
+    if (modelFilter) {
+        modelFilter.addEventListener('input', function() {
+            var filter = this.value.toLowerCase();
+            var filtered = [];
+            for (var i = 0; i < allModels.length; i++) {
+                if (allModels[i].toLowerCase().indexOf(filter) !== -1) {
+                    filtered.push(allModels[i]);
+                }
+            }
+            renderModels(filtered);
+        });
+    }
+})();
+</script>
+{% endblock %}

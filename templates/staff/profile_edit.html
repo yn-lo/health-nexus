@@ -1,0 +1,80 @@
+{% extends "staff/base_staff.html" %}
+{% load static %}
+
+{% block title %}编辑资料 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto px-4 py-6" x-data='{ avatarUploading: false, avatarPreviewUrl: "{{ user.avatar.url|default:"" }}" }'>
+    <div class="max-w-2xl mx-auto w-full">
+        <div class="flex items-center gap-4 mb-6">
+            <a href="{% url 'staff:profile' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+            </a>
+            <h2 class="text-xl font-bold text-slate-900">编辑资料</h2>
+        </div>
+
+        {% if messages %}
+        {% for message in messages %}
+        <div class="mb-4 p-3 rounded-xl {% if message.tags == 'error' %}bg-red-50 text-red-600{% else %}bg-green-50 text-green-600{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" class="space-y-6">
+            {% csrf_token %}
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                <label class="block text-sm font-medium text-slate-700 mb-3">头像</label>
+                <div class="flex items-center gap-4">
+                    <img x-show="avatarPreviewUrl" x-bind:src="avatarPreviewUrl" class="w-16 h-16 rounded-full object-cover" alt="头像">
+                    <div x-show="!avatarPreviewUrl" class="w-16 h-16 rounded-full bg-brand-gradient flex items-center justify-center text-white text-2xl font-bold">
+                        {{ user.username|first|upper }}
+                    </div>
+                    <div>
+                        <input type="file" name="avatar" accept="image/*" x-ref="avatarInput"
+                            @change="
+                                const file = $event.target.files[0];
+                                if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = (e) => { avatarPreviewUrl = e.target.result; };
+                                    reader.readAsDataURL(file);
+                                }
+                            "
+                            class="hidden" />
+                        <button type="button" @click="$refs.avatarInput.click()"
+                            class="px-4 py-2 text-sm font-medium rounded-xl bg-sky-50 text-sky-600 hover:bg-sky-100 transition-colors">
+                            更换头像
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                <label class="block text-sm font-medium text-slate-700 mb-2">职称</label>
+                <select name="title" class="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                    <option value="">请选择</option>
+                    {% for value, label in title_choices %}
+                    <option value="{{ value }}" {% if user.title == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+                <label class="block text-sm font-medium text-slate-700 mb-2">个人简介</label>
+                <textarea name="bio" rows="4" placeholder="介绍一下您的专业背景..."
+                    class="w-full rounded-xl border border-slate-200 px-4 py-3 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">{{ user.bio }}</textarea>
+            </div>
+
+            <div class="pt-4 pb-8 space-y-3">
+                <button type="submit" class="w-full py-4 text-base font-bold rounded-xl text-white shadow-lg transition-all duration-200 hover:shadow-xl active:scale-[0.98] btn-gradient">
+                    保存修改
+                </button>
+                <a href="{% url 'staff:profile' %}" class="block w-full py-3 text-base font-medium rounded-xl text-center text-slate-600 hover:text-slate-800 transition-colors">
+                    取消
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

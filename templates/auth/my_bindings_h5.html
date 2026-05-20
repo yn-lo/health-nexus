@@ -1,0 +1,35 @@
+{% extends "base_h5.html" %}
+{% load static %}
+{% block content %}
+<div class="flex flex-1 min-h-0 flex-col overflow-hidden">
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-2xl mx-auto w-full">
+    <div class="flex items-center gap-4 mb-6">
+        <a href="{% url 'care:profile_detail' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors flex-shrink-0">
+            <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+        </a>
+        <h1 class="text-xl font-bold text-slate-900 flex-1">我的绑定</h1>
+    </div>
+
+    {% if bindings %}
+    <div class="space-y-4">
+        {% for b in bindings %}
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="font-medium text-slate-900">{{ b.other_user.username }}</p>
+                    <p class="text-sm text-slate-500">绑定时间: {{ b.confirmed_at|date:"Y-m-d H:i" }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+        <p class="text-slate-500">暂无已绑定记录</p>
+    </div>
+    {% endif %}
+        </div>
+    </div>
+    </div>
+{% endblock %}

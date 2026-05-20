@@ -1,0 +1,223 @@
+{% extends "staff/base_staff.html" %}
+{% load static %}
+
+{% block title %}文章管理 - Health Nexus{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto">
+    <div class="sticky top-0 z-20 bg-white border-b border-slate-200">
+        <div class="max-w-2xl mx-auto w-full">
+            <div class="flex items-center gap-4 px-4 pt-4 pb-2">
+                <a href="{% url 'staff:dashboard' %}" class="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                    <img src="{% static 'images/icons/arrow-left.svg' %}" class="w-6 h-6" alt="返回">
+                </a>
+                <h2 class="text-xl font-bold text-slate-900">文章</h2>
+            </div>
+            <div class="flex px-4 gap-1">
+                <a href="?tab=mine"
+                   class="flex-1 text-center py-3 text-sm font-medium border-b-2 transition-colors
+                          {% if tab == 'mine' %}border-sky-500 text-sky-600{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+                    我的文章
+                </a>
+                <a href="?tab=review"
+                   class="flex-1 text-center py-3 text-sm font-medium border-b-2 transition-colors
+                          {% if tab == 'review' %}border-sky-500 text-sky-600{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+                    待审核
+                </a>
+                <a href="?tab=browse"
+                   class="flex-1 text-center py-3 text-sm font-medium border-b-2 transition-colors
+                          {% if tab == 'browse' %}border-sky-500 text-sky-600{% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+                    浏览
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-2xl mx-auto w-full px-4 py-4">
+        {% if tab == 'mine' %}
+            <div class="mb-4">
+                <a href="{% url 'wiki:article_create' %}"
+                   class="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-500 text-white rounded-xl text-sm font-medium hover:bg-sky-600 transition-colors shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    撰写文章
+                </a>
+            </div>
+            {% if articles %}
+            <div class="space-y-3">
+                {% for article in articles %}
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-base font-medium text-slate-900 truncate">{{ article.title }}</h3>
+                            <div class="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium
+                                    {% if article.status == 'DRAFT' %}bg-slate-100 text-slate-600
+                                    {% elif article.status == 'PENDING' %}bg-amber-100 text-amber-700
+                                    {% elif article.status == 'PUBLISHED' %}bg-green-100 text-green-700
+                                    {% elif article.status == 'ARCHIVED' %}bg-red-100 text-red-700
+                                    {% endif %}">
+                                    {{ article.get_status_display }}
+                                </span>
+                                <span>{{ article.department.name }}</span>
+                                <span>{{ article.created_at|date:"m-d" }}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 ml-3 shrink-0">
+                            {% if article.status == 'DRAFT' %}
+                            <a href="{% url 'wiki:article_edit' article.pk %}"
+                               class="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-xs font-medium hover:bg-slate-200 transition-colors">
+                                编辑
+                            </a>
+                            <form method="post" action="{% url 'wiki:article_submit_review' article.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="px-3 py-1.5 bg-sky-100 text-sky-600 rounded-xl text-xs font-medium hover:bg-sky-200 transition-colors">
+                                    提交审核
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="flex flex-col items-center justify-center py-16">
+                <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="text-sm text-slate-400">暂无文章，点击上方按钮开始撰写</p>
+            </div>
+            {% endif %}
+
+        {% elif tab == 'review' %}
+            {% if not can_review %}
+            <div class="flex flex-col items-center justify-center py-16">
+                <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                <p class="text-sm text-slate-400">您没有审核权限</p>
+            </div>
+            {% elif articles %}
+            <div class="space-y-3">
+                {% for article in articles %}
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-base font-medium text-slate-900 truncate">{{ article.title }}</h3>
+                            <p class="text-sm text-slate-500 mt-1 line-clamp-2">{{ article.summary|truncatechars:80 }}</p>
+                            <div class="flex items-center gap-3 mt-2 text-xs text-slate-400">
+                                <span>作者: {{ article.author.username|default:"未知" }}</span>
+                                <span>科室: {{ article.department.name }}</span>
+                                <span>{{ article.created_at|date:"m-d H:i" }}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 ml-3 shrink-0">
+                            <form method="post" action="{% url 'wiki:review_approve' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="article_id" value="{{ article.id }}">
+                                <input type="hidden" name="action" value="approve">
+                                <button type="submit" class="px-3 py-1.5 bg-green-500 text-white rounded-xl text-xs font-medium hover:bg-green-600 transition-colors">
+                                    通过
+                                </button>
+                            </form>
+                            <form method="post" action="{% url 'wiki:review_reject' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="article_id" value="{{ article.id }}">
+                                <input type="hidden" name="action" value="reject">
+                                <button type="submit" class="px-3 py-1.5 bg-slate-100 text-red-500 rounded-xl text-xs font-medium hover:bg-red-50 transition-colors">
+                                    驳回
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="flex flex-col items-center justify-center py-16">
+                <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p class="text-sm text-slate-400">暂无待审核文章</p>
+            </div>
+            {% endif %}
+
+        {% elif tab == 'browse' %}
+            <div class="mb-4">
+                <form method="get" action="" class="relative">
+                    <input type="hidden" name="tab" value="browse">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                        <img src="{% static 'images/icons/magnifying-glass.svg' %}" class="w-5 h-5" alt="搜索">
+                    </span>
+                    <input type="text" name="q" placeholder="搜索文章..."
+                           value="{{ search_query|default:'' }}"
+                           class="w-full pl-10 pr-4 py-2.5 bg-white rounded-full border border-slate-200 shadow-sm
+                                  text-sm placeholder:text-slate-400
+                                  focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all">
+                    <input type="hidden" name="dept" value="{{ current_dept_id }}" />
+                </form>
+            </div>
+
+            {% if departments %}
+            <div class="mb-4 overflow-x-auto no-scrollbar">
+                <div class="flex gap-2 whitespace-nowrap">
+                    <a href="?tab=browse&dept=all"
+                       class="px-4 py-1.5 rounded-full text-xs font-medium transition-all shadow-sm
+                              {% if current_dept_id == 'all' %}text-white shadow-md bg-brand-gradient
+                              {% else %}bg-white text-slate-600 border border-slate-100{% endif %}">
+                        全部
+                    </a>
+                    {% for dept in departments %}
+                    <a href="?tab=browse&dept={{ dept.id }}"
+                       class="px-4 py-1.5 rounded-full text-xs font-medium transition-all shadow-sm
+                              {% if current_dept_id|stringformat:'s' == dept.id|stringformat:'s' %}text-white shadow-md bg-brand-gradient
+                              {% else %}bg-white text-slate-600 border border-slate-100{% endif %}">
+                        {{ dept.name }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if articles %}
+            <div class="space-y-3">
+                {% for article in articles %}
+                <a href="{% url 'wiki:article_detail' article.pk %}"
+                   class="block bg-white rounded-xl shadow-sm border border-slate-100
+                          active:scale-[0.98] transition-transform duration-100 overflow-hidden">
+                    {% if article.cover_image %}
+                    <div class="aspect-[2/1] w-full relative bg-slate-100 overflow-hidden">
+                        <img src="{{ article.cover_image.url }}" alt="{{ article.title }}"
+                             class="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                    </div>
+                    {% endif %}
+                    <div class="p-4">
+                        <h2 class="text-base font-bold text-slate-800 leading-snug mb-1 line-clamp-2">{{ article.title }}</h2>
+                        <p class="text-sm text-slate-500 leading-relaxed line-clamp-2 mb-2">{{ article.summary }}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-light text-brand">
+                                {{ article.department.name }}
+                            </span>
+                            <div class="flex items-center gap-1 text-slate-400 text-xs">
+                                <img src="{% static 'images/icons/eye.svg' %}" class="w-3.5 h-3.5" alt="阅读量">
+                                {{ article.view_count }}
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="flex flex-col items-center justify-center py-16">
+                <svg class="w-16 h-16 text-slate-200 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
+                <p class="text-sm text-slate-400">暂无文章</p>
+            </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
