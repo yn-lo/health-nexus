@@ -1,5 +1,7 @@
 # Health Nexus 健康宣教系统
 
+🌐 在线演示（Demo）：https://hn.ynlo.top
+
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-5.2-green.svg)](https://www.djangoproject.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
