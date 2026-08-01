@@ -17,12 +17,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+
+	"health-nexus/internal/config"
+	"health-nexus/internal/platform/llm"
 )
+
+// orDefault 返回 s 非空时的 s，否则返回 def。
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+// float32SliceLiteral 将 float32 切片格式化为 pgvector 文本字面量 "[a,b,c]"。
+func float32SliceLiteral(v []float32) string {
+	parts := make([]string, len(v))
+	for i, f := range v {
+		parts[i] = strconv.FormatFloat(float64(f), 'f', -1, 32)
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
 
 // chatTestResult 收集每个用例的结果用于最终汇总。
 type chatTestResult struct {
@@ -79,10 +101,39 @@ func setupChatSeed(t *testing.T) int64 {
 
 	// 3. 注入 seed chunk（content 同时覆盖原查询与 split-token 改写后查询）
 	//    bigram_tsvector(content) 使用 unigram + bigram 分词，中文召回率显著提升。
+	//    同时生成真实 embedding 向量写入——SearchService 的 filterBySimilarity(threshold>0)
+	//    会过滤 VecScore==0 的 BM25-only 命中，无向量 chunk 必然被拒答。
 	content := "高血压患者日常管理要点有哪些 高血压 日常 管理 要点 患者 用药 监测 饮食 运动"
+
+	// 从环境变量构造 embedding 客户端（与后端同款子配置：硅基流动 BAAI/bge-m3）。
+	embedKey := os.Getenv("HEALTH_NEXUS_LLM_EMBEDDING_API_KEY")
+	if embedKey == "" {
+		t.Skip("HEALTH_NEXUS_LLM_EMBEDDING_API_KEY not set; cannot seed embedding vector")
+	}
+	embCfg := config.LLMConfig{
+		Embedding: config.ProviderConfig{
+			BaseURL: orDefault(os.Getenv("HEALTH_NEXUS_LLM_EMBEDDING_BASE_URL"), "https://api.siliconflow.cn/v1"),
+			APIKey:  embedKey,
+			Model:   orDefault(os.Getenv("HEALTH_NEXUS_LLM_EMBEDDING_MODEL"), "BAAI/bge-m3"),
+			Timeout: 30 * time.Second,
+		},
+	}
+	embClient, err := llm.NewEmbeddingClient(embCfg)
+	if err != nil || embClient == nil {
+		t.Skipf("embedding client unavailable: %v", err)
+	}
+	embeddings, err := embClient.Embed(ctx, []string{content})
+	if err != nil {
+		t.Skipf("embedding call failed: %v", err)
+	}
+	if len(embeddings) == 0 || len(embeddings[0]) == 0 {
+		t.Skip("embedding returned empty vector")
+	}
+	vecLit := float32SliceLiteral(embeddings[0])
+
 	_, err = e2ePool.Exec(ctx, `
-		INSERT INTO article_chunks (article_id, chunk_index, content, content_hash, is_active, version)
-		VALUES ($1, 90, $2, 'e2e_chat_seed', true, 1)`, articleID, content)
+		INSERT INTO article_chunks (article_id, chunk_index, content, content_hash, embedding, is_active, version)
+		VALUES ($1, 90, $2, 'e2e_chat_seed', $3::vector, true, 1)`, articleID, content, vecLit)
 	if err != nil {
 		t.Fatalf("seed chunk: %v", err)
 	}

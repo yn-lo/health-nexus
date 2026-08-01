@@ -12,7 +12,9 @@ services:
       POSTGRES_PASSWORD: 4b605c71292e231391b2a40d63d9fe5b
       POSTGRES_DB: health_nexus
       TZ: Asia/Shanghai
-    # 数据库不对外暴露，仅容器内网访问
+    # 暴露 5432 供本地开发/测试直接连接；生产环境如需仅内网访问可删除 ports 段。
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +34,9 @@ services:
       --appendonly yes
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
-    # redis 不对外暴露，仅容器内网访问
+    # 暴露 6379 供本地开发/测试直接连接；生产环境如需仅内网访问可删除 ports 段。
+    ports:
+      - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:

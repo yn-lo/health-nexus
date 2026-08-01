@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,12 +37,13 @@ const (
 	httpExpectContinueTimeout = 1 * time.Second
 )
 
-// normalizeBaseURL 规范化 API Base URL：确保以 /v1 结尾，去掉多余的 API 路径后缀。
-// go-openai 库期望 BaseURL 到 /v1 这一层，内部会拼接 /chat/completions 等路径。
+// normalizeBaseURL 规范化 API Base URL：确保以版本层结尾，去掉多余的 API 路径后缀。
+// go-openai 库期望 BaseURL 到版本层这一层，内部会拼接 /chat/completions 等路径。
 // 用户可能输入：
 //   - https://api.siliconflow.cn          → 缺少 /v1，需追加
 //   - https://api.siliconflow.cn/v1       → 正确
-//   - https://api.siliconflow.cn/v1/chat/completions → 多余后缀，需截断到 /v1
+//   - https://open.bigmodel.cn/api/paas/v4 → 已含版本层 /v4，原样使用（追加 /v1 会拼出 /v4/v1 404）
+//   - https://api.siliconflow.cn/v1/chat/completions → 多余后缀，需截断到版本层
 //
 // isFullURL 由管理后台"完整链接"开关控制：用户声明 api_base 已填到版本层
 // （如 /v1、/v4、/api/paas/v4），后端原样使用，不再自动拼接或截断。
@@ -53,7 +55,7 @@ func normalizeBaseURL(baseURL string, isFullURL bool) string {
 		return strings.TrimRight(baseURL, "/")
 	}
 	trimmed := strings.TrimRight(baseURL, "/")
-	// 常见多余后缀：用户可能粘贴了完整 API 路径，需要截断到 /v1
+	// 常见多余后缀：用户可能粘贴了完整 API 路径，需要截断到版本层
 	suffixes := []string{
 		"/chat/completions",
 		"/completions",
@@ -67,11 +69,16 @@ func normalizeBaseURL(baseURL string, isFullURL bool) string {
 	}
 	// 去掉截断后可能残留的尾斜杠
 	trimmed = strings.TrimRight(trimmed, "/")
-	if strings.HasSuffix(trimmed, "/v1") {
+	// 已含版本层（/v1、/v4、/api/paas/v4 等）时原样返回，不再追加 /v1
+	if versionSuffixRe.MatchString(trimmed) {
 		return trimmed
 	}
 	return trimmed + "/v1"
 }
+
+// versionSuffixRe 匹配已含版本段的 base URL 结尾（如 /v1、/v4）。
+// v1beta 之类不带版本号结尾的 URL 不匹配，仍会追加 /v1。
+var versionSuffixRe = regexp.MustCompile(`/v[0-9]+$`)
 
 // newOpenAIClient 工厂：依据 baseURL/apiKey/timeout 构造 OpenAI 兼容客户端。
 // Transport 加固无条件设置——R8-Config-5 修复：TLS 握手/连接复用/HTTP2 必须始终启用；

@@ -1,10 +1,10 @@
-// Package e2e_api_test 通过真实 HTTP 请求覆盖全部 49 个 API 端点（契约 api-contract.md）。
+// Package e2e_api_test 通过真实 HTTP 请求覆盖全部 API 端点（路由树即契约，代码即文档）。
 //
 // 运行前提：后端已启动（air 热重载，localhost:5230）、PostgreSQL/Redis 可达、LLM API key 已配置。
 // 与 tests/e2e 复用同构 helper（login/doReq/clearRateLimitKeys/clearTestData），
 // 但独立成包以避免命名冲突，并按域分组覆盖所有端点。
 //
-// 测试账号（DB seed 已存在，密码统一 Pass1234）：
+// 测试账号（由 TestMain 动态注入 DB，密码统一 Pass1234，测试后清理）：
 //   - admin1     DEPT_ADMIN  心内科(dept=1)
 //   - doctor1    DOCTOR      心内科(dept=1)
 //   - testpatient PATIENT     内分泌科(dept=2)
@@ -38,6 +38,8 @@ var (
 	// admin2UserID/doctor2UserID 由 setupReferenceUsers 在测试前注入，teardownReferenceUsers 清理。
 	admin2UserID  int64
 	doctor2UserID int64
+	// e2eDept2Created 标记 dept=2（内分泌科）是否由本测试创建，teardown 时据此清理。
+	e2eDept2Created bool
 )
 
 // ─── TestMain ─────────────────────────────────────────────────────────────
@@ -47,7 +49,7 @@ func TestMain(m *testing.M) {
 	if addr == "" {
 		addr = "localhost:6379"
 	}
-	rateRdb = redis.NewClient(&redis.Options{Addr: addr})
+	rateRdb = redis.NewClient(&redis.Options{Addr: addr, Password: os.Getenv("E2E_REDIS_PASSWORD")})
 
 	dsn := os.Getenv("E2E_DB_DSN")
 	if dsn == "" {
@@ -64,7 +66,90 @@ func TestMain(m *testing.M) {
 	cancel()
 
 	clearRateLimitKeys()
-	os.Exit(m.Run())
+	seedBaseUsers()
+	code := m.Run()
+	teardownBaseUsers()
+	os.Exit(code)
+}
+
+// ─── 基础数据种子（原 DB seed 迁移移除后由 TestMain 动态注入） ─────────────
+
+// seedBaseUsers 创建 e2e 依赖的科室与测试账号（密码统一 Pass1234）。
+// 幂等：存在即跳过，可重复运行。dept=2 若原库已有则复用（e2eDept2Created=false）。
+func seedBaseUsers() {
+	if e2ePool == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 确保 dept=2（内分泌科）存在——跨科室/引用授权场景硬编码 department_id=2。
+	var dept2Exists bool
+	if err := e2ePool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM departments WHERE id = 2)`).Scan(&dept2Exists); err != nil {
+		return
+	}
+	if !dept2Exists {
+		if _, err := e2ePool.Exec(ctx, `INSERT INTO departments (id, name, is_public, is_active, description) VALUES (2, '内分泌科', true, true, 'e2e 自动创建')`); err != nil {
+			return
+		}
+		e2eDept2Created = true
+	}
+
+	// 与 seed 同哈希——Pass1234
+	const hash = "argon2id$v=19$m=65536,t=3,p=2$iuNmx/jZopIBIRRekDpN5g==$bkyZH8MSz8qfrDmEXz/C8ogHRgd7H+VHIQEg8bGpUZ4="
+	for _, u := range []struct {
+		username string
+		role     string
+		deptID   int
+	}{
+		{"admin1", "DEPT_ADMIN", 1},
+		{"doctor1", "DOCTOR", 1},
+		{"testpatient", "PATIENT", 2},
+	} {
+		var uid int64
+		err := e2ePool.QueryRow(ctx, `
+INSERT INTO users (username, role, password_hash, is_active)
+VALUES ($1, $2, $3, true)
+ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true
+RETURNING id`, u.username, u.role, hash).Scan(&uid)
+		if err != nil {
+			continue
+		}
+		_, _ = e2ePool.Exec(ctx, `
+INSERT INTO user_departments (user_id, department_id, is_primary)
+VALUES ($1, $2, true)
+ON CONFLICT (user_id, department_id) DO NOTHING`, uid, u.deptID)
+	}
+
+	// 敏感词是系统运行配置（chat 危机/紧急触发依赖），幂等补齐测试所需的最小集。
+	for _, w := range []struct{ word, category string }{
+		{"自杀", "suicide"},
+		{"胸痛", "emergency"},
+	} {
+		_, _ = e2ePool.Exec(ctx, `
+INSERT INTO sensitive_words (word, category)
+VALUES ($1, $2)
+ON CONFLICT (word, category) DO NOTHING`, w.word, w.category)
+	}
+}
+
+// teardownBaseUsers 清理 seedBaseUsers 创建的测试账号；仅当 dept=2 由本测试创建时才删除该科室。
+func teardownBaseUsers() {
+	if e2ePool == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stmts := []string{
+		`DELETE FROM user_departments WHERE user_id IN (SELECT id FROM users WHERE username IN ('admin1','doctor1','testpatient'))`,
+		`DELETE FROM users WHERE username IN ('admin1','doctor1','testpatient')`,
+	}
+	for _, s := range stmts {
+		_, _ = e2ePool.Exec(ctx, s)
+	}
+	if e2eDept2Created {
+		_, _ = e2ePool.Exec(ctx, `DELETE FROM departments WHERE id = 2`)
+	}
 }
 
 // ─── 清理 helpers（移植自 tests/e2e/e2e_test.go） ────────────────────────

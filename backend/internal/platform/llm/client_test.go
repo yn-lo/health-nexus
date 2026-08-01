@@ -19,6 +19,10 @@ func TestNormalizeBaseURL_AppendsV1(t *testing.T) {
 		{"with path no v1", "https://api.example.com/llm", false, "https://api.example.com/llm/v1"},
 		{"with path trailing slash", "https://api.example.com/llm/", false, "https://api.example.com/llm/v1"},
 		{"v1beta not matched", "https://api.example.com/v1beta", false, "https://api.example.com/v1beta/v1"},
+		// 已含版本层的 base URL（如智谱 /api/paas/v4）不再追加 /v1，避免拼出 /v4/v1 404
+		{"zhipu v4 no full url", "https://open.bigmodel.cn/api/paas/v4", false, "https://open.bigmodel.cn/api/paas/v4"},
+		{"zhipu v4 trailing slash", "https://open.bigmodel.cn/api/paas/v4/", false, "https://open.bigmodel.cn/api/paas/v4"},
+		{"api v2", "https://api.example.com/v2", false, "https://api.example.com/v2"},
 		// 完整路径截断：用户粘贴了带 /chat/completions 的完整 URL
 		{"full chat completions path", "https://apihub.agnes-ai.com/v1/chat/completions", false, "https://apihub.agnes-ai.com/v1"},
 		{"full chat completions trailing slash", "https://apihub.agnes-ai.com/v1/chat/completions/", false, "https://apihub.agnes-ai.com/v1"},
