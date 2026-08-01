@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>健康宣教平台</title>
+</head>
+<body>
+  <noscript>请启用 JavaScript 以使用本平台。</noscript>
+  <script>
+    // 根据路径前缀自动跳转到对应 SPA 入口路由
+    var path = window.location.pathname;
+    if (path.startsWith('/staff')) {
+      window.location.replace('/staff/login');
+    } else {
+      window.location.replace('/chat');
+    }
+  </script>
+</body>
+</html>

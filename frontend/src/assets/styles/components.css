@@ -1,0 +1,1704 @@
+/* ────────────────────────────────────────────────────────────
+ * 共享组件样式（从 main.css 迁移）
+ * ds-pill 胶囊选择器 + 未来共享组件样式
+ * ──────────────────────────────────────────────────────────── */
+
+/* ── ds-pill 胶囊选择器 ──────────────────────────────────── */
+.ds-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacer-8);
+}
+
+.ds-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-4);
+  height: var(--ds-control-height-sm);
+  padding: 0 var(--ds-control-padding-x);
+  border-radius: var(--radius-pill);
+  font-size: var(--body-sm-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease);
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.ds-pill--selected {
+  background: var(--bg-brand);
+  color: var(--text-onbrand);
+  border-color: var(--bg-brand);
+}
+
+.ds-pill--unselected {
+  background: var(--bg-base-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border-neutral-l1);
+}
+
+.ds-pill--unselected:hover {
+  background: var(--bg-base-tertiary);
+}
+
+/* ── ds-pill 尺寸变体 ── */
+.ds-pill--sm {
+  height: 24px;
+  padding: 0 var(--spacer-8);
+  font-size: var(--body-xs-font-size);
+}
+
+.ds-pill--lg {
+  height: var(--ds-control-height-md);
+  padding: 0 var(--spacer-16);
+  font-size: var(--body-base-font-size);
+}
+
+/* ── ds-menu-list 菜单卡片容器 ───────────────────────────── */
+.ds-menu-list {
+  background: var(--bg-white);
+  border-radius: var(--radius-card-large);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-neutral-l1);
+}
+
+/* ── ds-menu-row 菜单行 ──────────────────────────────────── */
+.ds-menu-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--spacer-12);
+  padding: 0 var(--spacer-16);
+  min-height: calc(var(--ds-control-height-lg) + 16px);
+  border-bottom: 1px solid var(--border-neutral-l1);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-menu-row:last-child {
+  border-bottom: none;
+}
+
+.ds-menu-row:hover {
+  background: var(--bg-base-secondary);
+}
+
+.ds-menu-row:active {
+  background: var(--bg-base-tertiary);
+}
+
+.ds-menu-row:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* ── ds-action-grid 快捷操作网格容器 ─────────────────────── */
+.ds-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacer-8);
+}
+
+/* ── ds-action-card 快捷操作卡片按钮 ─────────────────────── */
+.ds-action-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-6);
+  padding: var(--spacer-12);
+  min-height: var(--touch-target-min);
+  border-radius: var(--radius-12);
+  border: 1px solid var(--border-neutral-l1);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: box-shadow var(--micro-duration) var(--micro-ease);
+}
+.ds-action-card:hover {
+  box-shadow: var(--shadow-md);
+}
+.ds-action-card:active {
+  box-shadow: var(--shadow-xs);
+}
+.ds-action-card:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.ds-action-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ds-control-height-sm);
+  height: var(--ds-control-height-sm);
+  border-radius: var(--radius-10);
+}
+.ds-action-card__label {
+  white-space: nowrap;
+  font-size: var(--body-small-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--body-small-line-height);
+  color: var(--text-default);
+}
+
+/* ── ds-badge 角标（右上角数字） ─────────────────────────── */
+.ds-badge {
+  position: absolute;
+  top: var(--spacer-12);
+  right: var(--spacer-12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--badge-size-lg);
+  height: var(--badge-size-lg);
+  padding: 0 var(--spacer-4);
+  border-radius: var(--radius-full);
+  font-size: var(--body-xs-font-size);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-white);
+  background: var(--status-error-default);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Minimal List — 极简任务/项目列表
+   参考设计：圆形图标容器 + 标题 + 元信息 + 时间戳
+   ═══════════════════════════════════════════════════════════════ */
+.ds-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ds-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  padding: var(--spacer-12) var(--spacer-16);
+  background: transparent;
+  transition: background var(--micro-duration) var(--micro-ease);
+  cursor: pointer;
+}
+
+.ds-list-item:hover {
+  background: var(--bg-overlay-l1);
+}
+
+.ds-list-item:active {
+  background: var(--bg-overlay-l2);
+}
+
+.ds-list-item--divider {
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.ds-list-item__icon {
+  flex-shrink: 0;
+  width: var(--ds-control-height-lg);
+  height: var(--ds-control-height-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base-tertiary);
+  border-radius: var(--radius-full);
+  color: var(--icon-secondary);
+}
+
+.ds-list-item__icon .icon {
+  width: var(--icon-size-24);
+  height: var(--icon-size-24);
+}
+
+/* 状态色图标变体 — 用于不同级别/状态的列表项 */
+.ds-list-item__icon--brand { background: var(--bg-brand-light); color: var(--text-brand); }
+.ds-list-item__icon--success { background: var(--status-success-surface-l1); color: var(--status-success-default); }
+.ds-list-item__icon--alert { background: var(--status-alert-surface-l1); color: var(--status-alert-default); }
+.ds-list-item__icon--error { background: var(--status-error-surface-l1); color: var(--status-error-default); }
+
+/* 单行列表项右侧操作区（替代 time 或并存） */
+.ds-list-item__trailing {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  margin-left: var(--spacer-8);
+}
+
+.ds-list-item__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-2);
+}
+
+.ds-list-item__title {
+  font-size: var(--heading-sm-font-size);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--heading-sm-line-height);
+  color: var(--text-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ds-list-item__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--text-tertiary);
+}
+
+.ds-list-item__meta .icon {
+  width: var(--icon-size-14);
+  height: var(--icon-size-14);
+  flex-shrink: 0;
+}
+
+.ds-list-item__time {
+  flex-shrink: 0;
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  margin-left: var(--spacer-8);
+}
+
+/* ── ds-list-item--block 块状列表项（多行内容 + 操作按钮，整卡可点击） ── */
+.ds-list-item--block {
+  display: block;
+  padding: var(--spacer-16);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+  cursor: pointer;
+  transition: background var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-list-item--block:hover {
+  background: var(--bg-overlay-l1);
+  border-color: var(--border-neutral-l2);
+}
+
+.ds-list-item--block:active {
+  background: var(--bg-overlay-l2);
+}
+
+.ds-list-item--block.ds-list-item--brand {
+  border-color: var(--border-brand);
+}
+
+.ds-list-item--block.ds-list-item--error {
+  border-color: var(--status-error-default);
+}
+
+.ds-list-item--block.ds-list-item--alert {
+  border-color: var(--status-alert-default);
+}
+
+.ds-list-item--block.ds-list-item--success {
+  border-color: var(--status-success-default);
+}
+
+.ds-list-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  margin-bottom: var(--spacer-8);
+}
+
+.ds-list-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-6);
+}
+
+.ds-list-item__body {
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-default);
+}
+
+.ds-list-item__summary {
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-secondary);
+  margin-top: var(--spacer-4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ds-list-item__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-12);
+  padding-top: var(--spacer-12);
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.ds-list-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-4);
+}
+
+.ds-list-item__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-8);
+  color: var(--icon-secondary);
+  cursor: pointer;
+  transition: background var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-list-item__action-btn:hover {
+  background: var(--bg-overlay-l2);
+  color: var(--icon-default);
+}
+
+.ds-list-item__action-btn .icon {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Page Header — 大标题页面头部
+   参考设计：大标题（带下拉指示）+ 右侧搜索/头像圆形按钮
+   ═══════════════════════════════════════════════════════════════ */
+.ds-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacer-8) var(--layout-page-padding-x) var(--spacer-16);
+}
+
+.ds-page-header__title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  cursor: pointer;
+}
+
+.ds-page-header__title {
+  font-size: var(--heading-2xl-font-size);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--heading-2xl-line-height);
+  color: var(--text-default);
+  letter-spacing: var(--heading-2xl-letter-spacing);
+}
+
+.ds-page-header__chevron {
+  width: var(--icon-size-20);
+  height: var(--icon-size-20);
+  color: var(--text-default);
+  transition: transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-page-header__title-wrap.is-open .ds-page-header__chevron {
+  transform: rotate(180deg);
+}
+
+.ds-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+}
+
+/* ── ds-icon-btn 圆形图标按钮（搜索/通知等） ─────────────── */
+.ds-icon-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base-default);
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--icon-default);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-icon-btn:hover {
+  background: var(--bg-base-secondary);
+  box-shadow: var(--shadow-md);
+}
+
+.ds-icon-btn:active {
+  transform: scale(var(--press-scale));
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-icon-btn .icon {
+  width: var(--icon-size-20);
+  height: var(--icon-size-20);
+}
+
+.ds-icon-btn--sm {
+  width: var(--ds-control-height-sm);
+  height: var(--ds-control-height-sm);
+  box-shadow: none;
+}
+
+.ds-icon-btn--sm:hover {
+  box-shadow: none;
+}
+
+.ds-icon-btn--sm .icon {
+  width: var(--icon-size-20);
+  height: var(--icon-size-20);
+}
+
+.ds-icon-btn--brand {
+  color: var(--text-brand);
+  background: transparent;
+  box-shadow: none;
+}
+
+.ds-icon-btn--brand:hover {
+  background: var(--bg-overlay-l1);
+  box-shadow: none;
+}
+
+.ds-icon-btn--danger {
+  color: var(--status-error-default);
+  background: var(--bg-overlay-l1);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--ds-control-radius-md);
+  box-shadow: none;
+}
+
+.ds-icon-btn--danger:hover {
+  background: var(--bg-overlay-l2);
+  box-shadow: none;
+}
+
+/* ── ds-avatar-btn 用户头像圆形按钮 ──────────────────────── */
+.ds-avatar-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base-tertiary);
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-avatar-btn:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.ds-avatar-btn:active {
+  transform: scale(var(--press-scale));
+}
+
+.ds-avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ds-avatar-btn .icon {
+  width: var(--icon-size-24);
+  height: var(--icon-size-24);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FAB — Floating Action Button 悬浮操作按钮
+   参考设计：右下角品牌色圆形按钮（阴影 + 白色图标）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-fab {
+  position: fixed;
+  right: var(--spacer-16);
+  bottom: calc(var(--layout-tabbar-height) + var(--spacer-16));
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-brand);
+  color: var(--text-onbrand);
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-fixed);
+  transition: background var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-fab:hover {
+  background: var(--bg-brand-hover);
+  box-shadow: var(--shadow-xl);
+}
+
+.ds-fab:active {
+  background: var(--bg-brand-active);
+  transform: scale(var(--press-scale));
+  box-shadow: var(--shadow-md);
+}
+
+.ds-fab .icon {
+  width: var(--icon-size-24);
+  height: var(--icon-size-24);
+}
+
+.ds-fab--sm {
+  width: var(--ds-control-height-lg);
+  height: var(--ds-control-height-lg);
+  bottom: calc(var(--layout-tabbar-height) + var(--spacer-12));
+}
+
+.ds-fab--sm .icon {
+  width: var(--icon-size-20);
+  height: var(--icon-size-20);
+}
+
+.ds-fab--inline {
+  position: static;
+  z-index: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FAB Segment — 悬浮按钮风格的分段切换器
+   复用 FAB 视觉语言（阴影 + 品牌色 + radius-full），用于互斥选项切换
+   ═══════════════════════════════════════════════════════════════ */
+.ds-fab-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-4);
+  padding: var(--spacer-4);
+  background: var(--bg-base-secondary);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+}
+
+.ds-fab-segment--full {
+  display: flex;
+  width: 100%;
+}
+
+.ds-fab-segment__btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-6);
+  min-height: 40px;
+  padding: var(--spacer-10) var(--spacer-20);
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--body-base-line-height);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-fab-segment__btn .icon {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+.ds-fab-segment__btn:not(.ds-fab-segment__btn--active):hover {
+  background: var(--bg-overlay-l1);
+  color: var(--text-default);
+}
+
+.ds-fab-segment__btn--active {
+  background: var(--bg-brand);
+  color: var(--text-onbrand);
+  box-shadow: var(--shadow-md);
+}
+
+.ds-fab-segment__btn--active:hover {
+  background: var(--bg-brand-hover);
+  color: var(--text-onbrand);
+}
+
+.ds-fab-segment__btn:active {
+  transform: scale(var(--press-scale));
+}
+
+/* 中性变体：白底激活态，适配 header 悬浮场景（灰底容器 + 白色滑块） */
+.ds-fab-segment--neutral {
+  box-shadow: none;
+  border: none;
+}
+
+.ds-fab-segment--neutral .ds-fab-segment__btn--active {
+  background: var(--bg-base-default);
+  color: var(--text-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-fab-segment--neutral .ds-fab-segment__btn--active:hover {
+  background: var(--bg-base-default);
+  color: var(--text-default);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-card — 统一卡片容器（登录页/管理端"我的"核心风格）
+   白底 + 中性细边框 + 大圆角 + 轻阴影，暗色模式自动跟随令牌
+   ═══════════════════════════════════════════════════════════════ */
+.ds-card {
+  background: var(--bg-base-default);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-card-large);
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-card--flat {
+  box-shadow: none;
+}
+
+.ds-card--interactive {
+  cursor: pointer;
+  transition: box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-card--interactive:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.ds-card--interactive:active {
+  transform: scale(0.99);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-alert — 反馈横幅（错误/警告/成功）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: var(--spacer-12);
+  border-radius: var(--radius-8);
+  font-size: var(--body-md-font-size);
+}
+
+.ds-alert--error {
+  background: var(--status-error-surface-l1);
+  color: var(--status-error-default);
+}
+
+.ds-alert--warning {
+  align-items: flex-start;
+  background: var(--status-warning-surface-l1);
+  color: var(--status-warning-default);
+}
+
+.ds-alert--success {
+  background: var(--status-success-surface-l1);
+  color: var(--status-success-default);
+}
+
+.ds-alert .icon {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-input / ds-select / ds-textarea — 原生表单控件基础样式
+   统一圆角、边框、背景、内距、字体、focus 态
+   ═══════════════════════════════════════════════════════════════ */
+.ds-input,
+.ds-select,
+.ds-textarea {
+  width: 100%;
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--ds-control-radius-md);
+  background: var(--bg-base-default);
+  padding: var(--spacer-6) var(--spacer-12);
+  font-family: var(--font-family-heading);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-default);
+  outline: none;
+  transition: border-color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-input:focus,
+.ds-select:focus,
+.ds-textarea:focus {
+  border-color: var(--border-neutral-l2);
+}
+
+.ds-input::placeholder,
+.ds-select::placeholder,
+.ds-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.ds-input {
+  height: var(--ds-control-height-md);
+  min-width: 0;
+}
+
+.ds-select {
+  height: var(--ds-control-height-md);
+  appearance: none;
+}
+
+.ds-textarea {
+  min-height: 96px;
+  padding: var(--spacer-8) var(--spacer-12);
+  resize: vertical;
+}
+
+.ds-input--sm {
+  height: var(--ds-control-height-sm);
+}
+
+.ds-input--secondary,
+.ds-select--secondary,
+.ds-textarea--secondary {
+  background: var(--bg-base-secondary);
+}
+
+.ds-input--mono {
+  font-family: var(--font-mono);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+}
+
+.ds-input--error,
+.ds-textarea--error {
+  border-color: var(--status-error-default);
+}
+
+.ds-field-error {
+  font-size: var(--body-xs-font-size);
+  color: var(--status-error-default);
+}
+
+.ds-textarea--mono {
+  font-family: var(--font-mono);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+}
+
+.ds-field-wrap {
+  display: flex;
+  min-height: var(--ds-control-height-md);
+  align-items: center;
+  gap: var(--spacer-8);
+  border: 1px solid var(--brand-glow-border);
+  border-radius: var(--ds-control-radius-md);
+  background: var(--bg-base-default);
+  padding: var(--spacer-6) var(--spacer-12);
+  box-shadow: var(--shadow-glow-sm);
+  transition: border-color var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease);
+}
+
+.ds-field-wrap:focus-within {
+  border-color: var(--brand-glow-border-strong);
+  box-shadow: var(--shadow-glow-input);
+}
+
+.ds-field-wrap input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-family-heading);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-default);
+  outline: none;
+}
+
+.ds-field-wrap input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.ds-field-wrap--secondary {
+  background: var(--bg-base-secondary);
+}
+
+.ds-field-wrap--error {
+  border-color: var(--status-error-default);
+  box-shadow: none;
+}
+
+/* 焦点光晕由外层 :focus-within 承担，内部 input 不再单独亮环 */
+.ds-field-wrap input:focus-visible {
+  outline: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-search-box — 品牌光晕搜索框（config 页/知识库统一）
+   默认态：品牌色 20% 边框 + 6% 外发光；聚焦态：40% 边框 + 12% 光环
+   ═══════════════════════════════════════════════════════════════ */
+.ds-search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: var(--ds-control-height-sm);
+  padding: var(--spacer-6) var(--ds-control-padding-x);
+  border: 1px solid var(--brand-glow-border);
+  border-radius: var(--search-radius);
+  background: var(--bg-base-default);
+  box-shadow: var(--shadow-glow-sm);
+  transition: border-color var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease);
+}
+
+.ds-search-box:focus-within {
+  border-color: var(--brand-glow-border-strong);
+  box-shadow: var(--shadow-glow-md);
+}
+
+/* 焦点提示由外层容器 :focus-within 承担，内部 input 不再单独亮环 */
+.ds-search-box input:focus-visible {
+  outline: none;
+}
+
+.ds-search-box--md {
+  min-height: var(--search-height);
+  padding-top: var(--spacer-8);
+  padding-bottom: var(--spacer-8);
+}
+
+.ds-search-box__icon {
+  flex-shrink: 0;
+  color: var(--icon-tertiary);
+}
+
+.ds-search-box__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-default);
+}
+
+.ds-search-box__input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-tab-underline — 标签页激活下划线（需置于 relative 父级内）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-tab-underline {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: var(--tab-underline-height);
+  border-radius: var(--tab-underline-radius);
+  background: var(--bg-brand);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-btn — 统一按钮系列（primary/secondary/ghost/danger-outline）
+   与 van-button 覆写共享同一套状态色与微交互（press 缩放/焦点环）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  height: var(--btn-height-md);
+  padding: 0 var(--spacer-16);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  color: var(--text-default);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-btn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+.ds-btn:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+.ds-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ds-btn .icon {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+.ds-btn--primary {
+  background: var(--bg-brand);
+  color: var(--text-onbrand);
+}
+
+.ds-btn--primary:hover:not(:disabled) {
+  background: var(--bg-brand-hover);
+}
+
+.ds-btn--primary:active:not(:disabled) {
+  background: var(--bg-brand-active);
+}
+
+.ds-btn--secondary {
+  background: var(--bg-base-secondary);
+  border-color: var(--border-neutral-l1);
+  color: var(--text-default);
+}
+
+.ds-btn--secondary:hover:not(:disabled) {
+  background: var(--bg-base-tertiary);
+}
+
+.ds-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ds-btn--ghost:hover:not(:disabled) {
+  background: var(--bg-overlay-l1);
+  color: var(--text-default);
+}
+
+.ds-btn--brand-outline {
+  background: transparent;
+  color: var(--bg-brand);
+  border-color: var(--bg-brand);
+}
+
+.ds-btn--brand-outline:hover:not(:disabled) {
+  background: var(--bg-brand-light);
+}
+
+.ds-btn--danger-outline {
+  background: transparent;
+  border-color: var(--status-error-default);
+  color: var(--status-error-default);
+}
+
+.ds-btn--danger-outline:hover:not(:disabled) {
+  background: var(--status-error-surface-l1);
+}
+
+.ds-btn--sm {
+  height: var(--btn-height-sm);
+  padding: 0 var(--spacer-12);
+  font-size: var(--body-sm-font-size);
+}
+
+.ds-btn--pill {
+  border-radius: var(--radius-full);
+}
+
+.ds-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ── 文字链接按钮（无边框无背景，主题色文字） ─────────────── */
+.ds-link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--spacer-4);
+  border: none;
+  background: transparent;
+  color: var(--text-brand);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  cursor: pointer;
+  transition: color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-link-btn:hover {
+  color: var(--text-brand-hover);
+}
+
+/* ── 品牌色圆形图标按钮（白底/品牌底 + 白色图标） ───────── */
+.ds-icon-btn--brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 35px;
+  height: 35px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--bg-brand);
+  color: var(--text-onbrand);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-icon-btn--brand:hover {
+  background: var(--bg-brand-hover);
+}
+
+.ds-icon-btn--brand:active {
+  transform: scale(var(--press-scale));
+}
+
+.ds-btn--loading {
+  pointer-events: none;
+  opacity: var(--opacity-disabled);
+}
+
+.ds-btn__spinner {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: ds-spin 0.8s linear infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-checkbox — 复选框（替代 van-checkbox）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-checkbox {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+  gap: var(--spacer-8);
+}
+
+.ds-checkbox__input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.ds-checkbox__box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--brand-glow-border);
+  border-radius: var(--radius-4);
+  background: var(--bg-base-default);
+  box-shadow: var(--shadow-glow-sm);
+  transition: background-color var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease);
+  flex-shrink: 0;
+}
+
+.ds-checkbox__input:checked + .ds-checkbox__box {
+  background: var(--bg-brand);
+  border-color: var(--bg-brand);
+}
+
+.ds-checkbox__input:checked + .ds-checkbox__box::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  border: 2px solid var(--text-onbrand);
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translateY(-1px);
+}
+
+.ds-checkbox__input:focus-visible + .ds-checkbox__box {
+  border-color: var(--brand-glow-border-strong);
+  box-shadow: var(--shadow-glow-input);
+}
+
+.ds-checkbox__input:disabled + .ds-checkbox__box {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-tabbar — 底部标签栏（替代 van-tabbar）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: var(--layout-max-width);
+  z-index: var(--z-fixed);
+  display: flex;
+  align-items: stretch;
+  height: var(--layout-tabbar-height);
+  background: var(--bg-base-default);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: var(--radius-card-large) var(--radius-card-large) 0 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.ds-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: var(--spacer-2);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
+  line-height: var(--body-xs-line-height);
+  transition: color var(--micro-duration) var(--micro-ease);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.ds-tabbar__item--active {
+  color: var(--ai-accent);
+}
+
+.ds-tabbar__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--micro-duration) var(--micro-ease);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-avatar — 统一头像（xs 28 / 默认 40 / md 64 / lg 96）
+   --brand 变体复用 AI 渐变头像语言（对话页 AI 头像）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--avatar-size-sm);
+  height: var(--avatar-size-sm);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--bg-overlay-l3);
+  color: var(--icon-default);
+}
+
+.ds-avatar--xs {
+  width: var(--avatar-size-xs);
+  height: var(--avatar-size-xs);
+}
+
+.ds-avatar--md {
+  width: var(--avatar-size-md);
+  height: var(--avatar-size-md);
+}
+
+.ds-avatar--lg {
+  width: var(--avatar-size-lg);
+  height: var(--avatar-size-lg);
+}
+
+.ds-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ds-avatar--brand {
+  background: var(--ai-avatar-gradient);
+  color: var(--text-onbrand);
+  box-shadow: var(--shadow-glow-avatar);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-bubble — 聊天气泡（AI-Native UI 规格，令牌见 tokens.css）
+   user：brand-100 底 + 右下 4px 收口；ai：灰底 + 品牌 10% 描边
+   ═══════════════════════════════════════════════════════════════ */
+.ds-bubble {
+  max-width: 78%;
+  padding: var(--bubble-padding-y) var(--bubble-padding-x);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.ds-bubble--user {
+  background: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+  border-radius: var(--bubble-radius-user);
+}
+
+.ds-bubble--ai {
+  max-width: 88%;
+  background: var(--ai-bubble-bg);
+  color: var(--ai-bubble-text);
+  border: 1px solid var(--ai-bubble-border);
+  border-radius: var(--bubble-radius-ai);
+  box-shadow: var(--shadow-xs);
+}
+
+.ds-bubble--ai-lg {
+  padding-top: var(--bubble-padding-y-lg);
+  padding-bottom: var(--bubble-padding-y-lg);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   skeleton-pulse — 骨架屏脉冲动画（全局共享）
+   从 ArticleManagement / KnowledgeList / ArticleDetail 提取
+   ═══════════════════════════════════════════════════════════════ */
+.skeleton-pulse {
+  animation: skeleton-pulse 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-tag — 状态标签（替代 van-tag）
+   变体：primary / success / warning / danger / default
+   修饰：plain（镂空）、round（全圆角）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-2);
+  height: var(--ds-control-height-xs);
+  padding: 0 var(--spacer-6);
+  border-radius: var(--radius-sm);
+  font-size: var(--body-xs-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.ds-tag--primary {
+  background: var(--status-primary-surface-l1);
+  color: var(--status-primary-default);
+  border-color: var(--status-primary-surface-l2);
+}
+
+.ds-tag--success {
+  background: var(--status-success-surface-l1);
+  color: var(--status-success-default);
+  border-color: var(--status-success-surface-l2);
+}
+
+.ds-tag--warning {
+  background: var(--status-warning-surface-l1);
+  color: var(--status-warning-default);
+  border-color: var(--status-warning-surface-l2);
+}
+
+.ds-tag--danger {
+  background: var(--status-error-surface-l1);
+  color: var(--status-error-default);
+  border-color: var(--status-error-surface-l2);
+}
+
+.ds-tag--default {
+  background: var(--bg-base-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border-neutral-l1);
+}
+
+.ds-tag--plain {
+  background: transparent;
+}
+
+.ds-tag--plain.ds-tag--primary {
+  background: transparent;
+  color: var(--status-primary-default);
+  border-color: var(--status-primary-default);
+}
+
+.ds-tag--plain.ds-tag--success {
+  background: transparent;
+  color: var(--status-success-default);
+  border-color: var(--status-success-default);
+}
+
+.ds-tag--plain.ds-tag--warning {
+  background: transparent;
+  color: var(--status-warning-default);
+  border-color: var(--status-warning-default);
+}
+
+.ds-tag--plain.ds-tag--danger {
+  background: transparent;
+  color: var(--status-error-default);
+  border-color: var(--status-error-default);
+}
+
+.ds-tag--plain.ds-tag--default {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-neutral-l1);
+}
+
+.ds-tag--round {
+  border-radius: var(--radius-full);
+}
+
+.ds-tag--md {
+  height: 22px;
+  padding: 0 var(--spacer-8);
+  font-size: var(--body-sm-font-size);
+}
+
+.ds-tag .icon {
+  width: var(--icon-size-12);
+  height: var(--icon-size-12);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-switch — 开关（替代 van-switch）
+   原生 checkbox + 视觉层，支持 v-model / :model-value
+   ═══════════════════════════════════════════════════════════════ */
+.ds-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ds-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ds-switch__track {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--bg-base-tertiary);
+  border: 1px solid var(--border-neutral-l1);
+  transition: background var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease);
+}
+
+.ds-switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--bg-white);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--micro-duration) var(--micro-ease);
+}
+
+.ds-switch__input:checked + .ds-switch__track {
+  background: var(--bg-brand);
+  border-color: var(--bg-brand);
+}
+
+.ds-switch__input:checked + .ds-switch__track .ds-switch__thumb {
+  transform: translateX(20px);
+}
+
+.ds-switch__input:disabled + .ds-switch__track {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.ds-switch__input:disabled ~ * {
+  cursor: not-allowed;
+}
+
+.ds-switch--sm {
+  width: 36px;
+  height: 20px;
+}
+
+.ds-switch--sm .ds-switch__thumb {
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+}
+
+.ds-switch--sm .ds-switch__input:checked + .ds-switch__track .ds-switch__thumb {
+  transform: translateX(16px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-popup — 底部弹出面板（替代 van-popup position="bottom"）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop);
+  background: var(--bg-overlay-l3);
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.ds-popup-backdrop--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ds-popup {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-modal);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-base-default);
+  border-radius: var(--radius-16) var(--radius-16) 0 0;
+  box-shadow: var(--shadow-xl);
+  transform: translateY(0);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.ds-popup--hidden {
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-loading — 加载指示器（替代 van-loading）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-loading {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-8);
+  color: var(--text-tertiary);
+}
+
+.ds-loading__spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-neutral-l1);
+  border-top-color: var(--bg-brand);
+  border-radius: var(--radius-full);
+  animation: ds-spin 0.8s linear infinite;
+}
+
+.ds-loading--sm .ds-loading__spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.ds-loading__text {
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  color: var(--text-tertiary);
+}
+
+@keyframes ds-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-loading__spinner {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-dialog — 确认对话框（替代 van-dialog / showConfirmDialog）
+   ═══════════════════════════════════════════════════════════════ */
+.ds-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop);
+  background: var(--bg-overlay-l3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacer-24);
+}
+
+.ds-dialog {
+  width: 100%;
+  max-width: 320px;
+  background: var(--bg-base-default);
+  border-radius: var(--radius-16);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+.ds-dialog__header {
+  padding: var(--spacer-24) var(--spacer-24) 0;
+  font-size: var(--heading-sm-font-size);
+  font-weight: var(--font-weight-strong);
+  line-height: var(--heading-sm-line-height);
+  color: var(--text-default);
+  text-align: center;
+}
+
+.ds-dialog__body {
+  padding: var(--spacer-12) var(--spacer-24);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: pre-line;
+}
+
+.ds-dialog__footer {
+  display: flex;
+  border-top: 1px solid var(--border-neutral-l1);
+}
+
+.ds-dialog__btn {
+  flex: 1;
+  height: var(--ds-control-height-lg);
+  border: none;
+  background: transparent;
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--micro-duration) var(--micro-ease);
+}
+
+.ds-dialog__btn--cancel {
+  color: var(--text-secondary);
+  border-right: 1px solid var(--border-neutral-l1);
+}
+
+.ds-dialog__btn--cancel:hover {
+  background: var(--bg-overlay-l1);
+}
+
+.ds-dialog__btn--confirm {
+  color: var(--bg-brand);
+}
+
+.ds-dialog__btn--confirm:hover {
+  background: var(--bg-overlay-l1);
+}
+
+.ds-dialog__btn--danger {
+  color: var(--status-error-default);
+}
+
+.ds-dialog__btn--danger:hover {
+  background: var(--status-error-surface-l1);
+}
+
+/* ── ds-toast-icon — toast 内图标 ─────────────── */
+.ds-toast-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  text-align: center;
+  line-height: 16px;
+  flex-shrink: 0;
+}
+
+.ds-toast-icon--success {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--status-success-surface-l2);
+  border-top-color: var(--status-success-default);
+  border-radius: 50%;
+  animation: ds-spin 600ms linear infinite;
+}
+
+/* ── ds-toast / ds-dialog Vue Transition 动画 ─────────────── */
+.ds-toast-enter-active,
+.ds-toast-leave-active {
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.ds-toast-enter-from,
+.ds-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+}
+
+.ds-dialog-enter-active,
+.ds-dialog-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.ds-dialog-enter-from,
+.ds-dialog-leave-to {
+  opacity: 0;
+}
+
+.ds-dialog-enter-active .ds-dialog,
+.ds-dialog-leave-active .ds-dialog {
+  transition: transform 200ms ease;
+}
+
+.ds-dialog-enter-from .ds-dialog {
+  transform: scale(0.95);
+}
+
+.ds-dialog-leave-to .ds-dialog {
+  transform: scale(0.95);
+}

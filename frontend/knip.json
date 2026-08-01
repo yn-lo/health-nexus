@@ -1,0 +1,11 @@
+{
+  "entry": ["src/chat/main.ts", "src/staff/main.ts"],
+  "project": ["src/**/*.ts", "src/**/*.vue"],
+  "ignore": [
+    "src/shared/types/**",
+    "src/**/*.d.ts"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreBinaries": [],
+  "ignoreDependencies": []
+}

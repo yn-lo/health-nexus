@@ -1,0 +1,605 @@
+@import './tokens.css';
+@import 'tailwindcss';
+@import './components.css';
+
+/* ── MiSans 字体 ──────────────────────────────────────────── */
+@font-face {
+  font-family: 'MiSans';
+  src: url('../fonts/MiSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: url('../fonts/MiSans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: url('../fonts/MiSans-Demibold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ────────────────────────────────────────────────────────────
+ * Tailwind 4 主题映射：原子类引用设计令牌
+ * 使用 @theme inline 让 Tailwind 生成对应工具类（bg-brand / text-default / shadow-md 等）
+ * ──────────────────────────────────────────────────────────── */
+@theme inline {
+  /* ── 颜色：品牌主色 ── */
+  --color-brand: var(--bg-brand);
+  --color-brand-hover: var(--bg-brand-hover);
+  --color-brand-active: var(--bg-brand-active);
+  --color-brand-pressed: var(--bg-brand-pressed);
+  --color-brand-disabled: var(--bg-brand-disabled);
+  --color-brand-light: var(--bg-brand-light);
+  --color-brand-popup: var(--bg-brand-popup);
+  --color-brand-text: var(--text-brand);
+
+  /* ── 颜色：背景层级 ── */
+  --color-base: var(--bg-base-default);
+  --color-surface: var(--bg-base-secondary);
+  --color-surface-variant: var(--bg-base-tertiary);
+  --color-overlay: var(--bg-overlay-l1);
+  --color-overlay-2: var(--bg-overlay-l2);
+  --color-overlay-3: var(--bg-overlay-l3);
+  --color-overlay-4: var(--bg-overlay-l4);
+  --color-menu: var(--bg-menu);
+  --color-tooltip: var(--bg-tooltip);
+  --color-invert: var(--bg-invert);
+
+  /* ── 颜色：文本 ── */
+  --color-text: var(--text-default);
+  --color-text-hover: var(--text-default-hover);
+  --color-text-active: var(--text-default-active);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-disabled: var(--text-disabled);
+  --color-text-brand: var(--text-brand);
+  --color-text-brand-hover: var(--text-brand-hover);
+  --color-onbrand: var(--text-onbrand);
+  --color-onaccent: var(--text-onaccent);
+
+  /* ── 颜色：图标 ── */
+  --color-icon: var(--icon-default);
+  --color-icon-secondary: var(--icon-secondary);
+  --color-icon-tertiary: var(--icon-tertiary);
+  --color-icon-disabled: var(--icon-disabled);
+  --color-icon-brand: var(--icon-brand);
+  --color-icon-onbrand: var(--icon-onbrand);
+
+  /* ── 颜色：边框 ── */
+  --color-border: var(--border-neutral-l1);
+  --color-border-strong: var(--border-neutral-l2);
+  --color-border-stronger: var(--border-neutral-l3);
+  --color-border-brand: var(--border-brand);
+  --color-border-contrast: var(--border-contrast);
+
+  /* ── 颜色：状态 ── */
+  --color-success: var(--status-success-default);
+  --color-success-hover: var(--status-success-hover);
+  --color-success-surface: var(--status-success-surface-l1);
+  --color-warning: var(--status-alert-default);
+  --color-warning-hover: var(--status-alert-hover);
+  --color-warning-surface: var(--status-alert-surface-l1);
+  --color-error: var(--status-error-default);
+  --color-error-hover: var(--status-error-hover);
+  --color-error-surface: var(--status-error-surface-l1);
+  --color-info: var(--status-primary-default);
+  --color-info-hover: var(--status-primary-hover);
+  --color-info-surface: var(--status-primary-surface-l1);
+
+  /* ── 颜色：辅助色（图表/标签） ── */
+  --color-accent-teal: var(--accent-teal);
+  --color-accent-coral: var(--accent-coral);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-lime: var(--accent-lime);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-magenta: var(--accent-magenta);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-slate: var(--accent-slate);
+
+  /* ── 颜色：品牌色阶（50-950） ── */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+
+  /* ── 颜色：中性灰阶 ── */
+  --color-grey-50: var(--brand-grey-50);
+  --color-grey-100: var(--brand-grey-100);
+  --color-grey-200: var(--brand-grey-200);
+  --color-grey-300: var(--brand-grey-300);
+  --color-grey-400: var(--brand-grey-400);
+  --color-grey-500: var(--brand-grey-500);
+  --color-grey-600: var(--brand-grey-600);
+  --color-grey-700: var(--brand-grey-700);
+  --color-grey-800: var(--brand-grey-800);
+  --color-grey-900: var(--brand-grey-900);
+  --color-grey-950: var(--brand-grey-950);
+
+  /* ── 圆角 ── */
+  --radius-card: var(--radius-12);
+  --radius-card-soft: var(--radius-card-soft);
+  --radius-card-large: var(--radius-card-large);
+  --radius-btn: var(--radius-8);
+  --radius-input: var(--radius-8);
+  --radius-full: var(--radius-full);
+  --radius-pill: var(--radius-pill);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  /* ── 间距 ── */
+  --spacing-page: var(--spacer-16);
+  --spacing-card: var(--spacer-16);
+  --spacing-gap: var(--spacer-12);
+  --spacing-xs: var(--spacer-4);
+  --spacing-sm: var(--spacer-8);
+  --spacing-md: var(--spacer-12);
+  --spacing-lg: var(--spacer-16);
+  --spacing-xl: var(--spacer-24);
+  --spacing-2xl: var(--spacer-32);
+
+  /* ── 字体 ── */
+  --font-family-sans: var(--font-family-default);
+  --font-family-heading: var(--font-family-heading);
+  --font-family-metric: var(--font-family-metric);
+  --font-heading: var(--font-family-heading);
+  --font-metric: var(--font-family-metric);
+  --font-weight-medium: var(--font-weight-medium);
+  --font-weight-strong: var(--font-weight-strong);
+
+  /* ── 字号 + 行高 ── */
+  --text-body-xs: var(--body-xs-font-size);
+  --text-body-xs--line-height: var(--body-xs-line-height);
+  --text-body-xs-strong: var(--body-xs-strong-font-size);
+  --text-body-xs-strong--line-height: var(--body-xs-strong-line-height);
+  --text-body-sm: var(--body-sm-font-size);
+  --text-body-sm--line-height: var(--body-sm-line-height);
+  --text-body-sm-strong: var(--body-sm-strong-font-size);
+  --text-body-sm-strong--line-height: var(--body-sm-strong-line-height);
+  --text-body-md: var(--body-md-font-size);
+  --text-body-md--line-height: var(--body-md-line-height);
+  --text-body-md-strong: var(--body-md-strong-font-size);
+  --text-body-md-strong--line-height: var(--body-md-strong-line-height);
+  --text-body-base: var(--body-base-font-size);
+  --text-body-base--line-height: var(--body-base-line-height);
+  --text-body-base-strong: var(--body-base-strong-font-size);
+  --text-body-base-strong--line-height: var(--body-base-strong-line-height);
+  --text-body-lg: var(--body-lg-font-size);
+  --text-body-lg--line-height: var(--body-lg-line-height);
+  --text-heading-3xs: var(--heading-3xs-font-size);
+  --text-heading-3xs--line-height: var(--heading-3xs-line-height);
+  --text-heading-2xs: var(--heading-2xs-font-size);
+  --text-heading-2xs--line-height: var(--heading-2xs-line-height);
+  --text-heading-xs: var(--heading-xs-font-size);
+  --text-heading-xs--line-height: var(--heading-xs-line-height);
+  --text-heading-sm: var(--heading-sm-font-size);
+  --text-heading-sm--line-height: var(--heading-sm-line-height);
+  --text-heading-md: var(--heading-md-font-size);
+  --text-heading-md--line-height: var(--heading-md-line-height);
+  --text-heading-lg: var(--heading-lg-font-size);
+  --text-heading-lg--line-height: var(--heading-lg-line-height);
+  --text-heading-xl: var(--heading-xl-font-size);
+  --text-heading-xl--line-height: var(--heading-xl-line-height);
+  --text-heading-2xl: var(--heading-2xl-font-size);
+  --text-heading-2xl--line-height: var(--heading-2xl-line-height);
+  --text-heading-3xl: var(--heading-3xl-font-size);
+  --text-heading-3xl--line-height: var(--heading-3xl-line-height);
+  --text-heading-display: var(--heading-display-font-size);
+  --text-heading-display--line-height: var(--heading-display-line-height);
+  --text-heading-display-sm: var(--heading-display-sm-font-size);
+  --text-heading-display-sm--line-height: var(--heading-display-sm-line-height);
+  --text-reading: var(--reading-font-size);
+  --text-reading--line-height: var(--reading-line-height);
+
+  /* ── 阴影 ── */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-brand: var(--shadow-brand);
+  --shadow-card-menu: var(--shadow-card-menu);
+
+  /* ── z-index 层级 ── */
+  --z-dropdown: var(--z-dropdown);
+  --z-sticky: var(--z-sticky);
+  --z-fixed: var(--z-fixed);
+  --z-modal-backdrop: var(--z-modal-backdrop);
+  --z-modal: var(--z-modal);
+  --z-popover: var(--z-popover);
+  --z-toast: var(--z-toast);
+  --z-tooltip: var(--z-tooltip);
+  --z-notification: var(--z-notification);
+
+  /* ── 动效 ── */
+  --duration-fast: var(--duration-fast);
+  --duration-normal: var(--duration-normal);
+  --duration-slow: var(--duration-slow);
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --transition-fast: var(--transition-fast);
+  --transition-normal: var(--transition-normal);
+  --transition-slow: var(--transition-slow);
+}
+
+/* Vant 4 主题变量映射通过 App.vue 的 <van-config-provider :theme-vars> 注入
+ * ConfigProvider 通过内联 style 设置变量，优先级最高，确保覆盖 Vant 默认蓝色
+ * 详见 src/chat/App.vue 和 src/staff/App.vue */
+
+/* ────────────────────────────────────────────────────────────
+ * Vant 层外修复（必须置于任何 @layer 之外）
+ * vant/lib/index.css 整体不在级联层内，按 CSS 规范层外样式优先于
+ * @layer 内样式，故 @layer components 中的同属性覆写不会生效：
+ * 主题变量走 ConfigProvider（shared/constants/vant-theme.ts），
+ * 变量无法到达的属性修复放在此处，靠加载顺序（main.css 在 vant 之后）
+ * 与更高特异性覆盖 Vant 默认值。
+ * ──────────────────────────────────────────────────────────── */
+/* van-tag 比例：11px 字号 + 16px 行高 + 4px 垂直 padding = 24px 实际高度，
+ * 与 32px small 按钮高差 8px，宽高比例协调 */
+.van-tag {
+  min-height: 22px;
+  box-sizing: border-box;
+}
+/* textarea 字段：Vant 的 .van-cell padding 与 .van-field__control height/padding/resize
+ * 均为层外声明，@layer 内同属性覆写会被压制，故整组置于层外。
+ * 内边距仅由 cell 统一提供（四周 12px），控件 padding 置 0 避免双重叠加 */
+.van-cell.van-field.van-field--textarea {
+  height: auto;
+  min-height: auto;
+  align-items: flex-start;
+  padding: var(--spacer-12) var(--ds-control-padding-x);
+  overflow: visible;
+}
+.van-cell.van-field.van-field--textarea .van-cell__value {
+  height: auto;
+  overflow: visible;
+}
+.van-cell.van-field.van-field--textarea .van-field__body {
+  height: auto;
+  align-items: flex-start;
+}
+.van-cell.van-field.van-field--textarea .van-field__control {
+  height: auto;
+  padding: 0;
+  line-height: var(--body-base-line-height);
+  resize: vertical;
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 基础样式
+ * ──────────────────────────────────────────────────────────── */
+body {
+  background: var(--bg-base-secondary);
+  color: var(--text-default);
+  font-family: var(--font-family-default);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* 手机端隐藏全局滚动条，避免 sticky header 偏移 */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+body::-webkit-scrollbar {
+  display: none;
+}
+
+/* 无障碍焦点环：键盘导航时显示 */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* 滚动条隐藏工具类 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* tabular-nums 工具类（metric 字体数字等宽） */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* hero-orb 品牌渐变球 */
+.hero-orb {
+  background: linear-gradient(135deg, var(--bg-brand) 0%, var(--bg-brand-hover) 100%);
+  box-shadow: var(--shadow-brand);
+}
+
+/* ds-tabbar 图标状态色（DsTabBar 共享） */
+.tab-icon-active { color: var(--bg-brand); }
+.tab-icon-inactive { color: var(--text-tertiary); }
+
+/* ────────────────────────────────────────────────────────────
+ * Vant 组件全局覆写（@layer components）
+ * 统一控件高度/圆角/内距/对齐，页面 scoped css 只写装饰
+ * 令牌来源：tokens.css --ds-control-*
+ * ──────────────────────────────────────────────────────────── */
+@layer components {
+  /* ── van-field 输入框 ──────────────────────────────────── */
+  .van-cell.van-field {
+    display: flex;
+    align-items: center;
+    height: var(--ds-control-height-md);
+    padding: 0 var(--ds-control-padding-x);
+    border-radius: var(--ds-control-radius-md);
+    font-size: var(--ds-control-font-size);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .van-field .van-cell__value {
+    height: 100%;
+  }
+  .van-field .van-field__body {
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+  .van-field .van-field__control {
+    font-size: var(--ds-control-font-size);
+    line-height: var(--body-base-line-height);
+    height: 100%;
+  }
+  /* textarea 字段的整组覆写在文件顶部层外区域
+   * （@layer 内覆写会被 vant.css 层外同属性规则压制） */
+  .van-field .van-field__left-icon,
+  .van-field .van-field__right-icon {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    font-size: var(--ds-control-icon-size);
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .van-field .van-field__left-icon {
+    margin-right: var(--ds-control-gap);
+  }
+  .van-field .van-field__right-icon {
+    margin-left: var(--ds-control-gap);
+  }
+  /* ── van-button 按钮 ───────────────────────────────────── */
+  .van-button {
+    min-height: var(--ds-control-height-md);
+    border-radius: var(--ds-control-radius-md);
+    font-weight: var(--font-weight-medium);
+    border: 1px solid var(--border-neutral-l1);
+    background: var(--bg-base-secondary);
+    transition: background-color var(--micro-duration) var(--micro-ease),
+                border-color var(--micro-duration) var(--micro-ease);
+  }
+  .van-button__content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacer-4);
+    white-space: nowrap;
+  }
+  .van-button__text {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacer-4);
+    white-space: nowrap;
+  }
+  .van-button--mini {
+    min-height: var(--ds-control-height-sm);
+    border-radius: var(--ds-control-radius-sm);
+    font-size: var(--body-xs-strong-font-size);
+    padding: 0 var(--spacer-8);
+  }
+  .van-button--small {
+    min-height: var(--ds-control-height-sm);
+    border-radius: var(--ds-control-radius-sm);
+  }
+  .van-button:hover {
+    background: var(--bg-overlay-l1);
+  }
+  .van-button:active {
+    background: var(--bg-overlay-l2);
+  }
+  .van-button--primary {
+    background: var(--ai-accent);
+    border-color: var(--ai-accent);
+  }
+  .van-button--primary:hover {
+    background: var(--ai-accent);
+    border-color: var(--ai-accent);
+  }
+  .van-button--primary:active {
+    background: var(--bg-brand-active);
+    border-color: var(--bg-brand-active);
+  }
+  .van-button--default {
+    border-color: var(--border-neutral-l2);
+    color: var(--text-default);
+  }
+  .van-button--default:hover {
+    background: var(--bg-overlay-l1);
+  }
+  .van-button--default:active {
+    background: var(--bg-overlay-l2);
+  }
+  .van-button--plain {
+    background: transparent;
+  }
+  .van-button--plain:hover {
+    background: var(--bg-overlay-l1);
+  }
+  .van-button--plain:active {
+    background: var(--bg-overlay-l2);
+  }
+
+  /* ── van-cell 单元格 ───────────────────────────────────── */
+  .van-cell {
+    min-height: var(--ds-control-height-md);
+    padding: var(--spacer-8) var(--ds-control-padding-x);
+    font-size: var(--ds-control-font-size);
+    border-radius: var(--ds-control-radius-md);
+  }
+  .van-cell::after {
+    border-color: var(--border-brand);
+  }
+
+  /* ── van-cell-group inset 主题色边框 ───────────────────── */
+  .van-cell-group--inset {
+    border: 1px solid var(--border-brand);
+    border-radius: var(--ds-control-radius-md);
+    overflow: hidden;
+  }
+
+  /* ── van-popup 弹窗 ────────────────────────────────────── */
+  .van-popup--bottom.van-popup--round {
+    border-radius: var(--ds-control-radius-lg) var(--ds-control-radius-lg) 0 0;
+  }
+
+  /* ── van-tab 标签 ──────────────────────────────────────── */
+  .van-tab {
+    font-size: var(--body-base-font-size);
+    transition: color var(--micro-duration) var(--micro-ease);
+  }
+  .van-tab--active {
+    color: var(--ai-accent);
+    font-weight: var(--font-weight-strong);
+  }
+  .van-tabs__line {
+    background: var(--ai-accent);
+  }
+
+  /* ── van-tabbar 底部导航 ────────────────────────────────── */
+  .van-tabbar {
+    height: var(--layout-tabbar-height);
+  }
+  .van-tabbar-item--active {
+    color: var(--ai-accent);
+  }
+
+  /* ── van-toast ──────────────────────────────────────────── */
+  .van-toast {
+    border-radius: var(--ds-control-radius-md);
+  }
+
+  /* ── van-search 搜索框 ─────────────────────────────────── */
+  .van-search .van-field {
+    min-height: var(--ds-control-height-sm);
+    border-radius: var(--ds-control-radius-pill);
+  }
+
+  /* ── van-radio / van-checkbox ───────────────────────────── */
+  .van-radio__icon--checked .van-icon,
+  .van-checkbox__icon--checked .van-icon {
+    background: var(--ai-accent);
+    border-color: var(--ai-accent);
+  }
+
+  /* ── van-tag 标签 ────────────────────────────────────────
+   * 字号/圆角/内距走 vant-theme.ts 主题变量，高度走层外 min-height */
+  .van-tag {
+    font-weight: var(--font-weight-medium);
+  }
+
+  /* ── van-loading 加载指示器 ─────────────────────────────── */
+  .van-loading__spinner .van-loading__dot {
+    fill: var(--ai-accent);
+  }
+  .van-loading__text {
+    color: var(--text-tertiary);
+    font-size: var(--body-sm-font-size);
+  }
+
+  /* ── van-dialog 对话框 ─────────────────────────────────── */
+  .van-dialog {
+    border-radius: var(--ds-control-radius-lg);
+  }
+  .van-dialog__header {
+    font-weight: var(--font-weight-strong);
+  }
+  .van-dialog__confirm {
+    color: var(--ai-accent);
+    font-weight: var(--font-weight-strong);
+  }
+  .van-dialog__cancel {
+    color: var(--text-tertiary);
+  }
+
+  /* ── van-action-sheet 操作菜单 ──────────────────────────── */
+  .van-action-sheet {
+    border-radius: var(--ds-control-radius-lg) var(--ds-control-radius-lg) 0 0;
+  }
+  .van-action-sheet__item {
+    height: var(--ds-control-height-md);
+    font-size: var(--ds-control-font-size);
+    color: var(--text-default);
+  }
+  .van-action-sheet__cancel {
+    color: var(--text-tertiary);
+  }
+  .van-action-sheet__gap {
+    background: var(--bg-base-secondary);
+  }
+
+  /* ── van-swipe-cell 滑动单元格 ──────────────────────────── */
+  .van-swipe-cell__right .van-button--danger {
+    background: var(--status-error-default);
+    border-color: var(--status-error-default);
+  }
+
+  /* ── van-list 加载列表 ──────────────────────────────────── */
+  .van-list__loading .van-loading__spinner .van-loading__dot {
+    fill: var(--ai-accent);
+  }
+  .van-list__loading-text {
+    color: var(--text-tertiary);
+    font-size: var(--body-sm-font-size);
+  }
+
+  /* ── van-pull-refresh 下拉刷新 ──────────────────────────── */
+  .van-pull-refresh__head {
+    color: var(--text-tertiary);
+    font-size: var(--body-sm-font-size);
+  }
+  .van-pull-refresh__loading .van-loading__dot {
+    fill: var(--ai-accent);
+  }
+
+  /* ── van-switch 开关 ────────────────────────────────────── */
+  .van-switch--on {
+    background: var(--ai-accent);
+  }
+  .van-switch--disabled {
+    opacity: 0.5;
+  }
+
+  /* ── 全局 focus-visible（A11y） ─────────────────────────── */
+  .van-field:focus-within {
+    box-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  }
+  .van-button:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}
+
+/* .ds-pill 定义已迁移至 components.css（统一令牌源） */

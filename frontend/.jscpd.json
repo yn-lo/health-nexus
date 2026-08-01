@@ -1,0 +1,14 @@
+{
+  "threshold": 8,
+  "reporters": ["consoleFull"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.d.ts",
+    "**/tests/**",
+    "**/scripts/**"
+  ],
+  "format": ["typescript", "javascript", "vue"],
+  "minLines": 5,
+  "minTokens": 50
+}

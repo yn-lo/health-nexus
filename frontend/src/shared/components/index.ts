@@ -1,0 +1,20 @@
+// ── 公共组件（从设计稿提取） ──
+export { default as PageShell } from './PageShell.vue'
+export { default as AppHeader } from './AppHeader.vue'
+export { default as BrandLogo } from './BrandLogo.vue'
+export { default as SectionHeading } from './SectionHeading.vue'
+export { default as QuickActionGrid } from './QuickActionGrid.vue'
+export { default as QuickActionItem } from './QuickActionItem.vue'
+export { default as MenuList } from './MenuList.vue'
+export { default as MenuRow } from './MenuRow.vue'
+export { default as StatRow } from './StatRow.vue'
+export { default as ProfileHeader } from './ProfileHeader.vue'
+export { default as DisclaimerFooter } from './DisclaimerFooter.vue'
+export { default as EmptyState } from './EmptyState.vue'
+export { default as DepartmentTabs } from './DepartmentTabs.vue'
+export { default as PasswordStrength } from './PasswordStrength.vue'
+
+// ── 保留组件 ──
+export { default as DsTabBar } from './DsTabBar.vue'
+export { default as DsPopup } from './DsPopup.vue'
+export { default as DsFeedbackLayer } from './DsFeedbackLayer.vue'

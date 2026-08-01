@@ -1,0 +1,79 @@
+# Health Nexus 根级 .dockerignore
+# 构建上下文为项目根目录（docker build .）
+# 排除不需要入镜像的文件，减小构建上下文体积
+
+# ---- VCS ----
+.git/
+.gitignore
+.gitattributes
+
+# ---- IDE / 编辑器 ----
+.trae/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- 密钥 / 凭证（禁止进入镜像）----
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+config.local.yaml
+backend/config/keys/
+
+# ---- 构建产物 ----
+frontend/node_modules/
+frontend/components.d.ts
+frontend/dist/
+backend/bin/
+*.tsbuildinfo
+
+# ---- 测试产物 ----
+frontend/test-results/
+frontend/playwright-report/
+backend/tests/
+backend/coverage.out
+backend/coverage.html
+.coverage
+*.test
+*.out
+coverage.*
+
+# ---- Harness / 工程化工具（开发时用，不需入镜像）----
+.harness/
+.code-review-graph/
+graphify-out/
+backend/.arch-lint.yml
+backend/.golangci.yml
+backend/.air.toml
+
+# ---- 文档 ----
+*.md
+docs/
+LICENSE
+README.md
+
+# ---- Docker 自身文件 ----
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# ---- OS 垃圾 ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---- Python 缓存（skills 脚本遗留）----
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# ---- 临时文件 ----
+*.log
+*.tmp
+*.bak

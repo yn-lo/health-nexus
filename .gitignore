@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Environments
+.env
+.env.local
+.env.dev
+.env.prod
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+backend/.env
+
+# JWT signing keys (敏感文件，禁止入库)
+backend/jwt-signing.pem
+backend/jwt-signing.pub
+
+# Database backups
+backups/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# test
+.playwright-cli/
+.pytest_cache/
+.coverage
+frontend/test-results/
+frontend/playwright-report/
+
+# media
+mediafiles/
+
+# custom
+htmlcov/
+
+.ruff_cache/
+.mypy_cache/
+.claude/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+# Added by code-review-graph
+.code-review-graph/
+
+# e2e
+.playwright/
+graphify-out/
+.edge-tmp/

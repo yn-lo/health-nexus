@@ -1,0 +1,82 @@
+server:
+  port: 8080
+  read_timeout: 15s
+  shutdown_timeout: 10s
+  # 信任的反向代理 CIDR（D-MED-02 修复）。
+  # 仅当 RemoteAddr 命中此列表时才解析 X-Forwarded-For；生产部署在反代后应配置反代所在网段。
+  # 空列表表示不信任任何代理，直接用 RemoteAddr 作为客户端 IP（XFF 被忽略，防伪造）。
+  trusted_proxies:
+    - "127.0.0.1/8"
+    - "::1/128"
+
+postgres:
+  dsn: "postgres://health:health@localhost:5432/health_nexus?sslmode=disable"
+  max_conns: 25
+  min_conns: 5
+  max_conn_lifetime: 1h
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret: "dev-jwt-secret-change-in-production"
+  access_ttl: 30m
+  refresh_ttl: 168h
+  issuer: "health-nexus"
+
+llm:
+  base_url: "https://apihub.agnes-ai.com/v1"
+  # API Key 请通过环境变量 HEALTH_NEXUS_LLM_API_KEY 配置，或通过管理后台 AI Provider 页面添加。
+  api_key: ""
+  chat_model: "agnes-2.0-flash"
+  rewrite_model: "agnes-2.0-flash"
+  # agnes 不提供 embedding，主字段仅作向后兼容默认；实际 embedding 走下方 embedding 子配置。
+  embedding_model: "text-embedding-3-small"
+  timeout: 60s
+  # 分离的 provider 配置。零值字段回退到主配置。
+  # API Key 请通过环境变量配置（HEALTH_NEXUS_LLM_EMBEDDING_API_KEY 等），或通过管理后台添加。
+  # embedding：硅基流动 BAAI/bge-m3
+  embedding:
+    base_url: "https://api.siliconflow.cn/v1"
+    api_key: ""
+    model: "BAAI/bge-m3"
+    timeout: 60s
+  # rerank：硅基流动 BAAI/bge-reranker-v2-m3（独立 /v1/rerank endpoint，非 OpenAI 兼容）
+  rerank:
+    base_url: "https://api.siliconflow.cn/v1"
+    api_key: ""
+    model: "BAAI/bge-reranker-v2-m3"
+    timeout: 60s
+  # rewrite：智谱 glm-4.7-flash 小模型，用于查询改写
+  rewrite:
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    api_key: ""
+    model: "glm-4.7-flash"
+    timeout: 30s
+
+cors:
+  allowed_origins:
+    - "http://localhost:5173"
+    - "http://localhost:5174"
+  # 凭证模式（cookie 跨站）。安全约束：AllowedOrigins 含 "*" 时禁止 true，
+  # middleware.CORS 构造阶段会 panic 阻止启动。
+  allow_credentials: true
+
+argon2:
+  memory: 65536
+  iterations: 3
+  parallelism: 2
+  salt_length: 16
+  key_length: 32
+
+security:
+  encryption_key: "dev-encryption-key-change-in-production"
+
+rate_limit:
+  auth_login: 10
+  auth_register: 10
+  auth_refresh: 10
+  chat_stream: 20
+  chat_stream_anon: 5

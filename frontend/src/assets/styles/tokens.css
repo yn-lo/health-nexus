@@ -1,0 +1,626 @@
+/**
+ * Health Nexus Design Tokens
+ * 统一令牌源 — 从 design/colors_and_type.css 迁移
+ * 全项目颜色/间距/圆角/字号/字重/阴影/层级/动效唯一来源，禁止视图硬编码
+ *
+ * 令牌分层架构：
+ *   primitive（原始值）→ semantic（语义别名）→ component（组件别名）
+ *   - primitive：--bg-brand / --text-default / --spacer-16 等原子值
+ *   - semantic：--color-primary / --color-foreground / --spacing-page 等业务语义
+ *   - component：通过 @theme inline 暴露给 Tailwind，通过 :root 暴露给 Vant
+ */
+
+:root {
+  /* ── radius ────────────────────────────────────────────── */
+  --radius-0: 0px;
+  --radius-2: 2px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-24: 24px;
+  --radius-32: 32px;
+  --radius-full: 999px;
+  --radius-xs: var(--radius-2);
+  --radius-sm: var(--radius-4);
+  --radius-md: var(--radius-6);
+  --radius-lg: var(--radius-8);
+  --radius-xl: var(--radius-10);
+  --radius-pill: var(--radius-full);
+  --border-width-default: 1px;
+  --border-width-strong: 2px;
+
+  /* ── spacers ───────────────────────────────────────────── */
+  --spacer-0: 0px;
+  --spacer-2: 2px;
+  --spacer-3: 3px;
+  --spacer-4: 4px;
+  --spacer-6: 6px;
+  --spacer-8: 8px;
+  --spacer-10: 10px;
+  --spacer-12: 12px;
+  --spacer-16: 16px;
+  --spacer-20: 20px;
+  --spacer-24: 24px;
+  --spacer-32: 32px;
+  --spacer-40: 40px;
+  --spacer-48: 48px;
+  --spacer-64: 64px;
+
+  /* ── icon sizes ────────────────────────────────────────── */
+  --icon-size-12: 12px;
+  --icon-size-14: 14px;
+  --icon-size-16: 16px;
+  --icon-size-20: 20px;
+  --icon-size-24: 24px;
+  --icon-size-32: 32px;
+  --icon-size-48: 48px;
+
+  /* ── font families ─────────────────────────────────────── */
+  --font-family-default: "MiSans", "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-family-heading: "MiSans", "SF Pro", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-family-metric: "Inter", "MiSans", "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --font-weight-default: 400;
+  --font-weight-code: 450;
+  --font-weight-medium: 500;
+  --font-weight-strong: 600;
+
+  /* ── body typography ───────────────────────────────────── */
+  --body-xs-font-family: var(--font-family-default);
+  --body-xs-font-size: 10px;
+  --body-xs-font-weight: 400;
+  --body-xs-line-height: 14px;
+  --body-xs-letter-spacing: 0;
+  --body-xs-strong-font-family: var(--font-family-default);
+  --body-xs-strong-font-size: 10px;
+  --body-xs-strong-font-weight: 500;
+  --body-xs-strong-line-height: 14px;
+  --body-xs-strong-letter-spacing: 0;
+
+  --body-sm-font-family: var(--font-family-default);
+  --body-sm-font-size: 11px;
+  --body-sm-font-weight: 400;
+  --body-sm-line-height: 16px;
+  --body-sm-letter-spacing: 0;
+  --body-sm-strong-font-family: var(--font-family-default);
+  --body-sm-strong-font-size: 11px;
+  --body-sm-strong-font-weight: 500;
+  --body-sm-strong-line-height: 16px;
+  --body-sm-strong-letter-spacing: 0;
+
+  --body-md-font-family: var(--font-family-default);
+  --body-md-font-size: 12px;
+  --body-md-font-weight: 400;
+  --body-md-line-height: 18px;
+  --body-md-letter-spacing: 0;
+  --body-md-strong-font-family: var(--font-family-default);
+  --body-md-strong-font-size: 12px;
+  --body-md-strong-font-weight: 500;
+  --body-md-strong-line-height: 18px;
+  --body-md-strong-letter-spacing: 0;
+
+  --body-base-font-family: var(--font-family-default);
+  --body-base-font-size: 14px;
+  --body-base-font-weight: 400;
+  --body-base-line-height: 20px;
+  --body-base-letter-spacing: -0.02em;
+  --body-base-strong-font-family: var(--font-family-default);
+  --body-base-strong-font-size: 14px;
+  --body-base-strong-font-weight: 500;
+  --body-base-strong-line-height: 20px;
+  --body-base-strong-letter-spacing: -0.02em;
+
+  --body-lg-font-family: var(--font-family-default);
+  --body-lg-font-size: 18px;
+  --body-lg-font-weight: 400;
+  --body-lg-line-height: 28px;
+  --body-lg-letter-spacing: -0.02em;
+
+  /* ── heading typography ────────────────────────────────── */
+  --heading-3xs-font-family: var(--font-family-default);
+  --heading-3xs-font-size: 11px;
+  --heading-3xs-font-weight: 600;
+  --heading-3xs-line-height: 16px;
+  --heading-3xs-letter-spacing: 0;
+  --heading-2xs-font-family: var(--font-family-default);
+  --heading-2xs-font-size: 12px;
+  --heading-2xs-font-weight: 600;
+  --heading-2xs-line-height: 18px;
+  --heading-2xs-letter-spacing: 0;
+  --heading-xs-font-family: var(--font-family-default);
+  --heading-xs-font-size: 13px;
+  --heading-xs-font-weight: 600;
+  --heading-xs-line-height: 20px;
+  --heading-xs-letter-spacing: 0;
+  --heading-sm-font-family: var(--font-family-default);
+  --heading-sm-font-size: 16px;
+  --heading-sm-font-weight: 600;
+  --heading-sm-line-height: 24px;
+  --heading-sm-letter-spacing: 0;
+  --heading-md-font-family: var(--font-family-heading);
+  --heading-md-font-size: 20px;
+  --heading-md-font-weight: 600;
+  --heading-md-line-height: 28px;
+  --heading-md-letter-spacing: 0;
+  --heading-lg-font-family: var(--font-family-heading);
+  --heading-lg-font-size: 22px;
+  --heading-lg-font-weight: 600;
+  --heading-lg-line-height: 30px;
+  --heading-lg-letter-spacing: 0;
+  --heading-xl-font-family: var(--font-family-heading);
+  --heading-xl-font-size: 24px;
+  --heading-xl-font-weight: 600;
+  --heading-xl-line-height: 32px;
+  --heading-xl-letter-spacing: 0;
+  --heading-2xl-font-family: var(--font-family-heading);
+  --heading-2xl-font-size: 28px;
+  --heading-2xl-font-weight: 600;
+  --heading-2xl-line-height: 36px;
+  --heading-2xl-letter-spacing: 0;
+  --heading-3xl-font-family: var(--font-family-heading);
+  --heading-3xl-font-size: 32px;
+  --heading-3xl-font-weight: 600;
+  --heading-3xl-line-height: 40px;
+  --heading-3xl-letter-spacing: 0;
+  --heading-display-font-family: var(--font-family-heading);
+  --heading-display-font-size: 52px;
+  --heading-display-font-weight: 600;
+  --heading-display-line-height: 60px;
+  --heading-display-letter-spacing: -0.03em;
+  --heading-display-sm-font-family: var(--font-family-heading);
+  --heading-display-sm-font-size: 40px;
+  --heading-display-sm-font-weight: 600;
+  --heading-display-sm-line-height: 48px;
+  --heading-display-sm-letter-spacing: -0.02em;
+
+  /* ── background ────────────────────────────────────────── */
+  --bg-base-default: #FFFFFF;
+  --bg-base-secondary: #F5F5F5;
+  --bg-base-tertiary: #E5E5E5;
+  --bg-overlay-l1: rgba(115, 115, 115, 0.08);
+  --bg-overlay-l2: rgba(115, 115, 115, 0.12);
+  --bg-overlay-l3: rgba(115, 115, 115, 0.16);
+  --bg-overlay-l4: rgba(115, 115, 115, 0.20);
+  --bg-white: #FFFFFF;
+  --bg-menu: #FFFFFF;
+  --bg-tooltip: #FFFFFF;
+  --bg-invert: #262626;
+  --bg-invert-hover: #404040;
+  --bg-invert-active: #171717;
+  --bg-invert-disabled: rgba(115, 115, 115, 0.20);
+
+  /* ── brand（AI-Native UI 主色 #6366F1 Indigo） ──────────
+   * 参考 ui-ux-pro-max/styles.csv #43 AI-Native UI 规格
+   * Minimal chrome + 单 accent + 流式气泡 + 3 点输入指示器
+   * ─────────────────────────────────────────────────────── */
+  --bg-brand: #6366F1;
+  --bg-brand-hover: #818CF8;
+  --bg-brand-active: #4F46E5;
+  --bg-brand-pressed: #4338CA;
+  --bg-brand-disabled: rgba(99, 102, 241, 0.22);
+  --bg-brand-popup: rgba(199, 210, 254, 0.36);
+  --bg-brand-light: #EEF2FF;
+
+  /* ── text ──────────────────────────────────────────────── */
+  --text-default: #171717;
+  --text-default-hover: #262626;
+  --text-default-active: #262626;
+  --text-secondary: #404040;
+  --text-secondary-hover: #171717;
+  --text-secondary-active: #171717;
+  --text-tertiary: #737373;
+  --text-disabled: #A1A1A1;
+  --text-onbrand: #FFFFFF;
+  --text-onaccent: #FFFFFF;
+  --text-white: #FFFFFF;
+  --text-brand: #6366F1;
+  --text-brand-hover: #818CF8;
+
+  /* ── icon ──────────────────────────────────────────────── */
+  --icon-default: #262626;
+  --icon-default-hover: #171717;
+  --icon-default-active: #171717;
+  --icon-secondary: #404040;
+  --icon-secondary-hover: #262626;
+  --icon-secondary-active: #262626;
+  --icon-tertiary: #737373;
+  --icon-disabled: #A1A1A1;
+  --icon-onbrand: #FFFFFF;
+  --icon-onaccent: #FFFFFF;
+  --icon-white: #FFFFFF;
+  --icon-brand: #6366F1;
+  --icon-brand-hover: #818CF8;
+
+  /* ── border ────────────────────────────────────────────── */
+  --border-neutral-l1: rgba(115, 115, 115, 0.12);
+  --border-neutral-l2: rgba(115, 115, 115, 0.18);
+  --border-neutral-l3: rgba(115, 115, 115, 0.36);
+  --border-contrast: #000000;
+  --border-brand: #6366F1;
+
+  /* ── accent（图表/标签辅助色） ────────────────────────── */
+  --accent-teal: #00B983;
+  --accent-coral: #FF6B45;
+  --accent-amber: #F2A90C;
+  --accent-lime: #5FC000;
+  --accent-cyan: #00B6F5;
+  --accent-blue: #3F85FF;
+  --accent-magenta: #F53CFF;
+  --accent-violet: #9570FF;
+  --accent-slate: #747E94;
+
+  /* ── status ────────────────────────────────────────────── */
+  --status-primary-default: #2F74FF;
+  --status-primary-hover: #4C88FF;
+  --status-primary-active: #1759DD;
+  --status-primary-surface-l1: rgba(47, 116, 255, 0.12);
+  --status-primary-surface-l2: rgba(47, 116, 255, 0.18);
+  --status-primary-surface-l3: rgba(47, 116, 255, 0.36);
+  --status-primary-light: rgba(75, 63, 227, 0.1);
+  --status-success-default: #15A877;
+  --status-success-hover: #2FB287;
+  --status-success-active: #1E8B56;
+  --status-success-surface-l1: rgba(64, 176, 139, 0.12);
+  --status-success-surface-l2: rgba(64, 176, 139, 0.18);
+  --status-success-surface-l3: rgba(64, 176, 139, 0.36);
+  --status-success-light: rgba(16, 185, 129, 0.1);
+  --status-alert-default: #FEA900;
+  --status-alert-hover: #FFB700;
+  --status-alert-active: #E59100;
+  --status-alert-surface-l1: rgba(254, 169, 0, 0.14);
+  --status-alert-surface-l2: rgba(254, 169, 0, 0.20);
+  --status-alert-surface-l3: rgba(254, 169, 0, 0.36);
+  --status-alert-light: rgba(245, 158, 11, 0.1);
+  --status-warning-default: #E27900;
+  --status-warning-hover: #F39A35;
+  --status-warning-active: #C46F11;
+  --status-warning-surface-l1: rgba(226, 121, 0, 0.12);
+  --status-warning-surface-l2: rgba(226, 121, 0, 0.16);
+  --status-warning-surface-l3: rgba(226, 121, 0, 0.36);
+  --status-error-default: #E8463A;
+  --status-error-hover: #EA574C;
+  --status-error-active: #C9382F;
+  --status-error-surface-l1: rgba(232, 70, 58, 0.12);
+  --status-error-surface-l2: rgba(232, 70, 58, 0.16);
+  --status-error-surface-l3: rgba(232, 70, 58, 0.36);
+  --status-error-light: rgba(239, 68, 68, 0.1);
+
+  /* ── brand palette（Indigo 50-950 — AI-Native UI 规格） ── */
+  --brand-50: #EEF2FF;
+  --brand-100: #E0E7FF;
+  --brand-200: #C7D2FE;
+  --brand-300: #A5B4FC;
+  --brand-400: #818CF8;
+  --brand-500: #6366F1;
+  --brand-600: #4F46E5;
+  --brand-700: #4338CA;
+  --brand-800: #3730A3;
+  --brand-900: #312E81;
+  --brand-950: #1E1B4B;
+  --brand-grey-50: #FAFAFA;
+  --brand-grey-100: #F5F5F5;
+  --brand-grey-200: #E5E5E5;
+  --brand-grey-300: #D4D4D4;
+  --brand-grey-400: #A1A1A1;
+  --brand-grey-500: #737373;
+  --brand-grey-600: #525252;
+  --brand-grey-700: #404040;
+  --brand-grey-800: #262626;
+  --brand-grey-900: #171717;
+  --brand-grey-950: #0A0A0A;
+
+  /* ── semantic aliases 已移除 ───────────────────────────
+   * 历史上这里曾定义 --color-primary / --color-warning 等语义别名，
+   * 但全项目无任何 var(--color-*) 引用，且与 main.css @theme inline 的
+   * Tailwind 映射（--color-warning → --status-alert-default）存在冲突。
+   * 现统一由 main.css @theme inline 作为唯一语义映射层，避免双源。
+   * ─────────────────────────────────────────────────────── */
+
+  /* ── 长文阅读与卡片圆角（v2 风格升级） ──────────────────
+   * 全站统一品牌靛蓝单一强调色，不再设第二套语义强调色。
+   * 字号：长文阅读场景使用 15px/24px（医疗可读性优先，WCAG AAA 倾向）
+   * 圆角：卡片使用 16px（柔和感，对齐 Apple Health/Babylon Health）
+   * ─────────────────────────────────────────────────────── */
+
+  /* 阅读字号（文章详情/长文） */
+  --reading-font-size: 15px;
+  --reading-line-height: 24px;
+  --reading-letter-spacing: -0.011em;
+  --reading-block-margin: 18px;
+
+  /* 卡片圆角升级（医疗柔和感） */
+  --radius-card-soft: var(--radius-16);
+  --radius-card-medium: var(--radius-12);
+  --radius-card-large: var(--radius-20);
+
+  /* ── AI-Native UI 专属令牌（styles.csv #43） ─────────────
+   * 模板默认 tokens：
+   *   --ai-accent: #6366F1
+   *   --user-bubble-bg: #E0E7FF
+   *   --ai-bubble-bg: #F9FAFB
+   *   --input-height: 48px
+   *   --typing-dot-size: 8px
+   *   --message-gap: 16px
+   * ─────────────────────────────────────────────────────── */
+  --ai-accent: #6366F1;
+  --user-bubble-bg: #E0E7FF;
+  --user-bubble-text: #1E1B4B;
+  --ai-bubble-bg: #F9FAFB;
+  --ai-bubble-text: #111827;
+  --ai-bubble-border: rgba(99, 102, 241, 0.16);
+  --ai-input-height: 48px;
+  --ai-input-radius: var(--radius-full);
+  --typing-dot-size: 8px;
+  --message-gap: 16px;
+  --ai-avatar-gradient: linear-gradient(135deg, #6366F1 0%, #818CF8 100%);
+
+  /* ── 综合风格扩展令牌（AI Healthcare Native） ────────────
+   * 融合 4 种风格特长：
+   *   AI-Native UI      → 整体骨架（背景/气泡/流式）
+   *   Hero-Centric      → 首屏视觉锤（orb/光晕/标题）
+   *   Micro-interactions→ 操作反馈（hover/press/state）
+   *   Accessible & Ethical → 医疗合规（focus/contrast/motion）
+   * ─────────────────────────────────────────────────────── */
+
+  /* Hero-Centric（styles.csv #20） */
+  --hero-orb-size: 96px;
+  --hero-orb-inner-size: 80px;
+  --hero-orb-pulse-duration: 3s;
+  --hero-orb-pulse-inner-duration: 2s;
+  --hero-headline-size: clamp(1.5rem, 4vw, 2rem);
+  --hero-glow-color: rgba(99, 102, 241, 0.24);
+  --hero-glow-color-soft: rgba(99, 102, 241, 0.12);
+
+  /* Micro-interactions（styles.csv #16） */
+  --micro-duration: 100ms;
+  --micro-duration-fast: 50ms;
+  --micro-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --hover-scale: 1.02;
+  --hover-scale-strong: 1.05;
+  --press-scale: 0.97;
+  --state-feedback-success: #22C55E;
+  --state-feedback-error: #EF4444;
+  --state-feedback-warning: #F59E0B;
+
+  /* Accessible & Ethical（styles.csv #8）
+   * 焦点环相关令牌已统一在下方「焦点环（无障碍）」段定义，此处不重复 */
+  --touch-target-min: 44px;
+  --reading-font-size-a11y: 16px;
+  --contrast-ratio-target: 7:1;
+
+  /* ── 控件级令牌（design system control tokens） ─────────
+   * 统一全局 Vant / 自定义控件的高度/圆角/内距
+   * 页面 scoped css 只写装饰（背景/阴影/渐变），不重复这些
+   * ─────────────────────────────────────────────────────── */
+  --ds-control-height-sm: 32px;
+  --ds-control-height-md: 44px;
+  --ds-control-height-lg: 48px;
+  --ds-control-radius-sm: var(--radius-8);
+  --ds-control-radius-md: var(--radius-12);
+  --ds-control-radius-lg: var(--radius-16);
+  --ds-control-radius-pill: var(--radius-full);
+  --ds-control-padding-x: var(--spacer-12);
+  --ds-control-padding-x-lg: var(--spacer-16);
+  --ds-control-icon-size: 18px;
+  --ds-control-font-size: var(--body-base-font-size);
+  --ds-control-gap: var(--spacer-8);
+
+  /* ── layout 常量 ──────────────────────────────────────── */
+  --layout-max-width: 480px;
+  --layout-page-padding-x: var(--spacer-16);
+  --layout-page-padding-y: var(--spacer-16);
+  --layout-header-height: 56px;
+  --layout-tabbar-height: 56px;
+  --layout-sidebar-width: 240px;
+  --layout-content-max: 1200px;
+
+  /* ── 过渡 ─────────────────────────────────────────────── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── 动效时长（@keyframes 引用） ───────────────────────── */
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 350ms;
+  --duration-slower: 500ms;
+  --duration-bounce: 1.4s;
+  --duration-blink: 1s;
+  --duration-scan: 2.4s;
+
+  /* ── 阴影（卡片/弹层/悬浮） ───────────────────────────── */
+  --shadow-none: none;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.10);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.12);
+  --shadow-brand: 0 4px 12px rgba(75, 63, 227, 0.20);
+
+  /* ── z-index 层级（避免硬编码） ───────────────────────── */
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-fixed: 1200;
+  --z-modal-backdrop: 1300;
+  --z-modal: 1400;
+  --z-popover: 1500;
+  --z-toast: 1600;
+  --z-tooltip: 1700;
+  --z-notification: 1800;
+
+  /* ── 焦点环（无障碍） ─────────────────────────────────── */
+  --focus-ring-color: var(--bg-brand);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-style: solid;
+  --focus-ring: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
+  --focus-ring-offset-shadow: 0 0 0 var(--focus-ring-offset) var(--bg-base-default);
+  --focus-ring-shadow: 0 0 0 calc(var(--focus-ring-width) + var(--focus-ring-offset)) var(--focus-ring-color);
+
+  /* ── 透明度（禁用/遮罩/占位） ─────────────────────────── */
+  --opacity-disabled: 0.5;
+  --opacity-overlay: 0.65;
+  --opacity-readonly: 0.8;
+
+  /* ── 品牌光晕（品牌色 alpha 梯度 — 搜索框/输入卡/头像阴影） ── */
+  --brand-glow-xs: rgba(99, 102, 241, 0.06);
+  --brand-glow-sm: rgba(99, 102, 241, 0.12);
+  --brand-glow-md: rgba(99, 102, 241, 0.20);
+  --brand-glow-lg: rgba(99, 102, 241, 0.32);
+  --brand-glow-border: rgba(99, 102, 241, 0.30);
+  --brand-glow-border-strong: rgba(99, 102, 241, 0.55);
+
+  /* ── 复合光晕阴影（组件直接引用，禁止视图自拼 rgba） ────── */
+  --shadow-glow-sm: 0 0 0 1px var(--brand-glow-xs), 0 2px 8px var(--brand-glow-xs);
+  --shadow-glow-input: 0 0 0 1px var(--brand-glow-sm), 0 2px 14px var(--brand-glow-md);
+  --shadow-glow-input-focus: 0 0 0 3px var(--brand-glow-md), 0 4px 24px var(--brand-glow-md);
+  --shadow-glow-md: 0 0 0 2px var(--brand-glow-sm), 0 4px 16px var(--brand-glow-sm);
+  --shadow-glow-card: 0 4px 16px var(--brand-glow-sm);
+  --shadow-glow-btn: 0 4px 12px var(--brand-glow-lg);
+  --shadow-glow-avatar: 0 2px 8px var(--brand-glow-md);
+
+  /* ── 辅助色 surface（图标底色等） ─────────────────────── */
+  --accent-teal-surface: rgba(0, 185, 131, 0.10);
+  --accent-violet-surface: rgba(149, 112, 255, 0.10);
+
+  /* ── 菜单卡片阴影（@theme inline 引用） ───────────────── */
+  --shadow-card-menu: var(--shadow-sm);
+
+  /* ── 控件高度扩展（小 pill） ──────────────────────────── */
+  --ds-control-height-xs: 26px;
+
+  /* ── 聊天气泡 ─────────────────────────────────────────── */
+  --bubble-radius-user: 12px 12px 4px 12px;
+  --bubble-radius-ai: 4px 12px 12px 12px;
+  --bubble-padding-x: 14px;
+  --bubble-padding-y: 10px;
+  --bubble-padding-y-lg: 12px;
+
+  /* ── 头像尺寸 ─────────────────────────────────────────── */
+  --avatar-size-xs: 28px;
+  --avatar-size-sm: 40px;
+  --avatar-size-md: 64px;
+  --avatar-size-lg: 96px;
+
+  /* ── 搜索框 ───────────────────────────────────────────── */
+  --search-height: var(--ds-control-height-md);
+  --search-radius: var(--radius-12);
+
+  /* ── 按钮 ─────────────────────────────────────────────── */
+  --btn-height-sm: var(--ds-control-height-sm);
+  --btn-height-md: var(--ds-control-height-md);
+  --btn-radius: var(--radius-8);
+  --btn-radius-lg: var(--radius-12);
+
+  /* ── 标签页下划线 ─────────────────────────────────────── */
+  --tab-underline-height: 2px;
+  --tab-underline-radius: 1px;
+
+  /* ── 徽标 ─────────────────────────────────────────────── */
+  --badge-size: 16px;
+  --badge-size-lg: 18px;
+}
+
+/* ── 暗色模式 ──────────────────────────────────────────────
+ * 应用方式：在 <html> 或根容器添加 .dark 类
+ * 仅覆盖必要的语义令牌，原始色板保持不变
+ */
+.dark {
+  /* brand 暗色变体（AI-Native Indigo，亮调保证对比度） */
+  --bg-brand: #818CF8;
+  --bg-brand-hover: #A5B4FC;
+  --bg-brand-active: #6366F1;
+  --bg-brand-pressed: #4F46E5;
+  --bg-brand-light: rgba(129, 140, 248, 0.15);
+  --bg-brand-popup: rgba(129, 140, 248, 0.30);
+  --text-brand: #A5B4FC;
+  --text-brand-hover: #C7D2FE;
+  --icon-brand: #A5B4FC;
+  --icon-brand-hover: #C7D2FE;
+  --border-brand: #818CF8;
+
+  /* 背景层级 */
+  --bg-base-default: #0F0F1A;
+  --bg-base-secondary: #1A1A2E;
+  --bg-base-tertiary: #252538;
+  --bg-overlay-l1: rgba(0, 0, 0, 0.30);
+  --bg-overlay-l2: rgba(0, 0, 0, 0.45);
+  --bg-overlay-l3: rgba(0, 0, 0, 0.60);
+  --bg-overlay-l4: rgba(0, 0, 0, 0.75);
+  --bg-menu: #1A1A2E;
+  --bg-tooltip: #252538;
+  --bg-invert: #F3F4F6;
+  --bg-invert-hover: #E5E7EB;
+  --bg-invert-active: #FFFFFF;
+
+  /* 文本 */
+  --text-default: #F3F4F6;
+  --text-default-hover: #FFFFFF;
+  --text-default-active: #FFFFFF;
+  --text-secondary: #9CA3AF;
+  --text-secondary-hover: #F3F4F6;
+  --text-secondary-active: #F3F4F6;
+  --text-tertiary: #6B7280;
+  --text-disabled: #4B5563;
+  --text-onbrand: #FFFFFF;
+
+  /* 图标 */
+  --icon-default: #F3F4F6;
+  --icon-default-hover: #FFFFFF;
+  --icon-default-active: #FFFFFF;
+  --icon-secondary: #9CA3AF;
+  --icon-secondary-hover: #F3F4F6;
+  --icon-secondary-active: #F3F4F6;
+  --icon-tertiary: #6B7280;
+  --icon-disabled: #4B5563;
+  --icon-onbrand: #FFFFFF;
+
+  /* 边框 */
+  --border-neutral-l1: #2D2D42;
+  --border-neutral-l2: #3D3D56;
+  --border-neutral-l3: #5A5A75;
+  --border-contrast: #FFFFFF;
+
+  /* 状态色（暗色变体，提高对比度） */
+  --status-primary-default: #6C63FF;
+  --status-primary-hover: #8B83FF;
+  --status-primary-active: #5B52E6;
+  --status-primary-surface-l1: rgba(108, 99, 255, 0.16);
+  --status-primary-surface-l2: rgba(108, 99, 255, 0.24);
+  --status-primary-surface-l3: rgba(108, 99, 255, 0.40);
+  --status-success-default: #34D399;
+  --status-success-hover: #6EE7B7;
+  --status-success-active: #10B981;
+  --status-success-surface-l1: rgba(52, 211, 153, 0.16);
+  --status-success-surface-l2: rgba(52, 211, 153, 0.24);
+  --status-alert-default: #FBBF24;
+  --status-alert-hover: #FCD34D;
+  --status-alert-active: #F59E0B;
+  --status-alert-surface-l1: rgba(251, 191, 36, 0.16);
+  --status-alert-surface-l2: rgba(251, 191, 36, 0.24);
+  --status-warning-default: #F59E0B;
+  --status-error-default: #F87171;
+  --status-error-hover: #FCA5A5;
+  --status-error-active: #EF4444;
+  --status-error-surface-l1: rgba(248, 113, 113, 0.16);
+  --status-error-surface-l2: rgba(248, 113, 113, 0.24);
+
+  /* 阴影（暗色更柔和） */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.40);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.50);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.60);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.70);
+  --shadow-brand: 0 4px 12px rgba(108, 99, 255, 0.30);
+
+  /* 焦点环 */
+  --focus-ring-color: var(--bg-brand);
+}
