@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 5230
   read_timeout: 15s
   shutdown_timeout: 10s
   # 信任的反向代理 CIDR（D-MED-02 修复）。

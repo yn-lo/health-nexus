@@ -48,7 +48,7 @@ services:
     container_name: hn-server
     command: ["/bin/server"]
     ports:
-      - "8080:8080"
+      - "5230:5230"
     depends_on:
       postgres:
         condition: service_healthy

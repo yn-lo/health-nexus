@@ -6,7 +6,7 @@
 View (.vue)
   → shared/api/*.ts（业务接口函数）
     → shared/api/client.ts（ofetch 实例，统一拦截器与错误处理）
-      → 后端 REST API（/api/*，开发环境由 Vite proxy 转发至 localhost:8080）
+      → 后端 REST API（/api/*，开发环境由 Vite proxy 转发至 localhost:5230）
 ```
 
 - 视图层不直接调用 ofetch，必须通过 `shared/api/` 下的接口函数发起请求

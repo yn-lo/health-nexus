@@ -2,9 +2,9 @@
 //
 // 运行前设置环境变量（或在 config.yaml 中配置）：
 //
-//	set HEALTH_NEXUS_LLM_API_KEY=sk-zsve4Hnt...        # agnes chat
-//	set HEALTH_NEXUS_EMBEDDING_API_KEY=sk-sgmetw...    # 硅基流动 embedding+rerank
-//	set HEALTH_NEXUS_ZHIPU_API_KEY=f5edc4a3293e...      # 智谱 rewrite
+//	set HEALTH_NEXUS_LLM_API_KEY=<your-api-key>        # agnes chat
+//	set HEALTH_NEXUS_EMBEDDING_API_KEY=<your-api-key>   # 硅基流动 embedding+rerank
+//	set HEALTH_NEXUS_LLM_REWRITE_API_KEY=<your-api-key> # 智谱 rewrite
 //
 // 运行：cd backend && go test ./tests/... -run TestLLM -v -count=1
 //

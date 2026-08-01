@@ -1,6 +1,6 @@
 // Package e2e_api_test 通过真实 HTTP 请求覆盖全部 49 个 API 端点（契约 api-contract.md）。
 //
-// 运行前提：后端已启动（air 热重载，localhost:8080）、PostgreSQL/Redis 可达、LLM API key 已配置。
+// 运行前提：后端已启动（air 热重载，localhost:5230）、PostgreSQL/Redis 可达、LLM API key 已配置。
 // 与 tests/e2e 复用同构 helper（login/doReq/clearRateLimitKeys/clearTestData），
 // 但独立成包以避免命名冲突，并按域分组覆盖所有端点。
 //
@@ -131,7 +131,7 @@ func apiURL() string {
 	if v := os.Getenv("E2E_API_URL"); v != "" {
 		return v
 	}
-	return "http://localhost:8080"
+	return "http://localhost:5230"
 }
 
 func jsonBody(t *testing.T, v any) *bytes.Reader {

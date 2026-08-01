@@ -12,7 +12,7 @@ import (
 
 // 配置默认值（供 setDefaults 注册到 viper）。
 const (
-	defaultServerPort        = 8080
+	defaultServerPort        = 5230
 	defaultReadTimeout       = 15 * time.Second
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultPostgresMaxConns  = 25

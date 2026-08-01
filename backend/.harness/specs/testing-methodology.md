@@ -100,9 +100,9 @@ cat logs/app.log | jq -r 'select(.level=="ERROR") | .msg' | sort | uniq -c | sor
 
 | 工具 | 用途 | 示例 |
 |------|------|------|
-| `curl` / `curl.exe` | API 请求、SSE 流抓取、状态码验证 | `curl -s -w "\n%{http_code}" http://localhost:8080/healthz` |
+| `curl` / `curl.exe` | API 请求、SSE 流抓取、状态码验证 | `curl -s -w "\n%{http_code}" http://localhost:5230/healthz` |
 | `jq` | JSON 响应格式化与字段提取 | `curl -s ... \| jq '.data[].id'` |
-| `httpie` | 更友好的 curl 替代（可选） | `http POST :8080/api/auth/login username=admin1 password=Pass1234` |
+| `httpie` | 更友好的 curl 替代（可选） | `http POST :5230/api/auth/login username=admin1 password=Pass1234` |
 
 #### SSE 流式调试
 
@@ -111,7 +111,7 @@ cat logs/app.log | jq -r 'select(.level=="ERROR") | .msg' | sort | uniq -c | sor
 curl -N -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"头痛怎么办","department_id":4}' \
-  http://localhost:8080/api/chat/conversations/xxx/stream
+  http://localhost:5230/api/chat/conversations/xxx/stream
 
 # 仅看事件类型
 curl -N ... 2>/dev/null | grep "^event:" | sort | uniq -c
@@ -163,7 +163,7 @@ DevTools → Network → 筛选:
 
 | 工具 | 用途 | 示例 |
 |------|------|------|
-| **pprof** | CPU/内存/goroutine 性能分析 | 开发模式注册 `net/http/pprof`，`go tool pprof http://localhost:8080/debug/pprof/heap` |
+| **pprof** | CPU/内存/goroutine 性能分析 | 开发模式注册 `net/http/pprof`，`go tool pprof http://localhost:5230/debug/pprof/heap` |
 | **air** | Go 热重载，修改代码自动重启 | `air` 自动检测文件变更 |
 | **dlv** | Go 源码级调试器 | `dlv debug ./cmd/server`，设断点、单步、查看变量 |
 | **go test -run** | 运行特定测试用例 | `go test -run TestAuthGate_ProtectedEndpoints -v ./tests/` |
@@ -173,11 +173,11 @@ DevTools → Network → 筛选:
 
 ```bash
 # 检查服务是否运行
-curl -s http://localhost:8080/healthz | jq .
+curl -s http://localhost:5230/healthz | jq .
 
 # 检查端口占用
-lsof -i :8080    # macOS/Linux
-netstat -ano | findstr :8080   # Windows
+lsof -i :5230    # macOS/Linux
+netstat -ano | findstr :5230   # Windows
 
 # 查看 Go 进程
 ps aux | grep server

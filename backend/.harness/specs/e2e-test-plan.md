@@ -1,6 +1,6 @@
 # E2E 全链路测试计划
 
-> 环境：后端 http://localhost:8080 (air)，前端 http://localhost:5173 (vite)，移动端模拟
+> 环境：后端 http://localhost:5230 (air)，前端 http://localhost:5173 (vite)，移动端模拟
 > 账户：admin1/Pass1234 (DEPT_ADMIN, 心内科)，doctor1/Pass1234 (DOCTOR, 心内科)，testpatient/Pass1234 (PATIENT, 内分泌科)
 > 方法论：详见 [testing-methodology.md](testing-methodology.md)
 

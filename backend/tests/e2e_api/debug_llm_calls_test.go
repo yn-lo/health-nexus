@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,22 +18,30 @@ import (
 
 // TestDebugLLMCalls directly invokes each LLM provider to verify connectivity.
 func TestDebugLLMCalls(t *testing.T) {
+	// 密钥必须通过环境变量注入（仓库禁止存储真实 API Key）。
+	apiKey := os.Getenv("HEALTH_NEXUS_LLM_API_KEY")
+	embedKey := os.Getenv("HEALTH_NEXUS_LLM_EMBEDDING_API_KEY")
+	rewriteKey := os.Getenv("HEALTH_NEXUS_LLM_REWRITE_API_KEY")
+	if apiKey == "" || embedKey == "" || rewriteKey == "" {
+		t.Skip("LLM API keys not set via environment (HEALTH_NEXUS_LLM_API_KEY / HEALTH_NEXUS_LLM_EMBEDDING_API_KEY / HEALTH_NEXUS_LLM_REWRITE_API_KEY)")
+	}
+
 	cfg := config.LLMConfig{
 		BaseURL:        "https://apihub.agnes-ai.com/v1",
-		APIKey:         "sk-zsve4HntZRgy1heyMwGQt46TMMIovTZxhFdPBBDzgHi87T7k",
+		APIKey:         apiKey,
 		ChatModel:      "agnes-2.0-flash",
 		RewriteModel:   "agnes-2.0-flash",
 		EmbeddingModel: "text-embedding-3-small",
 		Timeout:        30 * time.Second,
 		Embedding: config.ProviderConfig{
 			BaseURL: "https://api.siliconflow.cn/v1",
-			APIKey:  "sk-sgmetwnlnkuyihibxejjphymsbuajfatrjcegwqahqixrnjz",
+			APIKey:  embedKey,
 			Model:   "BAAI/bge-m3",
 			Timeout: 30 * time.Second,
 		},
 		Rewrite: config.ProviderConfig{
 			BaseURL: "https://open.bigmodel.cn/api/paas/v4",
-			APIKey:  "f5edc4a3293e403dbeb41d09d874ef38.affxYCnYXAGdzK1D",
+			APIKey:  rewriteKey,
 			Model:   "glm-4.7-flash",
 			Timeout: 30 * time.Second,
 		},
@@ -132,9 +141,13 @@ func TestDebugLLMCalls(t *testing.T) {
 
 // TestRawHTTPRewrite calls 智谱 API raw to see exact response.
 func TestRawHTTPRewrite(t *testing.T) {
+	rewriteKey := os.Getenv("HEALTH_NEXUS_LLM_REWRITE_API_KEY")
+	if rewriteKey == "" {
+		t.Skip("rewrite API key not set via environment (HEALTH_NEXUS_LLM_REWRITE_API_KEY)")
+	}
 	body := `{"model":"glm-4.7-flash","messages":[{"role":"system","content":"你是一个问题改写助手。根据对话历史，把用户最新追问改写为一个独立、完整、不含代词的问题。规则：1. 只输出改写后的问题，不要任何解释或前后缀 2. 若无需改写（首问或无歧义），原样返回用户问题 3. 将指代词替换为历史中的具体对象"},{"role":"user","content":"高血压患者日常管理要点有哪些？"}],"temperature":0.0}`
 	req, _ := http.NewRequest("POST", "https://open.bigmodel.cn/api/paas/v4/chat/completions", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer f5edc4a3293e403dbeb41d09d874ef38.affxYCnYXAGdzK1D")
+	req.Header.Set("Authorization", "Bearer "+rewriteKey)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)

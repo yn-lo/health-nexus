@@ -1,15 +1,7 @@
-# Python
+# Python（.trae/skills 脚本通用缓存）
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Django
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
 
 # Environments
 .env
@@ -27,6 +19,9 @@ backend/.env
 # JWT signing keys (敏感文件，禁止入库)
 backend/jwt-signing.pem
 backend/jwt-signing.pub
+
+# API Key 备忘（敏感文件，禁止入库）
+docs/api_key.md
 
 # Database backups
 backups/
@@ -50,9 +45,6 @@ Thumbs.db
 .coverage
 frontend/test-results/
 frontend/playwright-report/
-
-# media
-mediafiles/
 
 # custom
 htmlcov/
