@@ -76,7 +76,9 @@ export function useSSEChat(options: UseSSEChatOptions) {
             message: question,
             conversation_id: conversationId.value,
           }
-          if (options.selectedDeptId != null && options.selectedDeptId !== 0) {
+          // 科室选择始终携带：0=全部科室，具体 id=锁定科室。
+          // 修复：旧逻辑过滤掉 0，导致后端收到 nil（未指定）而把会话误锁到解析科室。
+          if (options.selectedDeptId != null) {
             body.selected_dept_id = options.selectedDeptId
           }
 

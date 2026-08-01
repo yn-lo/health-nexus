@@ -101,6 +101,12 @@ function onHistoryNewChat() {
 }
 
 function openDeptPicker() {
+  // 会话已开始（有会话 ID）后禁止切换科室：科室范围随会话锁定，保持多轮上下文一致性。
+  // 后端同样拦截（CHAT_DEPT_LOCKED），此处前端先拦截，避免无效弹窗。
+  if (conversationId.value || sseConversationId.value) {
+    showFailToast('会话中禁止切换知识库')
+    return
+  }
   showDeptPicker.value = true
 }
 

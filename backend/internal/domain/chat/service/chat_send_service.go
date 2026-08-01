@@ -247,13 +247,17 @@ func (s *ChatSendService) loadOrPrepareConversation(
 	if conv == nil {
 		return nil, apperrors.NotFound("CHAT_CONVERSATION_NOT_FOUND", "会话不存在或不属于当前用户")
 	}
-	// 已锁定科室：忽略 selected_dept_id 并以已锁定值为准；提供不一致性校验便于前端纠错。
-	// selected_dept_id=0 表示"全部科室"，允许与已锁定科室共存（不冲突）。
+	// 会话锁定后禁止切换科室（含切到"全部科室"），保持多轮上下文一致性：
+	//   - 已锁定具体科室：请求必须为 nil 或等于锁定值；
+	//   - 全部科室会话（locked_dept_id=NULL）：请求必须为 nil 或 0，禁止再锁定具体科室。
+	// 后端兜底；前端在 openDeptPicker 同步锁定切换入口（CHAT_DEPT_LOCKED）。
 	if conv.LockedDeptID != nil {
-		if in.SelectedDeptID != nil && *in.SelectedDeptID > 0 && *in.SelectedDeptID != *conv.LockedDeptID {
-			return nil, apperrors.Conflict("CHAT_DEPT_LOCKED", "会话科室已锁定，不可更改")
+		if in.SelectedDeptID != nil && *in.SelectedDeptID != *conv.LockedDeptID {
+			return nil, apperrors.Conflict("CHAT_DEPT_LOCKED", "会话中禁止切换知识库")
 		}
 		dept.ID = *conv.LockedDeptID
+	} else if in.SelectedDeptID != nil && *in.SelectedDeptID > 0 {
+		return nil, apperrors.Conflict("CHAT_DEPT_LOCKED", "会话中禁止切换知识库")
 	}
 	return conv, nil
 }
@@ -886,16 +890,14 @@ func (s *ChatSendService) persistUserMessageAndCrisis(
 func (s *ChatSendService) ensureConversationAndUserMessage(
 	ctx context.Context, in StreamInput, conv *entity.Conversation, dept rag.Department,
 ) (*entity.Conversation, *entity.Message, error) {
-	if conv.LockedDeptID == nil {
-		// "全部科室"（selectedDeptID=0）会话保持未锁定（locked_dept_id=nil），检索范围由 deptIDPtr 控制（nil=不限）；
-		// 仅未指定（nil）时锁定到解析出的主科室作为归属。selectedDeptID>0 已在 loadOrPrepareConversation 锁定，不会进入此分支。
-		if in.SelectedDeptID == nil || *in.SelectedDeptID != 0 {
-			if err := s.conv.LockDept(ctx, conv.ID, dept.ID); err != nil {
-				return nil, nil, err
-			}
-			deptID := dept.ID
-			conv.LockedDeptID = &deptID
+	// 会话未锁定时，仅当用户明确选择具体科室（>0）才锁定到该科室；
+	// nil/0 一律视为"全部科室"，保持未锁定（检索不限科室），修复旧逻辑把未传科室误锁到解析科室的问题。
+	if conv.LockedDeptID == nil && in.SelectedDeptID != nil && *in.SelectedDeptID > 0 {
+		if err := s.conv.LockDept(ctx, conv.ID, dept.ID); err != nil {
+			return nil, nil, err
 		}
+		deptID := dept.ID
+		conv.LockedDeptID = &deptID
 	}
 	msg, err := s.msg.SaveUserMessage(ctx, conv.ID, in.Message)
 	if err != nil {
