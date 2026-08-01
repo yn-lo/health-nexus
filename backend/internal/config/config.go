@@ -25,6 +25,13 @@ const (
 	defaultArgon2Parallelism = 2
 	defaultArgon2SaltLength  = 16
 	defaultArgon2KeyLength   = 32
+
+	// 限流默认值（次/分钟），运行时可通过 Redis rl_cfg:{scope} 热更新覆盖
+	defaultAuthLoginRateLimit      = 10
+	defaultAuthRegisterRateLimit   = 10
+	defaultAuthRefreshRateLimit    = 10
+	defaultChatStreamRateLimit     = 20
+	defaultChatStreamAnonRateLimit = 5
 )
 
 // Config 应用配置根结构。
@@ -198,9 +205,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("argon2.key_length", defaultArgon2KeyLength)
 
 	// 限流默认值
-	v.SetDefault("rate_limit.auth_login", 10)
-	v.SetDefault("rate_limit.auth_register", 10)
-	v.SetDefault("rate_limit.auth_refresh", 10)
-	v.SetDefault("rate_limit.chat_stream", 20)
-	v.SetDefault("rate_limit.chat_stream_anon", 5)
+	v.SetDefault("rate_limit.auth_login", defaultAuthLoginRateLimit)
+	v.SetDefault("rate_limit.auth_register", defaultAuthRegisterRateLimit)
+	v.SetDefault("rate_limit.auth_refresh", defaultAuthRefreshRateLimit)
+	v.SetDefault("rate_limit.chat_stream", defaultChatStreamRateLimit)
+	v.SetDefault("rate_limit.chat_stream_anon", defaultChatStreamAnonRateLimit)
 }

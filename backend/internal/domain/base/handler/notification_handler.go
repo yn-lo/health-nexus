@@ -130,12 +130,11 @@ func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request
 
 // notificationScope 从 DataScope（DataIsolation 注入）提取角色与科室。
 // DeptID<=0 时返回 nil（仅可见广播通知）。
-func notificationScope(r *http.Request) (string, *int64, error) {
+func notificationScope(r *http.Request) (role string, deptID *int64, err error) {
 	scope := middleware.ScopeFromCtx(r.Context())
 	if scope == nil || scope.Role == "" {
 		return "", nil, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity")
 	}
-	var deptID *int64
 	if scope.DeptID > 0 {
 		deptID = &scope.DeptID
 	}

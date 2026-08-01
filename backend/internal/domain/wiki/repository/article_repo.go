@@ -402,7 +402,8 @@ func (r *ArticleRepo) SetFeaturedRank(ctx context.Context, id int64, rank int) e
 			ELSE featured_rank
 		END,
 		updated_at = now()
-		WHERE id = $1 OR ($2 > 0 AND department_id = (SELECT department_id FROM articles WHERE id = $1) AND featured_rank = $2)`
+		WHERE id = $1 OR ($2 > 0 AND department_id = (SELECT department_id FROM articles WHERE id = $1)` +
+		` AND featured_rank = $2)`
 	tag, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, id, rank)
 	if err != nil {
 		return fmt.Errorf("set article featured rank: %w", err)

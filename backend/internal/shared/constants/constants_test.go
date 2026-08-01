@@ -23,7 +23,7 @@ func TestDefaultSystemPrompt_Constraints(t *testing.T) {
 
 // contains 判断 s 是否包含 substr，避免引入 strings 包依赖。
 func contains(s, substr string) bool {
-	if len(substr) == 0 {
+	if substr == "" {
 		return true
 	}
 	for i := 0; i+len(substr) <= len(s); i++ {

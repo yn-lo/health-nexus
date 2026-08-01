@@ -276,7 +276,10 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	profile, err := h.svc.UpdateProfile(r.Context(), userID, req.Phone, req.DateOfBirth, req.Gender, req.EmergencyContact, req.EmergencyPhone)
+	profile, err := h.svc.UpdateProfile(
+		r.Context(), userID, req.Phone, req.DateOfBirth,
+		req.Gender, req.EmergencyContact, req.EmergencyPhone,
+	)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -298,7 +301,10 @@ func (h *AuthHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
 		return
 	}
-	accounts, total, err := h.svc.ListAccounts(r.Context(), actorRole, actorDeptID, int64(params.Page), int64(params.PageSize))
+	accounts, total, err := h.svc.ListAccounts(
+		r.Context(), actorRole, actorDeptID,
+		int64(params.Page), int64(params.PageSize),
+	)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

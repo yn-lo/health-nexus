@@ -13,6 +13,9 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
+// homeFeaturedLimit 首页热门文章展示数量。
+const homeFeaturedLimit = 3
+
 // PublicHandler 公开文章端点（匿名可访问，契约 §4.1/4.2）。
 type PublicHandler struct {
 	svc *service.ArticleService
@@ -75,7 +78,7 @@ func (h *PublicHandler) Featured(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	items, err := h.svc.ListFeatured(r.Context(), deptID, 3)
+	items, err := h.svc.ListFeatured(r.Context(), deptID, homeFeaturedLimit)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

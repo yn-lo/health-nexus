@@ -142,8 +142,19 @@ func buildSvc(article *entity.Article) (*ArticleService, *mockArticleRepo, *mock
 	return svc, repo, audit, chunks, tx
 }
 
+// svcDeps 聚合 buildSvcWithOutbox 构造出的服务与各 mock，供测试断言。
+type svcDeps struct {
+	svc    *ArticleService
+	repo   *mockArticleRepo
+	audit  *mockAuditRepo
+	chunks *mockChunkRepo
+	outbox *mockOutboxRepo
+	vector *mockVectorEnqueuer
+	tx     *fakeTxRunner
+}
+
 // buildSvcWithOutbox 构造带 outbox 的 ArticleService。
-func buildSvcWithOutbox(article *entity.Article) (*ArticleService, *mockArticleRepo, *mockAuditRepo, *mockChunkRepo, *mockOutboxRepo, *mockVectorEnqueuer, *fakeTxRunner) {
+func buildSvcWithOutbox(article *entity.Article) svcDeps {
 	repo := &mockArticleRepo{article: article}
 	audit := &mockAuditRepo{}
 	chunks := &mockChunkRepo{}
@@ -151,7 +162,7 @@ func buildSvcWithOutbox(article *entity.Article) (*ArticleService, *mockArticleR
 	vector := &mockVectorEnqueuer{}
 	tx := &fakeTxRunner{}
 	svc := NewArticleService(repo, audit, chunks, tx, vector, outbox, nil)
-	return svc, repo, audit, chunks, outbox, vector, tx
+	return svcDeps{svc: svc, repo: repo, audit: audit, chunks: chunks, outbox: outbox, vector: vector, tx: tx}
 }
 
 // ============================================================================
@@ -254,32 +265,32 @@ func TestArticleService_Approve_WritesOutboxInTx(t *testing.T) {
 		AuthorID:     1, // 作者
 		DepartmentID: &deptID,
 	}
-	svc, _, audit, _, outbox, vector, tx := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	// 审核人不能是作者
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := svc.Approve(context.Background(), ApproveInput{
+	if err := d.svc.Approve(context.Background(), ApproveInput{
 		ArticleID: 42,
 		Actor:     reviewer,
 	}); err != nil {
 		t.Fatalf("Approve 返回错误: %v", err)
 	}
-	if !tx.called {
+	if !d.tx.called {
 		t.Error("期望 WithTx 被调用")
 	}
-	if audit.createCnt != 1 {
-		t.Errorf("期望审计写入 1 条，实际 %d", audit.createCnt)
+	if d.audit.createCnt != 1 {
+		t.Errorf("期望审计写入 1 条，实际 %d", d.audit.createCnt)
 	}
 	// 核心断言：事务内应写 outbox 记录，保证向量化最终投递。
-	if outbox.insertCall != 1 {
-		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", outbox.insertCall)
+	if d.outbox.insertCall != 1 {
+		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", d.outbox.insertCall)
 	}
-	if outbox.insertID != 42 {
-		t.Errorf("期望 outbox.Insert(42)，实际 %d", outbox.insertID)
+	if d.outbox.insertID != 42 {
+		t.Errorf("期望 outbox.Insert(42)，实际 %d", d.outbox.insertID)
 	}
 	// 事务外仍尝试直接 Enqueue（快速路径）。
-	if vector.enqueueCnt != 1 {
-		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", vector.enqueueCnt)
+	if d.vector.enqueueCnt != 1 {
+		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", d.vector.enqueueCnt)
 	}
 }
 
@@ -291,11 +302,11 @@ func TestArticleService_Approve_EnqueueFails_OutboxGuaranteesDelivery(t *testing
 		AuthorID:     1,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, outbox, vector, _ := buildSvcWithOutbox(article)
-	vector.err = errors.New("asynq down") // 模拟入队失败
+	d := buildSvcWithOutbox(article)
+	d.vector.err = errors.New("asynq down") // 模拟入队失败
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	err := svc.Approve(context.Background(), ApproveInput{
+	err := d.svc.Approve(context.Background(), ApproveInput{
 		ArticleID: 42,
 		Actor:     reviewer,
 	})
@@ -304,8 +315,8 @@ func TestArticleService_Approve_EnqueueFails_OutboxGuaranteesDelivery(t *testing
 		t.Fatalf("Approve 不应因入队失败而返回错误: %v", err)
 	}
 	// outbox 记录已写入事务内，relay 会兜底投递。
-	if outbox.insertCall != 1 {
-		t.Fatalf("期望 outbox.Insert 调用 1 次（入队失败时 outbox 兜底），实际 %d", outbox.insertCall)
+	if d.outbox.insertCall != 1 {
+		t.Fatalf("期望 outbox.Insert 调用 1 次（入队失败时 outbox 兜底），实际 %d", d.outbox.insertCall)
 	}
 }
 
@@ -323,11 +334,11 @@ func TestArticleService_Update_PublishedContentChange_WritesOutbox(t *testing.T)
 		Content:      "old content",
 		ContentHash:  "old_hash",
 	}
-	svc, _, _, _, outbox, vector, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
 	newContent := "new content"
-	_, err := svc.Update(context.Background(), UpdateInput{
+	_, err := d.svc.Update(context.Background(), UpdateInput{
 		Content:   &newContent,
 		ArticleID: 42,
 		Actor:     actor,
@@ -336,15 +347,15 @@ func TestArticleService_Update_PublishedContentChange_WritesOutbox(t *testing.T)
 		t.Fatalf("Update 返回错误: %v", err)
 	}
 	// 核心断言：已发布文章内容变更应事务内写 outbox。
-	if outbox.insertCall != 1 {
-		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", outbox.insertCall)
+	if d.outbox.insertCall != 1 {
+		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", d.outbox.insertCall)
 	}
-	if outbox.insertID != 42 {
-		t.Errorf("期望 outbox.Insert(42)，实际 %d", outbox.insertID)
+	if d.outbox.insertID != 42 {
+		t.Errorf("期望 outbox.Insert(42)，实际 %d", d.outbox.insertID)
 	}
 	// 事务外仍尝试直接 Enqueue。
-	if vector.enqueueCnt != 1 {
-		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", vector.enqueueCnt)
+	if d.vector.enqueueCnt != 1 {
+		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", d.vector.enqueueCnt)
 	}
 }
 
@@ -358,11 +369,11 @@ func TestArticleService_Update_MetadataOnly_NoOutbox(t *testing.T) {
 		Content:      "same content",
 		ContentHash:  "same_hash",
 	}
-	svc, _, _, _, outbox, vector, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
 	newTitle := "new title"
-	_, err := svc.Update(context.Background(), UpdateInput{
+	_, err := d.svc.Update(context.Background(), UpdateInput{
 		Title:     &newTitle,
 		ArticleID: 42,
 		Actor:     actor,
@@ -371,11 +382,11 @@ func TestArticleService_Update_MetadataOnly_NoOutbox(t *testing.T) {
 		t.Fatalf("Update 返回错误: %v", err)
 	}
 	// 仅元数据变更，不应写 outbox。
-	if outbox.insertCall != 0 {
-		t.Fatalf("期望 outbox.Insert 不被调用，实际 %d 次", outbox.insertCall)
+	if d.outbox.insertCall != 0 {
+		t.Fatalf("期望 outbox.Insert 不被调用，实际 %d 次", d.outbox.insertCall)
 	}
-	if vector.enqueueCnt != 0 {
-		t.Errorf("期望 Enqueue 不被调用，实际 %d 次", vector.enqueueCnt)
+	if d.vector.enqueueCnt != 0 {
+		t.Errorf("期望 Enqueue 不被调用，实际 %d 次", d.vector.enqueueCnt)
 	}
 }
 
@@ -391,28 +402,28 @@ func TestArticleService_Unarchive_EnqueuesVectorize(t *testing.T) {
 		AuthorID:     1,
 		DepartmentID: &deptID,
 	}
-	svc, _, audit, _, outbox, vector, tx := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin}
 
-	if err := svc.Unarchive(context.Background(), 42, actor); err != nil {
+	if err := d.svc.Unarchive(context.Background(), 42, actor); err != nil {
 		t.Fatalf("Unarchive 返回错误: %v", err)
 	}
-	if !tx.called {
+	if !d.tx.called {
 		t.Error("期望 WithTx 被调用")
 	}
-	if audit.createCnt != 1 {
-		t.Errorf("期望审计写入 1 条，实际 %d", audit.createCnt)
+	if d.audit.createCnt != 1 {
+		t.Errorf("期望审计写入 1 条，实际 %d", d.audit.createCnt)
 	}
 	// 核心断言：恢复归档文章应事务内写 outbox，保证向量化重建。
-	if outbox.insertCall != 1 {
-		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", outbox.insertCall)
+	if d.outbox.insertCall != 1 {
+		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", d.outbox.insertCall)
 	}
-	if outbox.insertID != 42 {
-		t.Errorf("期望 outbox.Insert(42)，实际 %d", outbox.insertID)
+	if d.outbox.insertID != 42 {
+		t.Errorf("期望 outbox.Insert(42)，实际 %d", d.outbox.insertID)
 	}
 	// 事务外仍尝试直接 Enqueue。
-	if vector.enqueueCnt != 1 {
-		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", vector.enqueueCnt)
+	if d.vector.enqueueCnt != 1 {
+		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", d.vector.enqueueCnt)
 	}
 }
 
@@ -422,10 +433,10 @@ func TestArticleService_Unarchive_NotArchived_ReturnsConflict(t *testing.T) {
 		Status:   constants.ArticleStatusPublished,
 		AuthorID: 1,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin}
 
-	err := svc.Unarchive(context.Background(), 42, actor)
+	err := d.svc.Unarchive(context.Background(), 42, actor)
 	if err == nil {
 		t.Fatal("期望 Unarchive 返回错误（非归档状态）")
 	}
@@ -439,10 +450,10 @@ func TestArticleService_Unarchive_NonAdmin_ReturnsForbidden(t *testing.T) {
 		AuthorID:     1,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
-	err := svc.Unarchive(context.Background(), 42, actor)
+	err := d.svc.Unarchive(context.Background(), 42, actor)
 	if err == nil {
 		t.Fatal("期望 Unarchive 返回错误（非管理员）")
 	}
@@ -460,11 +471,11 @@ func TestArticleService_Approve_OutboxInsertFails_RollsBack(t *testing.T) {
 		AuthorID:     1,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, outbox, _, _ := buildSvcWithOutbox(article)
-	outbox.insertErr = errors.New("outbox db error")
+	d := buildSvcWithOutbox(article)
+	d.outbox.insertErr = errors.New("outbox db error")
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	err := svc.Approve(context.Background(), ApproveInput{
+	err := d.svc.Approve(context.Background(), ApproveInput{
 		ArticleID: 42,
 		Actor:     reviewer,
 	})
@@ -485,10 +496,10 @@ func TestArticleService_Approve_SuperAdmin_CanReviewOwnArticle(t *testing.T) {
 		AuthorID:     1, // 作者与审核人相同
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}
 
-	if err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
 		t.Fatalf("超级管理员应可审核自己的文章，实际错误: %v", err)
 	}
 }
@@ -501,10 +512,10 @@ func TestArticleService_Approve_SuperAdmin_CanReviewAnyDept(t *testing.T) {
 		AuthorID:     2,
 		DepartmentID: &otherDept, // 不同科室
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}
 
-	if err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
 		t.Fatalf("超级管理员应可审核任意科室文章，实际错误: %v", err)
 	}
 }
@@ -517,10 +528,10 @@ func TestArticleService_Approve_DeptAdmin_CanReviewOwnArticle(t *testing.T) {
 		AuthorID:     1, // 作者与审核人相同
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
 		t.Fatalf("科室管理员应可审核自己的文章，实际错误: %v", err)
 	}
 }
@@ -533,10 +544,10 @@ func TestArticleService_Approve_DeptAdmin_CanReviewSameDept(t *testing.T) {
 		AuthorID:     2,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
 		t.Fatalf("科室管理员应可审核本科室文章，实际错误: %v", err)
 	}
 }
@@ -549,10 +560,10 @@ func TestArticleService_Approve_DeptAdmin_CannotReviewOtherDept(t *testing.T) {
 		AuthorID:     2,
 		DepartmentID: &otherDept,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
+	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
 	if err == nil {
 		t.Fatal("科室管理员不应审核其他科室文章")
 	}
@@ -566,10 +577,10 @@ func TestArticleService_Approve_DoctorCannotReview(t *testing.T) {
 		AuthorID:     2,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
-	err := svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
+	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
 	if err == nil {
 		t.Fatal("非管理员不应审核文章")
 	}
@@ -583,10 +594,10 @@ func TestArticleService_Reject_SuperAdmin_CanRejectOwnArticle(t *testing.T) {
 		AuthorID:     1,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}
 
-	if err := svc.Reject(context.Background(), RejectInput{ArticleID: 42, Reason: "不合规", Actor: actor}); err != nil {
+	if err := d.svc.Reject(context.Background(), RejectInput{ArticleID: 42, Reason: "不合规", Actor: actor}); err != nil {
 		t.Fatalf("超级管理员应可驳回自己的文章，实际错误: %v", err)
 	}
 }
@@ -599,10 +610,10 @@ func TestArticleService_Reject_DoctorCannotReject(t *testing.T) {
 		AuthorID:     2,
 		DepartmentID: &deptID,
 	}
-	svc, _, _, _, _, _, _ := buildSvcWithOutbox(article)
+	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
-	err := svc.Reject(context.Background(), RejectInput{ArticleID: 42, Reason: "不合规", Actor: actor})
+	err := d.svc.Reject(context.Background(), RejectInput{ArticleID: 42, Reason: "不合规", Actor: actor})
 	if err == nil {
 		t.Fatal("非管理员不应驳回文章")
 	}

@@ -28,6 +28,7 @@ func NewBaseDepartmentResolver(repo *baserepo.DepartmentRepo) *BaseDepartmentRes
 //   - 0：显式选择"全部科室"，选择本身合法，返回主科室（或首个可见科室）仅作元数据归属，
 //     检索范围由 deptIDPtr 控制（0 → nil 不限科室），此处不校验 id=0（数据库中不存在该科室）；
 //   - >0：具体科室，校验其在患者可见列表（所属科室 ∪ 公共科室）中，否则返回 403。
+//
 // ponytail: selectedDeptID == nil 时优先取患者主科室（user_departments.is_primary），折中。
 func (r *BaseDepartmentResolver) ResolveForPatient(
 	ctx context.Context, patientID int64, selectedDeptID *int64,

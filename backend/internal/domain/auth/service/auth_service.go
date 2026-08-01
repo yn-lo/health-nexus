@@ -25,10 +25,10 @@ import (
 
 // 用户名与密码约束。
 const (
-	passwordMinLen = 8
-	usernameMinLen = 3
-	usernameMaxLen = 64
-	phoneMaxLen           = 20
+	passwordMinLen         = 8
+	usernameMinLen         = 3
+	usernameMaxLen         = 64
+	phoneMaxLen            = 20
 	emergencyContactMaxLen = 64
 	emergencyPhoneMaxLen   = 20
 )
@@ -50,7 +50,8 @@ type UserRepo interface {
 	GetByID(ctx context.Context, id int64) (*entity.User, error)
 	Create(ctx context.Context, username, passwordHash, role string) (*entity.User, error)
 	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error
-	UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time, gender string, emergencyContact string, emergencyPhone string) error
+	UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time,
+		gender, emergencyContact, emergencyPhone string) error
 	SetActive(ctx context.Context, userID int64, active bool) error
 	SoftDelete(ctx context.Context, userID int64) error
 	List(ctx context.Context, limit, offset int) ([]*entity.User, int64, error)
@@ -428,12 +429,17 @@ func (s *AuthService) GetProfile(ctx context.Context, userID int64) (*ProfileDTO
 	if u == nil {
 		return nil, apperrors.NotFound("AUTH_USER_NOT_FOUND", "用户不存在")
 	}
-	return &ProfileDTO{ID: u.ID, Username: u.Username, Role: u.Role, Phone: u.Phone, DateOfBirth: u.DateOfBirth, Gender: u.Gender, EmergencyContact: u.EmergencyContact, EmergencyPhone: u.EmergencyPhone, DeptID: u.PrimaryDeptID}, nil
+	return &ProfileDTO{
+		ID: u.ID, Username: u.Username, Role: u.Role, Phone: u.Phone,
+		DateOfBirth: u.DateOfBirth, Gender: u.Gender, EmergencyContact: u.EmergencyContact,
+		EmergencyPhone: u.EmergencyPhone, DeptID: u.PrimaryDeptID,
+	}, nil
 }
 
 // UpdateProfile 更新已登录用户的个人资料（phone/date_of_birth/gender/emergency_contact/emergency_phone）。
 // 用户名为登录凭证不可自改（改用户名需管理员介入，避免凭证混乱）。
-func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time, gender string, emergencyContact string, emergencyPhone string) (*ProfileDTO, error) {
+func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time,
+	gender, emergencyContact, emergencyPhone string) (*ProfileDTO, error) {
 	if len(phone) > phoneMaxLen {
 		return nil, apperrors.Validation("AUTH_PHONE_TOO_LONG", "手机号过长")
 	}
@@ -453,7 +459,8 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, phone str
 	if u == nil {
 		return nil, apperrors.NotFound("AUTH_USER_NOT_FOUND", "用户不存在")
 	}
-	if err := s.repo.UpdateProfile(ctx, userID, phone, dateOfBirth, gender, emergencyContact, emergencyPhone); err != nil {
+	if err := s.repo.UpdateProfile(ctx, userID, phone, dateOfBirth, gender,
+		emergencyContact, emergencyPhone); err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
 	}
 	return s.GetProfile(ctx, userID)
@@ -461,7 +468,8 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, phone str
 
 // ListAccounts 管理员分页查询账户列表。
 // 数据隔离：非 SUPER_ADMIN 仅查看本科室账户（通过 user_departments JOIN 过滤）。
-func (s *AuthService) ListAccounts(ctx context.Context, actorRole string, actorDeptID, page, pageSize int64) ([]AccountDTO, int64, error) {
+func (s *AuthService) ListAccounts(ctx context.Context, actorRole string,
+	actorDeptID, page, pageSize int64) ([]AccountDTO, int64, error) {
 	offset := (page - 1) * pageSize
 	var (
 		users []*entity.User
@@ -568,7 +576,8 @@ func (s *AuthService) SoftDeleteUser(ctx context.Context, actorID int64, actorRo
 // ResetUserPassword 超级管理员重置用户密码。
 // 安全约束：仅 SUPER_ADMIN 可执行；不可重置自己密码（用 change-password 自助）。
 // 重置后用户需用新密码重新登录。
-func (s *AuthService) ResetUserPassword(ctx context.Context, actorID int64, actorRole string, targetID int64, newPassword string) error {
+func (s *AuthService) ResetUserPassword(ctx context.Context, actorID int64,
+	actorRole string, targetID int64, newPassword string) error {
 	if actorRole != constants.RoleSuperAdmin {
 		return apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可重置用户密码")
 	}

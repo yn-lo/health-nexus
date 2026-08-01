@@ -70,7 +70,9 @@ func normalizeBaseURL(baseURL string) string {
 // newOpenAIClient 工厂：依据 baseURL/apiKey/timeout 构造 OpenAI 兼容客户端。
 // Transport 加固无条件设置——R8-Config-5 修复：TLS 握手/连接复用/HTTP2 必须始终启用；
 // ResponseHeaderTimeout 单独条件化：仅在 timeout>0 时启用（避免 0 值导致首字节等待无限期）。
-func newOpenAIClient(baseURL, apiKey string, timeout time.Duration) (*openai.Client, *http.Client) {
+func newOpenAIClient(
+	baseURL, apiKey string, timeout time.Duration,
+) (client *openai.Client, hc *http.Client) {
 	ocfg := openai.DefaultConfig(apiKey)
 	if normalized := normalizeBaseURL(baseURL); normalized != "" {
 		ocfg.BaseURL = normalized
@@ -84,9 +86,10 @@ func newOpenAIClient(baseURL, apiKey string, timeout time.Duration) (*openai.Cli
 	if timeout > 0 {
 		transport.ResponseHeaderTimeout = timeout
 	}
-	hc := &http.Client{Transport: transport}
+	hc = &http.Client{Transport: transport}
 	ocfg.HTTPClient = hc
-	return openai.NewClientWithConfig(ocfg), hc
+	client = openai.NewClientWithConfig(ocfg)
+	return client, hc
 }
 
 // NewClient 依据配置创建 LLM 主客户端（chat provider），支持 OpenAI 兼容 API。
@@ -171,7 +174,9 @@ func NewRerankClient(cfg config.LLMConfig) (*Client, error) {
 //
 // ponytail: 不依赖 config.LLMConfig，纯按 provider 实体构造，简化；
 // 单 client 只承载一个能力，model 字段映射由 providerType 内部决定。
-func NewClientFromProvider(providerType, baseURL, apiKey, model string, timeout time.Duration, params map[string]any) *Client {
+func NewClientFromProvider(
+	providerType, baseURL, apiKey, model string, timeout time.Duration, params map[string]any,
+) *Client {
 	if apiKey == "" || model == "" {
 		return &Client{chat: nil, cfg: config.LLMConfig{}}
 	}

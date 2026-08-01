@@ -123,7 +123,10 @@ func NewArticleService(
 	repo ArticleRepoPort, audit AuditRepoPort, chunks ChunkRepoPort, tx TxRunner, vector VectorizeEnqueuer,
 	outbox OutboxRepoPort, refRevoker ReferenceRevoker,
 ) *ArticleService {
-	return &ArticleService{repo: repo, audit: audit, chunks: chunks, tx: tx, vector: vector, outbox: outbox, refRevoker: refRevoker}
+	return &ArticleService{
+		repo: repo, audit: audit, chunks: chunks, tx: tx,
+		vector: vector, outbox: outbox, refRevoker: refRevoker,
+	}
 }
 
 // ============ DTO ============
@@ -267,7 +270,8 @@ func (s *ArticleService) Create(ctx context.Context, in CreateInput) (*ArticleSt
 // excludeDeptID 为 nil 表示不排除；非 nil 表示排除指定科室的文章。
 // search 非空时按 title/summary 模糊匹配（前端搜索）。
 func (s *ArticleService) ListPublished(
-	ctx context.Context, departmentID *int64, allowReference *bool, excludeDeptID *int64, search string, limit, offset int,
+	ctx context.Context, departmentID *int64, allowReference *bool, excludeDeptID *int64,
+	search string, limit, offset int,
 ) ([]ArticleListItemDTO, int64, error) {
 	list, total, err := s.repo.ListPublished(
 		ctx, repository.ListPublishedFilter{
@@ -300,7 +304,9 @@ func (s *ArticleService) GetPublished(ctx context.Context, id int64) (*ArticleDe
 	return &dto, nil
 }
 
-func (s *ArticleService) ListFeatured(ctx context.Context, departmentID *int64, limit int) ([]ArticleListItemDTO, error) {
+func (s *ArticleService) ListFeatured(
+	ctx context.Context, departmentID *int64, limit int,
+) ([]ArticleListItemDTO, error) {
 	list, err := s.repo.ListFeatured(ctx, departmentID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list featured: %w", err)

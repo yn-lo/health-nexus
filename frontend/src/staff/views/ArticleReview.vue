@@ -35,7 +35,7 @@ async function handleApprove(id: number) {
 
 /** 驳回文章 */
 async function handleReject(id: number) {
-  let reason = ''
+  let reason: string
   try {
     const res = await showDialog({
       title: '驳回文章',

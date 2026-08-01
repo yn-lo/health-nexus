@@ -122,7 +122,7 @@ func deptVisibilitySQL(deptIDs []int64, startArg int, args *[]any) (sql string, 
 // SearchByVector HNSW 向量检索 topK 候选（REQ-WIKI-013）。
 // embedding 为查询向量；deptIDs 为 nil 时不限制科室可见性，非 nil 时按"本科室 + 已授权引用"过滤。
 // similarityThreshold > 0 时在 SQL 层预过滤相似度（1 - cosine_distance），减少回传与上层重复计算。
-// 始终排除空内容切片（c.content != ''），避免空切片混入候选。
+// 始终排除空内容切片（c.content != ”），避免空切片混入候选。
 // Score 为 1 - cosine_distance（OpenAI embedding 已归一化，相似度 ∈ [0,1]）。
 func (r *ChunkRepo) SearchByVector(
 	ctx context.Context, embedding []float32, topK int, deptIDs []int64, similarityThreshold float64,

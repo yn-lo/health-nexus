@@ -308,7 +308,9 @@ SELECT EXISTS(
 	AND id != $3
 )`
 
-func (r *DepartmentRepo) SiblingNameExists(ctx context.Context, name string, parentID *int64, excludeID int64) (bool, error) {
+func (r *DepartmentRepo) SiblingNameExists(
+	ctx context.Context, name string, parentID *int64, excludeID int64,
+) (bool, error) {
 	var exists bool
 	if err := r.pool.QueryRow(ctx, siblingNameExistsQuery, name, parentID, excludeID).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check sibling name: %w", err)

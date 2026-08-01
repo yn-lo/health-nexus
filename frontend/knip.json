@@ -1,9 +1,16 @@
 {
-  "entry": ["src/chat/main.ts", "src/staff/main.ts"],
-  "project": ["src/**/*.ts", "src/**/*.vue"],
-  "ignore": [
-    "src/shared/types/**",
-    "src/**/*.d.ts"
+  "entry": [
+    "src/chat/main.ts",
+    "src/staff/main.ts",
+    "scripts/**/*.mjs",
+    "tests/**/*.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "src/**/*.css",
+    "tests/**/*.ts",
+    "scripts/**/*.mjs"
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreBinaries": [],

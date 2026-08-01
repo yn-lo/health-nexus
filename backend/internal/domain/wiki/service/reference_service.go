@@ -241,21 +241,6 @@ func (s *ReferenceService) assertSourceDeptExists(ctx context.Context, sourceDep
 	return nil
 }
 
-// assertNoPendingReference 同 article_id + target_dept_id 无 pending 申请（REQ-WIKI-022，409）。
-// HasPending 仅作 UX 预检（快速返回 409，避免无谓 INSERT）；
-// 真正的并发安全由 uq_article_refs_pending 部分唯一索引保障——
-// 即便预检与 Create 之间有并发 INSERT，Create 仍会撞唯一索引返回 ErrDuplicatePending。
-func (s *ReferenceService) assertNoPendingReference(ctx context.Context, articleID, targetDeptID int64) error {
-	exists, err := s.ref.HasPending(ctx, articleID, targetDeptID)
-	if err != nil {
-		return fmt.Errorf("check pending reference: %w", err)
-	}
-	if exists {
-		return apperrors.Conflict("WIKI_REF_PENDING_EXISTS", "已存在待审核的引用申请")
-	}
-	return nil
-}
-
 // createReference 事务内创建引用申请。事务仅包裹 Create：HasPending 是事务外的 UX 预检（快速 409），
 // 真正的并发安全由 uq_article_refs_pending 部分唯一索引保障——
 // Create 撞唯一索引返回 ErrDuplicatePending，翻译为 409 并由 tx 回滚。

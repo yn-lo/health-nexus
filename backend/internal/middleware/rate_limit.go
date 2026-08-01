@@ -103,7 +103,9 @@ const rateCfgPrefix = "rl_cfg:"
 // HotReloadMiddleware 从 Redis 实时读取限流阈值（热更新），fallback 到 defaultLimit。
 // Redis key 格式：rl_cfg:{scope}（值为整数）。读取失败或值无效时降级使用 defaultLimit。
 // 修改 Redis 值后即时生效（下一次请求），无需重启服务。
-func (rl *RateLimiter) HotReloadMiddleware(scope string, defaultLimit int, period time.Duration) func(http.Handler) http.Handler {
+func (rl *RateLimiter) HotReloadMiddleware(
+	scope string, defaultLimit int, period time.Duration,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			limit := rl.resolveLimit(r.Context(), scope, defaultLimit)

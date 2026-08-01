@@ -219,7 +219,9 @@ func (s *ConversationService) ListMessages(
 
 // Feedback 记录消息反馈（up/down）。
 // 消息不存在或不属于该患者返回 AppError(404)。
-func (s *ConversationService) Feedback(ctx context.Context, messageID uuid.UUID, patientID int64, feedback string) error {
+func (s *ConversationService) Feedback(
+	ctx context.Context, messageID uuid.UUID, patientID int64, feedback string,
+) error {
 	rows, err := s.msg.UpdateFeedback(ctx, messageID, patientID, feedback)
 	if err != nil {
 		return fmt.Errorf("update feedback: %w", err)

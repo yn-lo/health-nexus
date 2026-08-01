@@ -94,8 +94,12 @@ func (r *UserRepo) UpdatePasswordHash(ctx context.Context, userID int64, passwor
 
 // UpdateProfile 更新用户个人资料字段。
 // 用户不存在时返回 nil error（由调用方校验 user 是否存在）。
-func (r *UserRepo) UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time, gender string, emergencyContact string, emergencyPhone string) error {
-	const q = `UPDATE users SET phone = $2, date_of_birth = $3, gender = $4, emergency_contact = $5, emergency_phone = $6, updated_at = NOW() WHERE id = $1 AND is_deleted = false`
+func (r *UserRepo) UpdateProfile(
+	ctx context.Context, userID int64, phone string, dateOfBirth *time.Time,
+	gender, emergencyContact, emergencyPhone string,
+) error {
+	const q = `UPDATE users SET phone = $2, date_of_birth = $3, gender = $4, ` +
+		`emergency_contact = $5, emergency_phone = $6, updated_at = NOW() WHERE id = $1 AND is_deleted = false`
 	_, err := r.pool.Exec(ctx, q, userID, phone, dateOfBirth, gender, emergencyContact, emergencyPhone)
 	if err != nil {
 		return fmt.Errorf("update profile: %w", err)
@@ -117,7 +121,8 @@ func (r *UserRepo) SetActive(ctx context.Context, userID int64, active bool) err
 // SoftDelete 软删除用户：将 is_deleted 设为 true，同时锁定账户。
 // 用户不存在或已删除时返回 nil error（由调用方校验 user 是否存在）。
 func (r *UserRepo) SoftDelete(ctx context.Context, userID int64) error {
-	const q = `UPDATE users SET is_deleted = true, is_active = false, updated_at = NOW() WHERE id = $1 AND is_deleted = false`
+	const q = `UPDATE users SET is_deleted = true, is_active = false, ` +
+		`updated_at = NOW() WHERE id = $1 AND is_deleted = false`
 	_, err := r.pool.Exec(ctx, q, userID)
 	if err != nil {
 		return fmt.Errorf("soft delete user: %w", err)

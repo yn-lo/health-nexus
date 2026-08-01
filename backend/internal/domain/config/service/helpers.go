@@ -149,25 +149,25 @@ func validateRAGConfig(req UpdateRAGConfigRequest) error {
 		return err
 	}
 	if err := checkFloatRange(
-		req.SimilarityThreshold, entity.SimilarityThresholdMin, entity.SimilarityThresholdMax,
+		req.SimilarityThreshold, entity.SimilarityThresholdMax,
 		"CONFIG_RAG_SIMILARITY_RANGE", "similarity_threshold 范围 0.0-1.0",
 	); err != nil {
 		return err
 	}
 	if err := checkFloatRange(
-		req.RerankThreshold, entity.RerankThresholdMin, entity.RerankThresholdMax,
+		req.RerankThreshold, entity.RerankThresholdMax,
 		"CONFIG_RAG_RERANK_THRESHOLD_RANGE", "rerank_threshold 范围 0.0-1.0",
 	); err != nil {
 		return err
 	}
 	if err := checkFloatRange(
-		req.DiversityFactor, entity.DiversityFactorMin, entity.DiversityFactorMax,
+		req.DiversityFactor, entity.DiversityFactorMax,
 		"CONFIG_RAG_DIVERSITY_RANGE", "diversity_factor 范围 0.0-1.0",
 	); err != nil {
 		return err
 	}
 	if err := checkFloatRange(
-		req.OODThreshold, entity.OODThresholdMin, entity.OODThresholdMax,
+		req.OODThreshold, entity.OODThresholdMax,
 		"CONFIG_RAG_OOD_THRESHOLD_RANGE", "ood_threshold 范围 0.0-0.5",
 	); err != nil {
 		return err
@@ -182,8 +182,8 @@ func checkIntRange(v *int, lo, hi int, code, msg string) error {
 	return nil
 }
 
-func checkFloatRange(v *float64, lo, hi float64, code, msg string) error {
-	if v != nil && (*v < lo || *v > hi) {
+func checkFloatRange(v *float64, hi float64, code, msg string) error {
+	if v != nil && (*v < 0 || *v > hi) {
 		return apperrors.Validation(code, msg)
 	}
 	return nil

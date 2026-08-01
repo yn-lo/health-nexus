@@ -83,7 +83,9 @@ func (r *MessageRepo) FinalizeAssistant(
 // UpdateFeedback 更新消息反馈（up/down）。
 // 通过 conversations.patient_id 子查询校验消息属于该患者（数据隔离）；
 // 返回受影响行数，0 表示消息不存在或不属于该患者。
-func (r *MessageRepo) UpdateFeedback(ctx context.Context, messageID uuid.UUID, patientID int64, feedback string) (int64, error) {
+func (r *MessageRepo) UpdateFeedback(
+	ctx context.Context, messageID uuid.UUID, patientID int64, feedback string,
+) (int64, error) {
 	const sql = `UPDATE messages SET feedback = $3, updated_at = now()
 	             WHERE id = $1
 	             AND conversation_id IN (SELECT id FROM conversations WHERE patient_id = $2)`
@@ -104,7 +106,8 @@ func (r *MessageRepo) ListByConversation(
 		// 首页排序必须与游标分支的 (created_at DESC, id DESC) 全序一致：
 		// 仅按 created_at DESC 时，created_at 相同的消息顺序不确定，
 		// 取页尾作游标会漏掉/重复相同时间戳的消息（与下方 (created_at, id) 复合游标语义错位）。
-		const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, created_at, updated_at, feedback
+		const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
+			`created_at, updated_at, feedback
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
 	             ORDER BY created_at DESC, id DESC LIMIT $2`
@@ -112,7 +115,8 @@ func (r *MessageRepo) ListByConversation(
 	}
 	// H4: 用 (created_at, id) 复合游标避免相同 created_at 时漏消息。
 	// Postgres ROW value comparison 要求字段类型一致：created_at TIMESTAMPTZ, id UUID。
-	const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, created_at, updated_at, feedback
+	const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
+		`created_at, updated_at, feedback
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
 	             AND (created_at, id) < (
@@ -127,11 +131,15 @@ func (r *MessageRepo) ListByConversation(
 // excludeID 非 nil 时排除该消息：当前轮用户消息已先于历史加载持久化，
 // 不排除会让 LLM 上下文出现重复提问（原始问题 + 改写问题两条连续 user 消息）。
 // 同时过滤空 assistant 占位消息，避免残留占位污染上下文。
-func (r *MessageRepo) GetRecentHistory(ctx context.Context, convID uuid.UUID, turns int, excludeID *uuid.UUID) ([]*entity.Message, error) {
+func (r *MessageRepo) GetRecentHistory(
+	ctx context.Context, convID uuid.UUID, turns int, excludeID *uuid.UUID,
+) ([]*entity.Message, error) {
 	limit := turns * 2
-	const base = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, created_at, updated_at, feedback
+	const base = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
+		`created_at, updated_at, feedback
 	             FROM (
-	                 SELECT id, conversation_id, role, content, result_code, referenced_chunks, created_at, updated_at, feedback
+	                 SELECT id, conversation_id, role, content, result_code, ` +
+		`referenced_chunks, created_at, updated_at, feedback
 	                 FROM messages WHERE conversation_id = $1
 	                 AND NOT (role = 'assistant' AND content = '')`
 	if excludeID != nil {

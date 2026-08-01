@@ -11,6 +11,12 @@ import (
 	"health-nexus/internal/shared/contextkeys"
 )
 
+// logDirPerm 日志目录权限位：owner 读写执行，group 读执行。
+const logDirPerm = 0o750
+
+// logFilePerm 日志文件权限位：仅 owner 读写。
+const logFilePerm = 0o600
+
 // requestIDHandler 包装 slog.Handler，Handle 时从 context 读取 request_id/user_id 写入日志属性。
 type requestIDHandler struct {
 	slog.Handler
@@ -47,15 +53,21 @@ func (h *requestIDHandler) WithGroup(name string) slog.Handler {
 func New(logDir string) *slog.Logger {
 	writers := []io.Writer{os.Stdout}
 	if logDir != "" {
-		if err := os.MkdirAll(logDir, 0755); err == nil {
-			f, err := os.OpenFile(filepath.Join(logDir, "app.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err := os.MkdirAll(logDir, logDirPerm); err == nil {
+			f, err := os.OpenFile( // #nosec G304 -- 目录由部署方通过 logDir 参数指定，属可信配置
+				filepath.Join(logDir, "app.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFilePerm,
+			)
 			if err == nil {
 				writers = append(writers, f)
 			} else {
-				os.Stderr.WriteString("logger: failed to open log file, falling back to stdout only: " + err.Error() + "\n")
+				_, _ = os.Stderr.WriteString(
+					"logger: failed to open log file, falling back to stdout only: " + err.Error() + "\n",
+				)
 			}
 		} else {
-			os.Stderr.WriteString("logger: failed to create log directory, falling back to stdout only: " + err.Error() + "\n")
+			_, _ = os.Stderr.WriteString(
+				"logger: failed to create log directory, falling back to stdout only: " + err.Error() + "\n",
+			)
 		}
 	}
 	base := slog.NewJSONHandler(io.MultiWriter(writers...), &slog.HandlerOptions{

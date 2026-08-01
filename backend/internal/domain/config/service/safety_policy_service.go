@@ -8,10 +8,22 @@ import (
 	"health-nexus/internal/shared/rag"
 )
 
+// sensitiveWordsPageSize 敏感词/安全规则分页查询的单页大小。
+const sensitiveWordsPageSize = 100
+
 var defaultSafetyPolicyWords = map[string][]string{
-	constants.SensitiveCategorySuicide:   {"自杀", "自残", "想死", "寻死", "轻生", "结束生命", "不想活", "割腕", "了结自己", "了结此生", "活不下去", "了结余生"},
-	constants.SensitiveCategoryEmergency: {"胸痛", "呼吸困难", "大出血", "咯血", "呕血", "昏迷", "休克", "抽搐", "持续高烧", "剧烈头痛", "意识不清"},
-	constants.SensitiveCategoryInjection: {"忽略之前指令", "忽略上面的", "忽略以上", "忘记之前的", "忽略前文", "dan模式", "dan 模式", "jailbreak", "越狱", "prompt injection", "system prompt", "你是ai", "你是一个ai", "ignore previous", "ignore above", "ignore prior", "disregard", "forget your", "override", "act as", "roleplay", "pretend to be", "as an ai", "新的指令", "new instructions"},
+	constants.SensitiveCategorySuicide: {
+		"自杀", "自残", "想死", "寻死", "轻生", "结束生命", "不想活", "割腕", "了结自己", "了结此生", "活不下去", "了结余生",
+	},
+	constants.SensitiveCategoryEmergency: {
+		"胸痛", "呼吸困难", "大出血", "咯血", "呕血", "昏迷", "休克", "抽搐", "持续高烧", "剧烈头痛", "意识不清",
+	},
+	constants.SensitiveCategoryInjection: {
+		"忽略之前指令", "忽略上面的", "忽略以上", "忘记之前的", "忽略前文", "dan模式", "dan 模式", "jailbreak", "越狱",
+		"prompt injection", "system prompt", "你是ai", "你是一个ai", "ignore previous", "ignore above", "ignore prior",
+		"disregard", "forget your", "override", "act as", "roleplay", "pretend to be", "as an ai",
+		"新的指令", "new instructions",
+	},
 }
 
 type SafetyPolicyWords struct {
@@ -43,10 +55,16 @@ type SafetyPolicyResponse struct {
 // 输出规则：DB 有活跃规则时使用 DB 规则（source=database），否则使用硬编码 fallback 规则（source=hardcoded）。
 func (s *ConfigService) GetSafetyPolicy(ctx context.Context) (*SafetyPolicyResponse, error) {
 	wordSets := make(map[string]SafetyPolicyWords, 3)
-	for _, category := range []string{constants.SensitiveCategorySuicide, constants.SensitiveCategoryEmergency, constants.SensitiveCategoryInjection} {
+	for _, category := range []string{
+		constants.SensitiveCategorySuicide,
+		constants.SensitiveCategoryEmergency,
+		constants.SensitiveCategoryInjection,
+	} {
 		words := []string{}
 		for page := 1; ; page++ {
-			list, total, err := s.ListSensitiveWords(ctx, category, pagination.Params{Page: page, PageSize: 100})
+			list, total, err := s.ListSensitiveWords(
+				ctx, category, pagination.Params{Page: page, PageSize: sensitiveWordsPageSize},
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -55,7 +73,7 @@ func (s *ConfigService) GetSafetyPolicy(ctx context.Context) (*SafetyPolicyRespo
 					words = append(words, word.Word)
 				}
 			}
-			if int64(page*100) >= total || len(list) == 0 {
+			if int64(page*sensitiveWordsPageSize) >= total || len(list) == 0 {
 				break
 			}
 		}
@@ -65,7 +83,7 @@ func (s *ConfigService) GetSafetyPolicy(ctx context.Context) (*SafetyPolicyRespo
 			wordSets[category] = SafetyPolicyWords{Source: "database", Words: words}
 		}
 	}
-	rules, _, err := s.ListSafetyRules(ctx, "", pagination.Params{Page: 1, PageSize: 100})
+	rules, _, err := s.ListSafetyRules(ctx, "", pagination.Params{Page: 1, PageSize: sensitiveWordsPageSize})
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +109,12 @@ func (s *ConfigService) GetSafetyPolicy(ctx context.Context) (*SafetyPolicyRespo
 		return nil, err
 	}
 	return &SafetyPolicyResponse{
-		InputSensitiveWords: SafetyPolicyInputWords{Suicide: wordSets[constants.SensitiveCategorySuicide], Emergency: wordSets[constants.SensitiveCategoryEmergency], Injection: wordSets[constants.SensitiveCategoryInjection]},
-		OutputRules:         outputRules,
-		Messages:            *messages,
+		InputSensitiveWords: SafetyPolicyInputWords{
+			Suicide:   wordSets[constants.SensitiveCategorySuicide],
+			Emergency: wordSets[constants.SensitiveCategoryEmergency],
+			Injection: wordSets[constants.SensitiveCategoryInjection],
+		},
+		OutputRules: outputRules,
+		Messages:    *messages,
 	}, nil
 }

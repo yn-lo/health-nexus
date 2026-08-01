@@ -21,12 +21,14 @@ const (
 	migrationAdvisoryLock = 0x484E4D47 // "HNMG" = Health Nexus MiGration
 	// migrationLockTimeout 获取迁移锁的超时。
 	migrationLockTimeout = 30 * time.Second
+	// migrationPollInterval 轮询 advisory lock 的间隔。
+	migrationPollInterval = 500 * time.Millisecond
 )
 
 // RunMigrations 在启动时自动应用未执行的数据库迁移。
 // goose 的 Up() 是幂等的——已执行的迁移不会重复执行。
 // 使用 PG advisory lock 防止多实例并发（server + worker 同时启动时，仅一个执行迁移）。
-func RunMigrations(ctx context.Context, dsn string, migrationsDir string) error {
+func RunMigrations(ctx context.Context, dsn, migrationsDir string) error {
 	if migrationsDir == "" {
 		migrationsDir = defaultMigrationsDir
 	}
@@ -39,7 +41,7 @@ func RunMigrations(ctx context.Context, dsn string, migrationsDir string) error 
 	if err != nil {
 		return fmt.Errorf("open db for migration: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 获取 advisory lock 避免并发迁移
 	lockCtx, cancel := context.WithTimeout(ctx, migrationLockTimeout)
@@ -72,7 +74,7 @@ func acquireAdvisoryLock(ctx context.Context, db *sql.DB) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(migrationPollInterval):
 		}
 	}
 }

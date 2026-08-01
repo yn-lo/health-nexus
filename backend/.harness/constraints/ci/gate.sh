@@ -160,6 +160,38 @@ run_p0() {
   else
     warn "golangci-lint 未安装，已跳过 P0-7 lint（CI 服务器应装齐；本地可 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest）"
   fi
+
+  # P0-8 数据库迁移完整性（goose 命名规范 + 编号唯一连续）
+  if [ -d migrations ]; then
+    local mig_bad=0
+    # 1) 命名规范：NNNNN_name.sql（goose 约定，Bug#1 历史教训）
+    local naming
+    naming="$(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -vE '^[0-9]{5}_[a-z0-9_]+\.sql$' || true)"
+    if [ -n "$naming" ]; then
+      fail "迁移文件命名不符合 goose 规范（NNNNN_name.sql）" "重命名迁移文件" "migrations/, .harness/specs/e2e-test-plan.md Bug#1"
+      echo "$naming" | head -n 10 | sed 's/^/    /'
+      mig_bad=1
+    fi
+    # 2) 编号唯一（无重复）
+    local dups
+    dups="$(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -oE '^[0-9]{5}' | sort | uniq -d)"
+    if [ -n "$dups" ]; then
+      fail "迁移编号重复：$(echo "$dups" | tr '\n' ' ')" "按序重排迁移编号" "migrations/"
+      mig_bad=1
+    fi
+    # 3) 编号连续（从 00001 开始无跳号）
+    if [ "$mig_bad" -eq 0 ]; then
+      local expected=1 num
+      for f in $(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | sort); do
+        num="$((10#${f%%_*}))"
+        if [ "$num" -ne "$expected" ]; then
+          fail "迁移编号不连续：期望 0000${expected}，实际 ${num}" "检查缺失/跳号的迁移文件" "migrations/"
+          break
+        fi
+        expected=$((expected + 1))
+      done
+    fi
+  fi
 }
 
 # ============================================================================
@@ -202,6 +234,25 @@ run_p1() {
   if [ -f .harness/specs/reference/error-codes.md ]; then
     : # 占位：错误码↔代码一致性检查留作后续 ratchet，当前由 review checklist 覆盖
   fi
+
+  # P1-5 Playwright E2E（前后端联调；服务未启动时优雅降级为告警，不阻塞）
+  if has_tool npx; then
+    local fe_alive be_alive
+    # curl -w '%{http_code}' 连接失败时输出 000，工具不可用时为空 → 兜底 000
+    fe_alive="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:5173/ 2>/dev/null)"
+    fe_alive="${fe_alive:-000}"
+    be_alive="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:5230/healthz 2>/dev/null)"
+    be_alive="${be_alive:-000}"
+    if [ "$fe_alive" != "000" ] && [ "$be_alive" != "000" ]; then
+      capture_fail \
+        "Playwright E2E 失败" \
+        "修复 E2E 用例或前后端问题" \
+        "frontend/tests/e2e/, frontend/playwright.config.ts" \
+        -- bash -c 'cd ../frontend && npx playwright test --reporter=line'
+    else
+      warn "Playwright E2E 已跳过：前后端服务未启动（前端 ${fe_alive} / 后端 ${be_alive}；需先启动 air + vite dev）"
+    fi
+  fi
 }
 
 # ============================================================================
@@ -219,16 +270,23 @@ run_p2() {
       # 测试失败已在 P0-5 捕获，这里不重复报错
       :
     else
-      # 提取 service 层覆盖率，低于 floor 告警（P2 不阻塞）
-      echo "$cov_out" | grep -E 'domain/.*/service' | while IFS= read -r line; do
-        local pct
+      # 提取 service 层覆盖率，低于 floor 告警（P2 不阻塞）。
+      # 注意：必须收集后在主 shell 统一 warn，管道子 shell 内 warn 不会更新计数。
+      local low_list=""
+      local line pct
+      while IFS= read -r line; do
         pct="$(echo "$line" | grep -oE '[0-9]+\.[0-9]+%' | head -n1 | tr -d '%')"
         if [ -n "$pct" ]; then
           if awk "BEGIN {exit !($pct < 60)}"; then
-            warn "service 层覆盖率 ${pct}% 低于 floor 60%：$(echo "$line" | awk '{print $1}')"
+            low_list="${low_list}$(echo "$line" | awk '{print $1}')\n"
           fi
         fi
-      done
+      done <<< "$(echo "$cov_out" | grep -E 'domain/.*/service')"
+      if [ -n "$low_list" ]; then
+        while IFS= read -r pkg; do
+          [ -n "$pkg" ] && warn "service 层覆盖率低于 floor 60%：$pkg"
+        done <<< "$(printf '%b' "$low_list")"
+      fi
     fi
   fi
 
@@ -262,6 +320,29 @@ run_p2() {
     if [ -n "$stale_files" ]; then
       warn "设计文档超过 ${stale_days} 天未更新，可能已与实现脱节（P2 卫生）"
       echo "$stale_files" | head -n 10 | sed 's/^/    /'
+    fi
+  fi
+
+  # P2-5 git 卫生：禁止敏感文件入库（.env / 密钥 / 本地配置）
+  if has_tool git; then
+    local sensitive
+    sensitive="$(git ls-files 2>/dev/null | grep -E '(^|/)(\.env[a-z0-9._-]*|.*\.pem|.*\.key|config\.local\.yaml|.*\.p12|.*\.pfx)$' || true)"
+    if [ -n "$sensitive" ]; then
+      fail "git 追踪了敏感文件（.env/密钥/本地配置）" "从索引移除（git rm --cached）并确保在 .gitignore" ".gitignore"
+      echo "$sensitive" | head -n 10 | sed 's/^/    /'
+    fi
+    # P2-6 git 卫生：大文件（>5MB）入库警告
+    local big
+    big="$(git ls-files 2>/dev/null | while IFS= read -r f; do
+      local s
+      s="$(git cat-file -s "HEAD:$f" 2>/dev/null || echo 0)"
+      if [ -n "$s" ] && [ "$s" -gt 5242880 ] 2>/dev/null; then
+        echo "$f ($s bytes)"
+      fi
+    done)"
+    if [ -n "$big" ]; then
+      warn "git 追踪了大文件（>5MB），建议改存对象存储或压缩"
+      echo "$big" | head -n 10 | sed 's/^/    /'
     fi
   fi
 }

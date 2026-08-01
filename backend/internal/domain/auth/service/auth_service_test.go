@@ -74,7 +74,8 @@ func (m *mockUserRepo) UpdatePasswordHash(_ context.Context, userID int64, passw
 	return m.updatePwdErr
 }
 
-func (m *mockUserRepo) UpdateProfile(_ context.Context, userID int64, phone string, dateOfBirth *time.Time, gender string, emergencyContact string, emergencyPhone string) error {
+func (m *mockUserRepo) UpdateProfile(_ context.Context, userID int64, phone string,
+	dateOfBirth *time.Time, gender, emergencyContact, emergencyPhone string) error {
 	m.gotProfileID = userID
 	m.gotProfilePhone = phone
 	m.gotProfileDOB = dateOfBirth

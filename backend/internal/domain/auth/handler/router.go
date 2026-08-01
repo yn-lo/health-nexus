@@ -40,7 +40,9 @@ func requestTimeout() func(http.Handler) http.Handler {
 
 // Mount 将 auth 域 14 个端点挂载到 r。
 // 限流值从 config 读取（默认 10/min），运行时可通过 Redis rl_cfg:{scope} 热更新。
-func (h *AuthHandler) Mount(r chi.Router, auth *middleware.Authenticator, rl *middleware.RateLimiter, cfg config.RateLimitConfig) {
+func (h *AuthHandler) Mount(
+	r chi.Router, auth *middleware.Authenticator, rl *middleware.RateLimiter, cfg config.RateLimitConfig,
+) {
 	r.Route("/api/auth", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(requestTimeout())

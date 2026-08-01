@@ -256,7 +256,6 @@ func TestDeptIDPtr(t *testing.T) {
 
 }
 
-
 // ============================================================================
 // toEntityRefs：rag.Chunk → entity.Reference
 // ============================================================================
@@ -453,10 +452,10 @@ func TestChunkContents(t *testing.T) {
 	t.Run("过滤空字符串和纯空白_仅保留正常内容", func(t *testing.T) {
 		chunks := []rag.Chunk{
 			{ChunkID: "c1", Content: "高血压的日常管理"},
-			{ChunkID: "c2", Content: ""},           // 空字符串
-			{ChunkID: "c3", Content: "   \n\t  "},  // 纯空白
-			{ChunkID: "c4", Content: "\n\n\n"},     // 纯换行
-			{ChunkID: "c5", Content: "   "},        // 纯空格
+			{ChunkID: "c2", Content: ""},          // 空字符串
+			{ChunkID: "c3", Content: "   \n\t  "}, // 纯空白
+			{ChunkID: "c4", Content: "\n\n\n"},    // 纯换行
+			{ChunkID: "c5", Content: "   "},       // 纯空格
 			{ChunkID: "c6", Content: "低盐低脂饮食"},
 		}
 		got := chunkContents(chunks)

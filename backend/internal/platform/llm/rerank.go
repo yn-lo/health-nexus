@@ -9,6 +9,9 @@ import (
 	"net/http"
 )
 
+// maxRerankBodyBytes 重排响应体读取上限（10 MiB），防止超大响应耗尽内存。
+const maxRerankBodyBytes = 10 << 20
+
 // RerankResult 重排结果：文档索引 + 相关性分数。
 type RerankResult struct {
 	Index int     // 文档在输入列表中的索引
@@ -86,7 +89,7 @@ func (c *Client) Rerank(ctx context.Context, query string, documents []string, t
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxRerankBodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("rerank: read response: %w", err)
 	}

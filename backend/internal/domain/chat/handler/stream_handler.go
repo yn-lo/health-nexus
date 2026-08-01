@@ -82,12 +82,14 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 // 校验：message 必填且 ≤2000 字符；conversation_id 与 selected_dept_id 可选且需为有效 UUID/非负整数。selected_dept_id=0 表示不限科室。
 func parseStreamInput(r *http.Request) (service.StreamInput, error) {
 	// 已认证用户取 user_id；匿名用户取 device_id
-	userID, _ := currentPatientIDOrZero(r)
+	userID := currentPatientIDOrZero(r)
 	deviceID := ""
 	if userID == 0 {
 		did, ok := r.Context().Value(contextkeys.DeviceID).(string)
 		if !ok || did == "" {
-			return service.StreamInput{}, apperrors.Unauthorized("UNAUTHORIZED", "missing user_id or device_id in context")
+			return service.StreamInput{}, apperrors.Unauthorized(
+				"UNAUTHORIZED", "missing user_id or device_id in context",
+			)
 		}
 		deviceID = did
 	}

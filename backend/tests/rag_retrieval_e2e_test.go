@@ -1,4 +1,4 @@
-﻿// Package tests RAG 检索质量回归测试（方案A）。
+// Package tests RAG 检索质量回归测试（方案A）。
 //
 // 验证检索质量防线：相似度阈值过滤、空内容排除、OOD 检测、MinScore 门槛。
 // 测试需真实 PostgreSQL + Embedding API，通过 e2e build tag 控制。
@@ -128,11 +128,11 @@ func embedOne(ctx context.Context, client *llm.Client, text string) ([]float32, 
 //   - article_id=153（胸外科围术期指南）已有 3 个 active chunk 含 embedding 向量（1024 维）。
 //
 // 测试用例：
-//   1. 正常检索：语义匹配的查询应返回相关切片
-//   2. 空内容排除：SQL 层 c.content != '' 不应返回空内容切片
-//   3. 相似度门槛：所有返回切片的 VecScore 应 >= similarity_threshold（默认 0.75）
-//   4. OOD 检测：完全无关的查询，所有 VecScore 应远低于 0.75
-//   5. embedding 不为 NULL：所有 chunks 应有有效向量
+//  1. 正常检索：语义匹配的查询应返回相关切片
+//  2. 空内容排除：SQL 层 c.content != ” 不应返回空内容切片
+//  3. 相似度门槛：所有返回切片的 VecScore 应 >= similarity_threshold（默认 0.75）
+//  4. OOD 检测：完全无关的查询，所有 VecScore 应远低于 0.75
+//  5. embedding 不为 NULL：所有 chunks 应有有效向量
 func TestRAGRetrieval_QualityGates(t *testing.T) {
 	setupRAGRetrievalTest(t)
 	embClient := newEmbeddingClient(t)
@@ -362,4 +362,3 @@ func TestRAGRetrieval_ScoreBounds(t *testing.T) {
 	}
 	t.Logf("共 %d 条，Score 均在 [0,1] 内", len(hits))
 }
-

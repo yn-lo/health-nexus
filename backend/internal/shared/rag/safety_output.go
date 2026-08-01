@@ -67,13 +67,35 @@ const (
 	prescriptionReplacement   = "（用药建议请遵医嘱，切勿自行用药。）"
 	stopMedicationReplacement = "（是否停药请咨询您的主治医生，切勿自行停药。）"
 	delayMedicalReplacement   = "（如症状持续或加重，请及时就医，避免延误病情。）"
+	// matchContextPadding 诊断例外检查时匹配位置前后各取的 rune 窗口大小。
+	matchContextPadding = 30
 )
 
 var fallbackOutputRules = []OutputSafetyRule{
-	{Category: "stop_medication", Pattern: stopMedicationRe.String(), Action: "replace", Replacement: stopMedicationReplacement},
-	{Category: "prescription", Pattern: prescriptionRe.String(), Action: "replace", Replacement: prescriptionReplacement},
-	{Category: "diagnosis", Pattern: diagnosisRe.String(), Action: "replace", Replacement: diagnosisReplacement},
-	{Category: "delay_medical", Pattern: delayMedicalRe.String(), Action: "replace", Replacement: delayMedicalReplacement},
+	{
+		Category:    "stop_medication",
+		Pattern:     stopMedicationRe.String(),
+		Action:      "replace",
+		Replacement: stopMedicationReplacement,
+	},
+	{
+		Category:    "prescription",
+		Pattern:     prescriptionRe.String(),
+		Action:      "replace",
+		Replacement: prescriptionReplacement,
+	},
+	{
+		Category:    "diagnosis",
+		Pattern:     diagnosisRe.String(),
+		Action:      "replace",
+		Replacement: diagnosisReplacement,
+	},
+	{
+		Category:    "delay_medical",
+		Pattern:     delayMedicalRe.String(),
+		Action:      "replace",
+		Replacement: delayMedicalReplacement,
+	},
 }
 
 // FallbackOutputRules 返回硬编码的输出审查 fallback 规则。
@@ -191,11 +213,11 @@ func hasDiagnosisExceptionNear(answer string, loc []int) bool {
 	runes := []rune(answer)
 	matchStart := len([]rune(answer[:loc[0]]))
 	matchEnd := matchStart + len([]rune(answer[loc[0]:loc[1]]))
-	start := matchStart - 30
+	start := matchStart - matchContextPadding
 	if start < 0 {
 		start = 0
 	}
-	end := matchEnd + 30
+	end := matchEnd + matchContextPadding
 	if end > len(runes) {
 		end = len(runes)
 	}

@@ -120,12 +120,12 @@ func currentPatientID(r *http.Request) (int64, error) {
 }
 
 // currentPatientIDOrZero 从 ctx 取 user_id，不存在时返回 0（用于区分匿名/已认证）。
-func currentPatientIDOrZero(r *http.Request) (int64, error) {
+func currentPatientIDOrZero(r *http.Request) int64 {
 	uid, ok := r.Context().Value(contextkeys.UserID).(int64)
 	if !ok || uid <= 0 {
-		return 0, nil
+		return 0
 	}
-	return uid, nil
+	return uid
 }
 
 // currentStaffID 从 ctx 取 STAFF 角色的 user_id。

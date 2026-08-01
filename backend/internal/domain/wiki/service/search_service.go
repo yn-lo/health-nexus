@@ -128,12 +128,24 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 		return []rag.Chunk{}, nil
 	}
 
+	// 步骤 4~7：相似度过滤 → RRF 排序截断 → 可选 Rerank/MMR → 转换。
+	fused = s.applyFiltersAndRerank(ctx, q, fused, cfg, topK)
+	if len(fused) == 0 {
+		return []rag.Chunk{}, nil
+	}
+	return toRAGChunks(fused), nil
+}
+
+// applyFiltersAndRerank 检索后处理：similarity_threshold 过滤 → RRF 排序截断 → 可选 Rerank/MMR。
+func (s *SearchService) applyFiltersAndRerank(
+	ctx context.Context, q rag.SearchQuery, fused []fusedHit, cfg *RAGSearchConfig, topK int,
+) []fusedHit {
 	// 步骤 4：similarity_threshold 过滤（基于向量相似度，仅向量路有意义的分数）。
 	threshold := cfg.SimilarityThreshold
 	if threshold > 0 {
 		fused = filterBySimilarity(fused, threshold)
 		if len(fused) == 0 {
-			return []rag.Chunk{}, nil
+			return fused
 		}
 	}
 
@@ -163,7 +175,7 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 		fused = applyMMR(fused, cfg.DiversityFactor)
 	}
 
-	// 步骤 7：转换为 rag.Chunk。
+	// 步骤 7：逐条记录检索详情。
 	for i, c := range fused {
 		slog.InfoContext(ctx, "wiki: RAG chunk detail",
 			"rank", i+1,
@@ -173,7 +185,7 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 			"content_len", len(c.Content),
 		)
 	}
-	return toRAGChunks(fused), nil
+	return fused
 }
 
 // resolveSearchParams 解析检索参数：配置不可用时用默认值兜底（与 config service 缺失时一致），
