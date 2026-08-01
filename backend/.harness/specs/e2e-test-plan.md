@@ -1,7 +1,7 @@
 # E2E 全链路测试计划
 
 > 环境：后端 http://localhost:5230 (air)，前端 http://localhost:5173 (vite)，移动端模拟
-> 账户：admin1/Pass1234 (DEPT_ADMIN, 心内科)，doctor1/Pass1234 (DOCTOR, 心内科)，testpatient/Pass1234 (PATIENT, 内分泌科)
+> 账户：历史 E2E 会话使用的临时种子账户 admin1/doctor1/testpatient（DEPT_ADMIN/DOCTOR/PATIENT）已于种子数据清理时移除，如需复现请通过管理员账户接口自行创建
 > 方法论：详见 [testing-methodology.md](testing-methodology.md)
 
 ## 累计统计

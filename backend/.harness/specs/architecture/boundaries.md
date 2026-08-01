@@ -72,5 +72,5 @@ HTTP 中间件：JWT 认证、CORS、限流、请求日志、数据隔离、恢�
 
 ## 棕地陷阱（不要复制）
 
-> 详见 `.harness/knowledge/brownfield-traps.md`（如有）。当前已知：
+> 当前已知：
 > - 早期 `.golangci.yml` 注释引用 `harness/go/specs/...` 旧路径，已迁移至 `.harness/specs/...`，勿按旧路径创建文件。

@@ -18,7 +18,7 @@ cmd/server/main.go
        ├─ base 域                       deptRepo → deptSvc → deptHandler
        ├─ auth 域                       userRepo + tokenIssuer → authSvc → authHandler
        ├─ config 域                     7 个 repo → configSvc（含 AES key）→ configH
-       ├─ wiki 域                       4 个 repo + adapter → articleSvc / referenceSvc → wikiRouter
+       ├─ wiki 域                       5 个 repo + adapter → articleSvc / referenceSvc → wikiRouter
        └─ chat 域                       adapter 桥接 + LLM 客户端(DB 加载) → rag 组件 → chatSvc → chatRouter
   └─ buildRouter(app)                   chi 装配中间件 + 5 域路由 + 404/405
   └─ srv.ListenAndServe                 graceful shutdown on SIGTERM
@@ -67,7 +67,7 @@ POST /api/chat/stream  {message, conversation_id, selected_dept_id?}
   → StreamHandler
        ├─ ChatSendService.Stream(ctx, in, out)
        │    ├─ locker.Lock(conversation_id)        会话级互斥锁（Redis，流程最前置；失败→409 CHAT_CONCURRENT_STREAM）
-       │    ├─ dept.ResolveForPatient(deptID)      科室范围校验（selected_dept_id=0「全部科室」归一化为未指定）
+       │    ├─ dept.ResolveForPatient(deptID)      科室范围校验（0=全部科室；已锁定会话切科室→409 CHAT_DEPT_LOCKED）
        │    ├─ loadOrPrepareConversation(...)      会话加载/创建
        │    ├─ EmergencyCheck(content)             紧急症状预提醒（不阻断）
        │    ├─ CheckRules(content)                 规则层安全审查（敏感词 + 注入）

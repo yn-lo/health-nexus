@@ -14,7 +14,7 @@ Health Nexus 前端是一个双 MPA（多页应用）架构的 Vue 3 项目，�
 | 状态管理 | Pinia | 2 |
 | 路由 | vue-router | 4 |
 | HTTP 客户端 | ofetch | latest |
-| 测试 | Vitest + happy-dom | 4 |
+| 测试 | Vitest + happy-dom | Vitest 4 / happy-dom 20 |
 
 ## 模块划分
 

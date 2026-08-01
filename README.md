@@ -147,7 +147,7 @@ make verify
 | `/api/staff/base/` | 5 | JWT + 管理员 |
 | `/healthz` | 1 | 匿名 |
 
-端点数字会随功能演进变化，完整实时契约以自动生成的门禁产物 [backend/docs/api-contract.md](backend/docs/api-contract.md) 为准。
+端点数字会随功能演进变化。代码即文档——完整端点清单以各域 [router.go](backend/internal/domain/chat/handler/router.go) 注册的路由树为准，契约测试 [api_contract_test.go](backend/tests/api_contract_test.go) 遍历路由树自动验证。
 
 ## 项目文档
 
@@ -159,7 +159,7 @@ make verify
 | 权限矩阵 | [backend/.harness/specs/architecture/permission-matrix.md](backend/.harness/specs/architecture/permission-matrix.md) |
 | 编码约定 | [backend/.harness/specs/conventions/README.md](backend/.harness/specs/conventions/README.md) |
 | 错误码参考 | [backend/.harness/specs/reference/error-codes.md](backend/.harness/specs/reference/error-codes.md) |
-| API 契约（自动生成） | [backend/docs/api-contract.md](backend/docs/api-contract.md) |
+| API 契约测试（遍历路由树） | [backend/tests/api_contract_test.go](backend/tests/api_contract_test.go) |
 | RAG 流程规范 | [backend/docs/rag-pipeline-spec.md](backend/docs/rag-pipeline-spec.md) |
 | 前端架构 | [frontend/.harness/specs/architecture/overview.md](frontend/.harness/specs/architecture/overview.md) |
 | 前端样式规范 | [frontend/.harness/specs/conventions/styling.md](frontend/.harness/specs/conventions/styling.md) |

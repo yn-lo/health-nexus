@@ -19,7 +19,7 @@ owner: backend-team
 | 层级 | 位置 | 测什么 |
 |------|------|-------|
 | 单元测试 | `<pkg>/<file>_test.go` | service/repo/工具函数的纯逻辑 |
-| API 契约测试 | `tests/api_contract_test.go` | 55 端点路由完整性 + 鉴权门禁 + 响应格式（不依赖 DB/Redis） |
+| API 契约测试 | `tests/api_contract_test.go` | 全部端点路由完整性 + 鉴权门禁 + 响应格式（不依赖 DB/Redis） |
 | Schema 测试 | `tests/schema/schema_test.go` | 迁移文件与代码模型一致性 |
 | e2e | `tests/e2e_api/` | 完整请求链路（依赖 DB/Redis） |
 

@@ -11,8 +11,8 @@
 | 架构/分层/数据流 | `.harness/specs/architecture/` |
 | 编码约定（命名/错误/日志/测试/DI） | `.harness/specs/conventions/<topic>.md` |
 | 错误码表 | `.harness/specs/reference/error-codes.md` |
-| 81 端点契约 + 鉴权门禁 | `tests/api_contract_test.go`（产物见 `docs/api-contract.md`） |
-| 前端适配 API 路由地图（自动生成，含 handler 限定名） | `docs/api-contract.md` |
+| 端点契约测试（遍历路由树自证） | `tests/api_contract_test.go` |
+| 端点注册（代码即文档） | 各域 `handler/router.go` |
 | 架构约束规则（AC-ARCH-*） | `internal/harness/arch/arch_test.go` |
 | lint 配置 | `.golangci.yml` |
 | 数据模型 | `migrations/` |

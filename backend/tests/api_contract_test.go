@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -205,95 +207,38 @@ type endpoint struct {
 
 const testUUID = "550e8400-e29b-41d4-a716-446655440000"
 
-// allEndpoints 69 个端点完整清单。
-var allEndpoints = []endpoint{
-	// 健康检查（1）
-	{http.MethodGet, "/healthz"},
-	// auth 公开/刷新/密码重置（6）
-	{http.MethodPost, "/api/auth/login"},
-	{http.MethodPost, "/api/auth/register"},
-	{http.MethodPost, "/api/auth/refresh"},
-	{http.MethodPost, "/api/auth/logout"},
-	{http.MethodPost, "/api/auth/password-reset/request"},
-	{http.MethodPost, "/api/auth/password-reset/confirm"},
-	// auth 已登录自助（3）
-	{http.MethodPost, "/api/auth/change-password"},
-	{http.MethodGet, "/api/auth/profile"},
-	{http.MethodPatch, "/api/auth/profile"},
-	// auth 管理员账户管理（6）
-	{http.MethodGet, "/api/staff/auth/accounts"},
-	{http.MethodPost, "/api/staff/auth/accounts"},
-	{http.MethodPost, "/api/staff/auth/accounts/1/lock"},
-	{http.MethodPost, "/api/staff/auth/accounts/1/unlock"},
-	{http.MethodDelete, "/api/staff/auth/accounts/1"},
-	{http.MethodPost, "/api/staff/auth/accounts/1/reset-password"},
-	// base（1）
-	{http.MethodGet, "/api/base/departments"},
-	// wiki 公开（2）
-	{http.MethodGet, "/api/wiki/articles"},
-	{http.MethodGet, "/api/wiki/articles/featured"},
-	{http.MethodGet, "/api/wiki/articles/1"},
-	// wiki 医护文章（11）
-	{http.MethodPost, "/api/staff/wiki/articles"},
-	{http.MethodGet, "/api/staff/wiki/articles"},
-	{http.MethodGet, "/api/staff/wiki/articles/1"},
-	{http.MethodPut, "/api/staff/wiki/articles/1"},
-	{http.MethodDelete, "/api/staff/wiki/articles/1"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/submit"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/approve"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/reject"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/archive"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/unarchive"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/featured"},
-	{http.MethodGet, "/api/staff/wiki/articles/1/chunks"},
-	{http.MethodPost, "/api/staff/wiki/articles/1/revectorize"},
-	// wiki 引用授权（5）
-	{http.MethodPost, "/api/staff/wiki/references"},
-	{http.MethodGet, "/api/staff/wiki/references"},
-	{http.MethodPost, "/api/staff/wiki/references/1/approve"},
-	{http.MethodPost, "/api/staff/wiki/references/1/reject"},
-	{http.MethodDelete, "/api/staff/wiki/references/1"},
-	// chat 患者端（6）
-	{http.MethodPost, "/api/chat/stream"},
-	{http.MethodGet, "/api/chat/conversations"},
-	{http.MethodGet, "/api/chat/conversations/" + testUUID},
-	{http.MethodPatch, "/api/chat/conversations/" + testUUID},
-	{http.MethodDelete, "/api/chat/conversations/" + testUUID},
-	{http.MethodGet, "/api/chat/conversations/" + testUUID + "/messages"},
-	// chat 医护端（2）
-	{http.MethodGet, "/api/staff/chat/crisis-events"},
-	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
-	// config ai-providers（5，含 test 端点）
-	{http.MethodGet, "/api/staff/config/ai-providers"},
-	{http.MethodPost, "/api/staff/config/ai-providers"},
-	{http.MethodPut, "/api/staff/config/ai-providers/1"},
-	{http.MethodDelete, "/api/staff/config/ai-providers/1"},
-	{http.MethodPost, "/api/staff/config/ai-providers/1/test"},
-	// config sensitive-words（4）
-	{http.MethodGet, "/api/staff/config/sensitive-words"},
-	{http.MethodPost, "/api/staff/config/sensitive-words"},
-	{http.MethodPut, "/api/staff/config/sensitive-words/1"},
-	{http.MethodDelete, "/api/staff/config/sensitive-words/1"},
-	// config safety-rules（4）
-	{http.MethodGet, "/api/staff/config/safety-rules"},
-	{http.MethodPost, "/api/staff/config/safety-rules"},
-	{http.MethodPut, "/api/staff/config/safety-rules/1"},
-	{http.MethodDelete, "/api/staff/config/safety-rules/1"},
-	// config rag（2）
-	{http.MethodGet, "/api/staff/config/rag"},
-	{http.MethodPut, "/api/staff/config/rag"},
-	// config prompts（4）
-	{http.MethodGet, "/api/staff/config/prompts"},
-	{http.MethodPost, "/api/staff/config/prompts"},
-	{http.MethodPut, "/api/staff/config/prompts/1"},
-	{http.MethodDelete, "/api/staff/config/prompts/1"},
-	// config safety-messages（2）
-	{http.MethodGet, "/api/staff/config/safety-messages"},
-	// config safety-policy（1）
-	{http.MethodGet, "/api/staff/config/safety-policy"},
-	{http.MethodPut, "/api/staff/config/safety-messages"},
-	// config audit-logs（1，REQ-CONFIG-010）
-	{http.MethodGet, "/api/staff/config/audit-logs"},
+// routeParamPattern 匹配路由模板中的 {id}/{article_id} 等路径参数，探测时替换为合法值。
+var routeParamPattern = regexp.MustCompile(`\{[^}]+\}`)
+
+// allRoutes 遍历真实路由树（单一真源），返回全部已注册端点。
+// 替代手写端点清单——路由增删由代码自证，契约测试永不漂移。
+func allRoutes(t *testing.T) []endpoint {
+	t.Helper()
+	router, ok := testRouter.(chi.Router)
+	if !ok {
+		t.Fatalf("testRouter is %T, expected chi.Router for Walk", testRouter)
+	}
+	seen := make(map[string]struct{})
+	var out []endpoint
+	err := chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		key := method + " " + route
+		if _, dup := seen[key]; dup {
+			return nil
+		}
+		seen[key] = struct{}{}
+		out = append(out, endpoint{method: method, path: routeParamPattern.ReplaceAllString(route, testUUID)})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk router: %v", err)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].path != out[j].path {
+			return out[i].path < out[j].path
+		}
+		return out[i].method < out[j].method
+	})
+	return out
 }
 
 // publicEndpoints 公开端点（无需认证）。
@@ -307,9 +252,11 @@ var publicEndpoints = []endpoint{
 	{http.MethodGet, "/api/wiki/articles"},
 	{http.MethodGet, "/api/wiki/articles/featured"},
 	{http.MethodGet, "/api/wiki/articles/1"},
+	{http.MethodPost, "/api/public/chat/stream"},
+	{http.MethodGet, "/api/public/departments"},
 }
 
-// protectedEndpoints 需 JWT 的端点（56 个）。
+// protectedEndpoints 需 JWT 的端点（66 个）。
 var protectedEndpoints = []endpoint{
 	// auth 已登录
 	{http.MethodPost, "/api/auth/logout"},
@@ -325,6 +272,12 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/auth/accounts/1/reset-password"},
 	// base
 	{http.MethodGet, "/api/base/departments"},
+	// base 管理员（5）
+	{http.MethodGet, "/api/staff/base/departments"},
+	{http.MethodPost, "/api/staff/base/departments"},
+	{http.MethodGet, "/api/staff/base/departments/1"},
+	{http.MethodPatch, "/api/staff/base/departments/1"},
+	{http.MethodDelete, "/api/staff/base/departments/1"},
 	// wiki staff 文章
 	{http.MethodPost, "/api/staff/wiki/articles"},
 	{http.MethodGet, "/api/staff/wiki/articles"},
@@ -345,6 +298,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/references/1/approve"},
 	{http.MethodPost, "/api/staff/wiki/references/1/reject"},
 	{http.MethodDelete, "/api/staff/wiki/references/1"},
+	{http.MethodGet, "/api/staff/wiki/references/articles"},
 	// chat 患者端
 	{http.MethodPost, "/api/chat/stream"},
 	{http.MethodGet, "/api/chat/conversations"},
@@ -352,12 +306,14 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPatch, "/api/chat/conversations/" + testUUID},
 	{http.MethodDelete, "/api/chat/conversations/" + testUUID},
 	{http.MethodGet, "/api/chat/conversations/" + testUUID + "/messages"},
+	{http.MethodPost, "/api/chat/messages/1/feedback"},
 	// chat 医护端
 	{http.MethodGet, "/api/staff/chat/crisis-events"},
 	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
-	// config（23）
+	// config（27）
 	{http.MethodGet, "/api/staff/config/ai-providers"},
 	{http.MethodPost, "/api/staff/config/ai-providers"},
+	{http.MethodGet, "/api/staff/config/ai-providers/1"},
 	{http.MethodPut, "/api/staff/config/ai-providers/1"},
 	{http.MethodDelete, "/api/staff/config/ai-providers/1"},
 	{http.MethodPost, "/api/staff/config/ai-providers/1/test"},
@@ -375,10 +331,12 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/config/prompts"},
 	{http.MethodPut, "/api/staff/config/prompts/1"},
 	{http.MethodDelete, "/api/staff/config/prompts/1"},
+	{http.MethodGet, "/api/staff/config/prompts/effective"},
 	{http.MethodGet, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/safety-policy"},
 	{http.MethodPut, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/audit-logs"},
+	{http.MethodGet, "/api/staff/config/status"},
 }
 
 // staffEndpoints 需 JWT + Staff 角色的端点（18 个）。
@@ -401,11 +359,12 @@ var staffEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/references/1/approve"},
 	{http.MethodPost, "/api/staff/wiki/references/1/reject"},
 	{http.MethodDelete, "/api/staff/wiki/references/1"},
+	{http.MethodGet, "/api/staff/wiki/references/articles"},
 	{http.MethodGet, "/api/staff/chat/crisis-events"},
 	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
 }
 
-// chatEndpoints 需 JWT + 任意角色的聊天端点（6 个）— 聊天对所有已登录用户开放。
+// chatEndpoints 需 JWT + 任意角色的聊天端点（7 个）— 聊天对所有已登录用户开放。
 var chatEndpoints = []endpoint{
 	{http.MethodPost, "/api/chat/stream"},
 	{http.MethodGet, "/api/chat/conversations"},
@@ -413,12 +372,14 @@ var chatEndpoints = []endpoint{
 	{http.MethodPatch, "/api/chat/conversations/" + testUUID},
 	{http.MethodDelete, "/api/chat/conversations/" + testUUID},
 	{http.MethodGet, "/api/chat/conversations/" + testUUID + "/messages"},
+	{http.MethodPost, "/api/chat/messages/1/feedback"},
 }
 
-// configEndpoints 需 JWT + Admin 角色的端点（23 个）。
+// configEndpoints 需 JWT + Admin 角色的端点（27 个）。
 var configEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/ai-providers"},
 	{http.MethodPost, "/api/staff/config/ai-providers"},
+	{http.MethodGet, "/api/staff/config/ai-providers/1"},
 	{http.MethodPut, "/api/staff/config/ai-providers/1"},
 	{http.MethodDelete, "/api/staff/config/ai-providers/1"},
 	{http.MethodPost, "/api/staff/config/ai-providers/1/test"},
@@ -436,10 +397,21 @@ var configEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/config/prompts"},
 	{http.MethodPut, "/api/staff/config/prompts/1"},
 	{http.MethodDelete, "/api/staff/config/prompts/1"},
+	{http.MethodGet, "/api/staff/config/prompts/effective"},
 	{http.MethodGet, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/safety-policy"},
 	{http.MethodPut, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/audit-logs"},
+	{http.MethodGet, "/api/staff/config/status"},
+}
+
+// adminBaseEndpoints 需 JWT + Admin 角色的 base 域端点（5 个）。
+var adminBaseEndpoints = []endpoint{
+	{http.MethodGet, "/api/staff/base/departments"},
+	{http.MethodPost, "/api/staff/base/departments"},
+	{http.MethodGet, "/api/staff/base/departments/1"},
+	{http.MethodPatch, "/api/staff/base/departments/1"},
+	{http.MethodDelete, "/api/staff/base/departments/1"},
 }
 
 // adminAuthEndpoints 需 JWT + Admin 角色的 auth 域端点（6 个）。
@@ -454,12 +426,12 @@ var adminAuthEndpoints = []endpoint{
 
 // ==================== P0: 路由完整性 ====================
 
-// TestRouteIntegrity_AllEndpointsReachable 验证 69 个端点全部已注册（非 404）。
+// TestRouteIntegrity_AllEndpointsReachable 验证路由树中注册的每个端点均可达（非 404）。
+// 端点清单来自 chi.Walk 遍历真实路由树（单一真源），路由增删由代码自证。
 func TestRouteIntegrity_AllEndpointsReachable(t *testing.T) {
-	if len(allEndpoints) != 69 {
-		t.Fatalf("endpoint table has %d entries, expected 69", len(allEndpoints))
-	}
-	for _, ep := range allEndpoints {
+	eps := allRoutes(t)
+	t.Logf("collected %d endpoints from route tree", len(eps))
+	for _, ep := range eps {
 		t.Run(ep.method+"_"+ep.path, func(t *testing.T) {
 			rec := doRequest(ep.method, ep.path, "")
 			if rec.Code == http.StatusNotFound {
@@ -540,6 +512,19 @@ func TestRoleGate_ConfigEndpoints_RequireAdmin(t *testing.T) {
 func TestRoleGate_AdminAuthEndpoints_RequireAdmin(t *testing.T) {
 	token := signTestToken(1, constants.RoleDoctor, 100)
 	for _, ep := range adminAuthEndpoints {
+		t.Run(ep.method+"_"+ep.path, func(t *testing.T) {
+			rec := doRequest(ep.method, ep.path, token)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("expected 403, got %d", rec.Code)
+			}
+		})
+	}
+}
+
+// TestRoleGate_BaseAdminEndpoints_RequireAdmin 非管理员（DOCTOR）访问 base 管理端点应返回 403。
+func TestRoleGate_BaseAdminEndpoints_RequireAdmin(t *testing.T) {
+	token := signTestToken(1, constants.RoleDoctor, 100)
+	for _, ep := range adminBaseEndpoints {
 		t.Run(ep.method+"_"+ep.path, func(t *testing.T) {
 			rec := doRequest(ep.method, ep.path, token)
 			if rec.Code != http.StatusForbidden {

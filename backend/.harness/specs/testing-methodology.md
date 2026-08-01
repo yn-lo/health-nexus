@@ -102,7 +102,7 @@ cat logs/app.log | jq -r 'select(.level=="ERROR") | .msg' | sort | uniq -c | sor
 |------|------|------|
 | `curl` / `curl.exe` | API 请求、SSE 流抓取、状态码验证 | `curl -s -w "\n%{http_code}" http://localhost:5230/healthz` |
 | `jq` | JSON 响应格式化与字段提取 | `curl -s ... \| jq '.data[].id'` |
-| `httpie` | 更友好的 curl 替代（可选） | `http POST :5230/api/auth/login username=admin1 password=Pass1234` |
+| `httpie` | 更友好的 curl 替代（可选） | `http POST :5230/api/auth/login username=<用户名> password=<密码>` |
 
 #### SSE 流式调试
 
