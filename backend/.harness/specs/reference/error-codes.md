@@ -106,6 +106,10 @@ owner: backend-team
 | `WIKI_REF_SELF_REVIEW` | 403 | 不得审核自己发起的引用申请 |
 | `WIKI_REF_REVIEW_FORBIDDEN` | 403 | 仅科室管理员可操作引用授权 |
 | `WIKI_REF_DEPT_MISMATCH` | 403 | 仅源科室管理员可操作 |
+| `WIKI_INVALID_ARTICLE_ID` | 400 | article_id 路径参数缺失/无效 |
+| `WIKI_INVALID_REFERENCE_ID` | 400 | reference_id 路径参数缺失/无效 |
+| `WIKI_EMPTY_BODY` | 422 | 请求体不能为空 |
+| `WIKI_INVALID_JSON` | 422 | 请求体格式错误（严格模式拒绝未知字段） |
 
 ## CHAT 模块（对话）
 | 错误码 | HTTP | 说明 |
@@ -129,4 +133,64 @@ owner: backend-team
 | `CHAT_LLM_UNAVAILABLE` | 503 | AI 服务暂不可用 |
 | `CHAT_LLM_TIMEOUT` | 503 | AI 服务响应超时 |
 
-> CONFIG 模块错误码随配置端点演进，新增时在此追加 `CONFIG_*` 段。
+## CONFIG 模块（系统配置）
+
+### AI Provider 提供商
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `CONFIG_INVALID_PROVIDER_TYPE` | 422 | provider_type 无效 |
+| `CONFIG_NAME_REQUIRED` | 422 | name 不能为空 |
+| `CONFIG_API_URL_REQUIRED` | 422 | api_url 不能为空 |
+| `CONFIG_MODEL_NAME_REQUIRED` | 422 | model_name 不能为空 |
+| `CONFIG_API_KEY_REQUIRED` | 422 | api_key 不能为空 |
+| `CONFIG_EMBEDDING_DIM_REQUIRED` | 422 | embedding 提供商必须声明 dimension |
+| `CONFIG_AI_PROVIDER_DUPLICATE` | 409 | AI 提供商名称已存在 |
+| `CONFIG_AI_PROVIDER_NOT_FOUND` | 404 | AI 提供商不存在 |
+| `CONFIG_EMBEDDING_DIM_CHANGE_BLOCKED` | 409 | 已有切片向量时禁止变更 embedding 维度 |
+
+### 敏感词与安全规则
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `CONFIG_WORD_REQUIRED` | 422 | word 不能为空 |
+| `CONFIG_SENSITIVE_WORD_DUPLICATE` | 409 | 同类别下敏感词已存在 |
+| `CONFIG_SENSITIVE_WORD_NOT_FOUND` | 404 | 敏感词不存在 |
+| `CONFIG_INVALID_CATEGORY` | 422 | category 无效 |
+| `CONFIG_PATTERN_REQUIRED` | 422 | pattern 不能为空 |
+| `CONFIG_PATTERN_TOO_LONG` | 422 | pattern 长度不能超过 500 字符 |
+| `CONFIG_INVALID_PATTERN` | 422 | pattern 不是合法正则 |
+| `CONFIG_INVALID_ACTION` | 422 | action 无效，必须为 replace 或 block |
+| `CONFIG_REPLACEMENT_REQUIRED` | 422 | action=replace 时 replacement 必填 |
+| `CONFIG_REPLACEMENT_TOO_LONG` | 422 | replacement 长度不能超过 500 字符 |
+| `CONFIG_SAFETY_RULE_DUPLICATE` | 409 | 安全规则名称已存在 |
+| `CONFIG_SAFETY_RULE_NOT_FOUND` | 404 | 安全规则不存在 |
+
+### RAG 参数
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `CONFIG_RAG_CHUNK_SIZE_RANGE` | 422 | chunk_size 范围 200-2000 |
+| `CONFIG_RAG_CHUNK_OVERLAP_RANGE` | 422 | chunk_overlap 范围 0-500 |
+| `CONFIG_RAG_OVERLAP_TOO_LARGE` | 422 | chunk_overlap 必须小于 chunk_size |
+| `CONFIG_RAG_MAX_CHUNKS_RANGE` | 422 | max_chunks 范围 1-50 |
+| `CONFIG_RAG_TOP_K_RANGE` | 422 | top_k 范围 1-50 |
+| `CONFIG_RAG_SIMILARITY_RANGE` | 422 | similarity_threshold 范围 0.0-1.0 |
+| `CONFIG_RAG_RERANK_THRESHOLD_RANGE` | 422 | rerank_threshold 范围 0.0-1.0 |
+| `CONFIG_RAG_DIVERSITY_RANGE` | 422 | diversity_factor 范围 0.0-1.0 |
+| `CONFIG_RAG_OOD_THRESHOLD_RANGE` | 422 | ood_threshold 范围 0.0-0.5 |
+
+### Prompt 模板
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `CONFIG_INVALID_PROMPT_TYPE` | 422 | type 无效 |
+| `CONFIG_CONTENT_REQUIRED` | 422 | content 不能为空 |
+| `CONFIG_EMPTY_UPDATE` | 422 | 至少需要一个字段：content 或 is_active |
+| `CONFIG_PROMPT_VERSION_CONFLICT` | 409 | 版本冲突，请重试 |
+| `CONFIG_PROMPT_NOT_FOUND` | 404 | Prompt 模板不存在 |
+
+### 通用
+| 错误码 | HTTP | 说明 |
+|--------|------|------|
+| `CONFIG_INVALID_ENTITY_TYPE` | 422 | entity_type 无效（审计日志） |
+| `CONFIG_INVALID_ID` | 422 | id 参数无效 |
+| `CONFIG_INVALID_BOOL` | 422 | bool 参数无效 |
+| `CONFIG_EMPTY_BODY` | 422 | 请求体不能为空 |
+| `CONFIG_INVALID_JSON` | 422 | 请求体格式错误 |

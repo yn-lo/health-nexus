@@ -14,7 +14,7 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
-// Router 装配 wiki 域全部 19 个 HTTP 端点。
+// Router 装配 wiki 域全部 22 个 HTTP 端点（公开 3 + 医护文章 13 + 引用 6）。
 // 公开端点无中间件；医护端统一挂载 JWTAuth + RequireStaff（契约 §0.4 权限矩阵）。
 type Router struct {
 	public    *PublicHandler

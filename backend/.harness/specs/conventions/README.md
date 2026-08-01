@@ -11,7 +11,7 @@ owner: backend-team
 | 约定 | 文档 | 机械化执行 |
 |------|------|-----------|
 | 命名 | `naming.md` | revive `var-naming` + goimports |
-| 错误处理 | `error-handling.md` | errcheck + gosec G104 + `.harness/constraints/arch/internal/harness/arch/arch_test.go` |
+| 错误处理 | `error-handling.md` | errcheck + gosec G104 + `internal/harness/arch/arch_test.go` |
 | 日志 | `logging.md` | forbidigo（禁 fmt.Print*/log）+ depguard（禁 logrus） |
 | 测试 | `testing.md` | go test + depguard（禁 testify）+ 覆盖率门禁 |
 | 依赖注入 | `di.md` | `internal/harness/arch/arch_test.go`（依赖方向）+ 编译期接口断言 |

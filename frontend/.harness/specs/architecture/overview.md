@@ -32,7 +32,7 @@ Health Nexus 前端是一个双 MPA（多页应用）架构的 Vue 3 项目，�
 | ├─ `layouts/` | 页面布局壳（BottomNavLayout、ChatLayout、StaffLayout） |
 | └─ `views/` | 跨门户共享页面（统一登录、注册、忘记密码） |
 | `src/stores/` | Pinia 全局状态（auth 认证状态、chat 会话状态） |
-| `src/assets/styles/` | 设计令牌（tokens.css）、组件样式（components.css）、主样式（main.css） |
+| `src/assets/styles/` | 设计令牌（tokens.css）、组件样式（components.css）、主样式（main.css）、医护端主题覆写（staff-theme.css，仅 staff 端加载） |
 
 ## 构建拓扑
 

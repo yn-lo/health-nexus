@@ -1,7 +1,7 @@
-// Package handler 实现 wiki 域的 HTTP 协议适配与路由挂载（14 个端点）。
-// 公开端点（匿名可访问）：GET /api/wiki/articles、GET /api/wiki/articles/{article_id}。
-// 医护端文章管理（JWT+RequireStaff）：POST/GET/PUT/DELETE/submit/approve/reject。
-// 跨科室引用授权（JWT+RequireStaff）：POST/GET references、approve/reject/revoke。
+// Package handler 实现 wiki 域的 HTTP 协议适配与路由挂载。
+// 公开端点（匿名可访问）：GET /api/wiki/articles、GET /api/wiki/articles/featured、GET /api/wiki/articles/{article_id}。
+// 医护端文章管理（JWT+RequireStaff）：POST/GET/PUT/DELETE/submit/approve/reject/featured/archive/unarchive/chunks/revectorize。
+// 跨科室引用授权（JWT+RequireStaff）：POST/GET references、articles、approve/reject/revoke。
 package handler
 
 import (

@@ -5,7 +5,7 @@ AI 驱动的医院健康宣教平台，使用 RAG 技术实现 7x24 智能健康
 - **只适配手机端**： 本项目的前端仅使用H5页面进行访问，所有的前端页面适配手机端
 - **架构**：Monorepo 前后端分离。后端 `backend/`，前端 `frontend/`（各自技术栈见子项目 CLAUDE.md）
 - **后端架构**：DDD 限界上下文（base / auth / wiki / chat / config）+ 三层分离（Handler → Service → Repository）+ 手写 DI + 手写 SQL (pgx)
-- **前端架构**：双 SPA（患者端 `chat`、医护端含管理 `staff`），API 基路径 `/api/`，含 `/api/auth/*`、`/api/base/*`、`/api/wiki/*`、`/api/staff/wiki/*`、`/api/chat/*`、`/api/staff/chat/*`、`/api/staff/config/*`、`/healthz`
+- **前端架构**：双 MPA（患者端 `chat.html`、医护端含管理 `staff.html`，Vite MPA 多入口），API 基路径 `/api/`，含 `/api/auth/*`、`/api/base/*`、`/api/public/*`、`/api/wiki/*`、`/api/staff/wiki/*`、`/api/chat/*`、`/api/staff/chat/*`、`/api/staff/config/*`、`/api/staff/auth/*`、`/api/staff/base/*`、`/healthz`
 
 ## 子项目导航
 本文件仅保留跨子项目的总体描述与通用原则。各子项目的细节（专属项目概述、知识导航、构建验证命令、专属硬性规则）见各自 CLAUDE.md：

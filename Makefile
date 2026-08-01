@@ -1,6 +1,6 @@
 # Health Nexus Go 后端 Makefile
 # 用途: 提供构建、测试、lint、迁移、wire、sqlc、验证门禁等命令
-# 约束对应: harness/go/specs/conventions.md §10
+# 约束对应: backend/.harness/specs/conventions/README.md
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -13,7 +13,6 @@ GOFLAGS := -trimpath
 MODULE := health-nexus
 ROOT_DIR := $(shell pwd)
 BACKEND_GO := $(ROOT_DIR)/backend
-HARNESS_GO := $(ROOT_DIR)/harness/go
 
 # 工具版本（与 go.mod 对齐或固定）
 GOLANGCI_VERSION := v1.62.0
@@ -68,8 +67,8 @@ coverage: ## 生成覆盖率报告
 	cd $(BACKEND_GO) && $(GO) tool cover -html=coverage.out -o coverage.html
 
 .PHONY: test-harness
-test-harness: ## 运行 harness 约束测试（AST 检查）
-	cd $(HARNESS_GO) && $(GO) test -v ./constraints/arch/...
+test-harness: ## 运行 harness 架构约束测试（AC-ARCH-* AST 检查）
+	cd $(BACKEND_GO) && $(GO) test ./internal/harness/arch/...
 
 # ============================================================================
 # Lint 与架构约束（验证门禁）

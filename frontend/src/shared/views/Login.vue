@@ -7,7 +7,7 @@
  * - SUPER_ADMIN/DEPT_ADMIN/DOCTOR/NURSE -> /staff
  *
  * 与 Register / ForgotPassword / ChangePassword 共用 PageShell + 设计令牌，
- * 不写组件级 scoped 样式（遵循 .harness/specs/conventions/styling.md 规则 1）。
+ * 不写组件级 scoped 样式（遵循 frontend/CLAUDE.md 硬性规则 1：优先使用全局样式，严禁手写组件级样式）。
  *
  * UI/UX（ui-ux-pro-max §Forms / §Accessibility）：
  * - 输入框 aria-label + 图标 + 显隐切换

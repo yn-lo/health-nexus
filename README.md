@@ -15,7 +15,7 @@ AI 驱动的医院健康宣教平台，基于 RAG（检索增强生成）技术�
 ## 架构概览
 
 ```
-frontend/                  双 SPA（患者端 chat + 医护端 staff）
+frontend/                  双 MPA（患者端 chat.html + 医护端 staff.html 双入口）
   src/chat/                患者端：AI 问答、知识浏览、个人中心
   src/staff/               医护端：文章管理、审核、危机事件、系统配置
   src/shared/              API 封装、通用组件、类型、工具
@@ -97,7 +97,7 @@ npm run dev
 
 - 患者端：`http://localhost:5173/chat/`
 - 医护端：`http://localhost:5173/staff/`
-- API 代理自动转发 `/api` → `http://localhost:8000`
+- API 代理自动转发 `/api` → `http://localhost:5230`（后端默认端口，见 `backend/internal/config/config.go`）
 
 ## 验证命令
 
@@ -110,10 +110,10 @@ golangci-lint run ./...                 # Lint
 go test -race -count=1 ./internal/...   # 单元测试
 ```
 
-架构约束测试（在 `harness/go/` 目录执行）：
+架构约束测试（在 `backend/` 目录执行）：
 
 ```bash
-go test ./constraints/arch/...
+go test ./internal/harness/arch/...
 ```
 
 ### 前端（在 `frontend/` 目录执行）
@@ -133,31 +133,36 @@ make verify
 
 ## API 概览
 
-| 路由前缀                 | 端点数     | 鉴权                             |
-| -------------------- | ------- | ------------------------------ |
-| `/api/auth/`         | 5       | 部分白名单                          |
-| `/api/base/`         | 1       | JWT + 医护角色                     |
-| `/api/wiki/articles` | 2       | 匿名可读                           |
-| `/api/staff/wiki/`   | 14      | JWT + 医护角色                     |
-| `/api/chat/`         | 7+1 SSE | JWT + 患者角色                     |
-| `/api/staff/chat/`   | 4       | JWT + 医护角色                     |
-| `/api/staff/config/` | 18      | JWT + SUPER\_ADMIN/DEPT\_ADMIN |
-| `/healthz`           | 1       | 匿名                             |
+| 路由前缀 | 端点数 | 鉴权 |
+| --- | --- | --- |
+| `/api/auth/` | 9 | 部分白名单 |
+| `/api/base/` | 1 | 已登录 |
+| `/api/public/` | 2 | 公开（匿名对话/科室列表） |
+| `/api/wiki/` | 3 | 匿名可读 |
+| `/api/staff/wiki/` | 19 | JWT + 医护角色 |
+| `/api/chat/` | 7 | JWT |
+| `/api/staff/chat/` | 2 | JWT + 医护角色 |
+| `/api/staff/config/` | 26 | JWT + 管理员 |
+| `/api/staff/auth/` | 6 | JWT + 管理员 |
+| `/api/staff/base/` | 5 | JWT + 管理员 |
+| `/healthz` | 1 | 匿名 |
 
-完整 API 契约见 [api-contracts.md](harness/go/specs/api-contracts.md)。
+端点数字会随功能演进变化，完整实时契约以自动生成的门禁产物 [backend/docs/api-contract.md](backend/docs/api-contract.md) 为准。
 
 ## 项目文档
 
-| 文档       | 路径                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------ |
-| 架构概览     | [harness/go/specs/architecture/overview.md](harness/go/specs/architecture/overview.md)     |
-| 限界上下文边界  | [harness/go/specs/architecture/boundaries.md](harness/go/specs/architecture/boundaries.md) |
-| 数据流      | [harness/go/specs/architecture/data-flow.md](harness/go/specs/architecture/data-flow.md)   |
-| 需求规格     | [harness/go/specs/requirements.md](harness/go/specs/requirements.md)                       |
-| API 契约   | [harness/go/specs/api-contracts.md](harness/go/specs/api-contracts.md)                     |
-| 编码约定     | [harness/go/specs/conventions.md](harness/go/specs/conventions.md)                         |
-| 错误码参考    | [harness/go/specs/reference/error-codes.md](harness/go/specs/reference/error-codes.md)     |
-| API 测试规范 | [harness/go/specs/api-testing.md](harness/go/specs/api-testing.md)                         |
+| 文档 | 路径 |
+| --- | --- |
+| 后端架构概览 | [backend/.harness/specs/architecture/overview.md](backend/.harness/specs/architecture/overview.md) |
+| 限界上下文边界 | [backend/.harness/specs/architecture/boundaries.md](backend/.harness/specs/architecture/boundaries.md) |
+| 数据流 | [backend/.harness/specs/architecture/data-flow.md](backend/.harness/specs/architecture/data-flow.md) |
+| 权限矩阵 | [backend/.harness/specs/architecture/permission-matrix.md](backend/.harness/specs/architecture/permission-matrix.md) |
+| 编码约定 | [backend/.harness/specs/conventions/README.md](backend/.harness/specs/conventions/README.md) |
+| 错误码参考 | [backend/.harness/specs/reference/error-codes.md](backend/.harness/specs/reference/error-codes.md) |
+| API 契约（自动生成） | [backend/docs/api-contract.md](backend/docs/api-contract.md) |
+| RAG 流程规范 | [backend/docs/rag-pipeline-spec.md](backend/docs/rag-pipeline-spec.md) |
+| 前端架构 | [frontend/.harness/specs/architecture/overview.md](frontend/.harness/specs/architecture/overview.md) |
+| 前端样式规范 | [frontend/.harness/specs/conventions/styling.md](frontend/.harness/specs/conventions/styling.md) |
 
 ## License
 

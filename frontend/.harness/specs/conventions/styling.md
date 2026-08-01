@@ -21,6 +21,14 @@
 - `.ds-fab`：悬浮操作按钮
 - 其他 `.ds-*` 组件类
 
+### 组件级样式豁免机制
+
+原则上组件内禁止 `<style scoped>`（frontend/CLAUDE.md 硬性规则 1）。极少数场景（如第三方组件内部结构无法用工具类命中）可通过豁免通道：
+
+- 在 `<style>` 块内标注 `ponytail:allow-scoped-css` 注释，由 `tests/arch/governance.test.ts` 的 AC-ARCH-FE-16 放行
+- 未标注的 `<style scoped>` 会被架构约束测试拦截（当前仅 16 个组件使用，15 个已标注，1 个遗留待补标或改造）
+- 豁免只允许"命中全局令牌 + 少量布局"的写法，仍禁止硬编码颜色/字号
+
 ## 布局样式
 
 `main.css` 定义布局工具类及 Vant 主题覆盖。
@@ -36,7 +44,7 @@
 
 ## Tailwind 4 陷阱与规范
 
-> **遇到样式不生效（颜色/字号/边框等）时），先查本节再排查。**
+> **遇到样式不生效（颜色/字号/边框等）时，先查本节再排查。**
 
 ### 陷阱 1：`@theme inline` 变量前缀决定工具类类型
 
@@ -76,6 +84,8 @@ Tailwind 4 通过 `@theme inline` 中的变量前缀推断生成的工具类类�
 }
 ```
 
+> 本项目 `main.css` 的实际 `@theme inline` 命名：`--color-brand / --color-base / --color-surface / --color-text / --color-icon / --color-border` 等（**未使用 `--color-bg-*` 前缀**），对应工具类为 `bg-brand`、`bg-base`、`text-text-brand`、`border-border` 等。查看真实映射以 `main.css` 的 `@theme inline` 块为准。
+
 **规则**：
 - 字号用 `text-body-sm` / `text-body-base` 等语义工具类，**禁止** `text-[var(--xxx-font-size)]`
 - 颜色用 `text-text-brand` / `text-text-default` 等语义工具类，**禁止** `text-[var(--text-xxx)]`
@@ -89,6 +99,22 @@ Tailwind 4 的 preflight（`button { color: inherit }`、`input { font: inherit 
 
 **症状**：`.ds-btn--primary { color: #fff }` 不生效，按钮文字仍是黑色。
 
-**规则**规则**：
+**规则**：
 - `components.css` **禁止** 包裹在 `@layer components` 中，必须保持 unlayered
-- 组件样式通过特异性（`.ds-btn--primary
+- 组件样式通过特异性（`.ds-btn--primary` 比 preflight 的 `button` 更高）也无法获胜——unlayered 样式在层序上恒高于任何 `@layer`，根因是层序而非特异性。因此唯一解法是让 `.ds-*` 类本身保持 unlayered（位于 `@layer` 之外）
+- Vant 覆写若需放入 `@layer components`（如 main.css 的 Vant 覆写块），必须确认被覆写的目标不在 unlayered 中，否则同样不生效
+
+## 样式问题排查清单
+
+遇到样式不生效（颜色/字号/边框/间距等）时，按下表从最常见原因开始排查：
+
+| # | 症状 | 最常见原因 | 定位方法 |
+|---|------|-----------|---------|
+| 1 | 颜色不生效，回退到继承色/黑色 | `@theme inline` 变量前缀映射错误或缺失：`--text-*` 是字号，`--color-text-*` 才是颜色；项目未定义 `--color-bg-*` | 检查 `main.css` 的 `@theme inline` 块是否定义了对应 `--color-*`；禁止 `text-[var(--xxx)]` arbitrary 引用非颜色变量 |
+| 2 | 颜色不生效，DevTools 显示样式被划掉 | 组件样式被 unlayered preflight 覆盖 | 检查是否把样式写在 `@layer components` 内（`components.css` 禁止）；Vite 代码分割会把 preflight 变 unlayered |
+| 3 | 字号不生效 | 用了 `text-[var(--xxx-font-size)]` 被解析为 color | 改用语义工具类 `text-body-sm` / `text-body-base`；行高由 `--text-*-line-height` 自动附带 |
+| 4 | 组件颜色类（`.ds-*`）不生效 | 同上（层序问题），或使用了不在 tokens.css 中的硬编码颜色 | 先确认令牌存在，再确认类位于 `@layer` 外 |
+| 5 | 仅医护端样式不生效 | staff 主题变量未加载 | 确认 `staff-theme.css` 仅在 `src/staff/main.ts` 引入（chat 端不加载属预期）；令牌定义列入 `style-guard.mjs` 的 `ALLOWED_HEX_FILES` 白名单 |
+| 6 | 构建后样式与 dev 不一致 | preflight 在代码分割后变 unlayered | 检查 `components.css` 是否被 `@layer` 包裹；构建产物对比 |
+
+> 硬编码颜色：组件内直接写十六进制颜色会被 `scripts/style-guard.mjs` 拦截（`ALLOWED_HEX_FILES` 白名单外的文件一律拒绝），因此颜色必须来自 tokens.css 令牌。

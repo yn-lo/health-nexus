@@ -74,9 +74,19 @@
 | `POST` | `/api/staff/wiki/articles` | — | 创建文章（非超管限本科室） |
 | `GET/PUT/DELETE` | `/api/staff/wiki/articles/{id}` | — | 文章详情/编辑/删除 |
 | `POST` | `/api/staff/wiki/articles/{id}/submit` | — | 提交审核 |
-| `POST` | `/api/staff/wiki/articles/{id}/review` | Admin only | 审核文章 |
+| `POST` | `/api/staff/wiki/articles/{id}/approve` | Admin only | 审核通过（服务层 assertCanReview） |
+| `POST` | `/api/staff/wiki/articles/{id}/reject` | Admin only | 审核拒绝（同上） |
 | `POST` | `/api/staff/wiki/articles/{id}/featured` | Admin only | 设置热门 |
-| `GET/POST` | `/api/staff/wiki/references/*` | — | 跨科室引用管理 |
+| `POST` | `/api/staff/wiki/articles/{id}/archive` | — | 归档文章 |
+| `POST` | `/api/staff/wiki/articles/{id}/unarchive` | — | 取消归档 |
+| `GET` | `/api/staff/wiki/articles/{id}/chunks` | — | 查看文章切片 |
+| `POST` | `/api/staff/wiki/articles/{id}/revectorize` | — | 重新切片向量化 |
+| `GET` | `/api/staff/wiki/references/` | — | 引用授权列表 |
+| `POST` | `/api/staff/wiki/references/` | — | 发起引用申请 |
+| `GET` | `/api/staff/wiki/references/articles` | — | 可引用的已发布文章列表 |
+| `DELETE` | `/api/staff/wiki/references/{id}` | — | 撤销引用授权 |
+| `POST` | `/api/staff/wiki/references/{id}/approve` | Admin only | 批准引用申请 |
+| `POST` | `/api/staff/wiki/references/{id}/reject` | Admin only | 拒绝引用申请 |
 | `GET` | `/api/staff/chat/crisis-events` | — | 本科室危机事件（超管看全部） |
 | `POST` | `/api/staff/chat/crisis-events/{id}/handle` | — | 处理危机事件 |
 | `GET` | `/api/base/departments` | — | 科室列表（医护） |
