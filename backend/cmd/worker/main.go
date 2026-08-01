@@ -101,7 +101,9 @@ func main() {
 
 // buildVectorizeHandler 装配向量化 handler：加载 LLM embed client + RAG 配置提供者。
 // 方案 C：与 server 端共用 adapter.ReloadAndSwap 装配，DB 配置优先，config.yaml fallback。
-// 未配置时 embedder=nil，VectorizeHandler 调用 Embed 时触发重试（asynq 自动重试）。
+// handler 直接持有 swappable.Embed（*SwappableClient）：未配置时 Embed 返回
+// ErrNotConfigured 触发 asynq 重试；配置变更经 Redis 通知热切换后，下一次重试即用新 client。
+// 注意：不得 fallback 到 Chat client——chat 端点不提供 /embeddings，会打到错误地址（历史 bug 根因）。
 // 支持热切换：通过 SwappableClient 包装，配置变更后无需重启 worker。
 func buildVectorizeHandler(
 	ctx context.Context, cfg *config.Config, infra *di.Infrastructure,
@@ -113,9 +115,6 @@ func buildVectorizeHandler(
 		panic(err)
 	}
 	embedder := swappable.Embed
-	if !embedder.IsReady() {
-		embedder = swappable.Chat
-	}
 	// 订阅 Redis 频道，配置变更时自动热切换
 	startWorkerLLMReloadSubscriber(ctx, infra, swappable, cfg.LLM, aesKey)
 
