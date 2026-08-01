@@ -48,6 +48,12 @@ const retrievalFields: { key: keyof Pick<RAGConfigUpdateRequest, 'top_k' | 'simi
 
 const allNumericFields = [...chunkFields, ...retrievalFields]
 
+/** 分组渲染配置（合并结构相同的两块，消除模板重复） */
+const fieldSections = [
+ { title: '切片配置', fields: chunkFields },
+ { title: '检索配置', fields: retrievalFields },
+]
+
 function rangeHint(key: keyof typeof RAG_LIMITS): string {
  const r = RAG_LIMITS[key]
  return `${r.min} ~ ${r.max}`
@@ -128,36 +134,11 @@ onMounted(load)
  </div>
 
  <div class="flex flex-col gap-[var(--spacer-16)]">
- <div>
- <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">切片配置</div>
+ <div v-for="section in fieldSections" :key="section.title">
+ <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">{{ section.title }}</div>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div
- v-for="f in chunkFields"
- :key="f.key"
- class="rounded-[var(--radius-card-soft)] border border-[var(--border-brand)] bg-[var(--bg-base-secondary)] p-[var(--spacer-12)]"
- >
- <div class="mb-[var(--spacer-4)] flex items-center gap-[var(--spacer-8)]">
- <span class="text-body-sm text-text-secondary">{{ f.label }}</span>
- <span class="ds-pill ds-pill--sm">{{ rangeHint(f.key) }}</span>
- </div>
- <input
- v-model.number="form[f.key]"
- :type="f.isFloat ? 'number' : 'digit'"
- :step="f.step"
- inputmode="decimal"
- class="ds-input ds-input--secondary"
- >
- <p class="mt-[var(--spacer-4)] text-body-xs text-text-tertiary leading-relaxed">{{ f.hint }}</p>
- <p v-if="errors[f.key]" class="mt-[var(--spacer-4)] text-body-xs text-[var(--status-error-default)]">{{ errors[f.key] }}</p>
- </div>
- </div>
- </div>
-
- <div>
- <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">检索配置</div>
- <div class="flex flex-col gap-[var(--spacer-12)]">
- <div
- v-for="f in retrievalFields"
+ v-for="f in section.fields"
  :key="f.key"
  class="rounded-[var(--radius-card-soft)] border border-[var(--border-brand)] bg-[var(--bg-base-secondary)] p-[var(--spacer-12)]"
  >

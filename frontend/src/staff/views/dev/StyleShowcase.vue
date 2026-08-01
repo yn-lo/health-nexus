@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 全局样式展示页 — 令牌 + 公共组件 + .ds组件 + 工具类
  * 修改 tokens.css / main.css 后通过 Vite HMR 自动热更新
@@ -39,6 +39,14 @@ function toggleDark() {
  isDark.value = !isDark.value
  document.documentElement.classList.toggle('dark', isDark.value)
 }
+
+/* ── 设计令牌展示数据 ── */
+/** 品牌/中性色阶（合并两个结构相同的 grid 块，消除模板重复） */
+const colorScales = [
+ { var: 'brand', label: '品牌色阶 brand-50~950' },
+ { var: 'grey', label: '中性灰阶 grey-50~950' },
+]
+const colorShades = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
 
 /* ── TabBar 示例数据 ── */
 const tabbarItems = [
@@ -112,21 +120,14 @@ const showToc = ref(false)
  <section :id="'tokens-colors'" class="px-[var(--spacer-16)] py-[var(--spacer-16)]">
  <h2 class="mb-[var(--spacer-12)] text-heading-sm font-semibold text-text">颜色令牌</h2>
 
- <!-- 品牌色阶 -->
- <p class="mb-[var(--spacer-8)] text-body-sm text-text-tertiary">品牌色阶 brand-50~950</p>
+ <!-- 品牌色阶 + 中性灰阶 -->
+ <div v-for="scale in colorScales" :key="scale.var">
+ <p class="mb-[var(--spacer-8)] text-body-sm text-text-tertiary">{{ scale.label }}</p>
  <div class="mb-[var(--spacer-16)] grid grid-cols-5 gap-[var(--spacer-8)]">
- <div v-for="shade in [50,100,200,300,400,500,600,700,800,900,950]" :key="shade" class="flex flex-col items-center gap-[var(--spacer-4)]">
- <div class="h-10 w-full rounded-[var(--radius-md)]" :style="{ backgroundColor: `var(--brand-${shade})` }" />
+ <div v-for="shade in colorShades" :key="shade" class="flex flex-col items-center gap-[var(--spacer-4)]">
+ <div class="h-10 w-full rounded-[var(--radius-md)]" :style="{ backgroundColor: `var(--${scale.var}-${shade})` }" />
  <span class="text-body-xs text-text-tertiary">{{ shade }}</span>
  </div>
- </div>
-
- <!-- 中性灰阶 -->
- <p class="mb-[var(--spacer-8)] text-body-sm text-text-tertiary">中性灰阶 grey-50~950</p>
- <div class="mb-[var(--spacer-16)] grid grid-cols-5 gap-[var(--spacer-8)]">
- <div v-for="shade in [50,100,200,300,400,500,600,700,800,900,950]" :key="shade" class="flex flex-col items-center gap-[var(--spacer-4)]">
- <div class="h-10 w-full rounded-[var(--radius-md)]" :style="{ backgroundColor: `var(--grey-${shade})` }" />
- <span class="text-body-xs text-text-tertiary">{{ shade }}</span>
  </div>
  </div>
 

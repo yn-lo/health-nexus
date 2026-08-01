@@ -10,9 +10,9 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Lock, Eye, EyeOff, CircleAlert } from '@lucide/vue'
+import { User, CircleAlert } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, BrandLogo, PasswordStrength } from '@/shared/components'
+import { PageShell, BrandLogo, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -26,10 +26,6 @@ const confirmPassword = ref('')
 const agreed = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
-
-/* 密码显隐 */
-const showPassword = ref(false)
-const showConfirmPassword = ref(false)
 
 const passwordMismatch = computed(
  () => confirmPassword.value.length > 0 && password.value !== confirmPassword.value,
@@ -117,36 +113,20 @@ function goLogin() {
  </div>
 
  <!-- 密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="password" :type="showPassword ? 'text' : 'password'" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
- <Eye v-if="!showPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <!-- 密码强度指示器 -->
- <PasswordStrength :password="password" :segments="4" />
- </div>
+ <DsPasswordField v-model="password" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码">
+  <!-- 密码强度指示器 -->
+  <PasswordStrength :password="password" :segments="4" />
+ </DsPasswordField>
 
  <!-- 确认密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <div class="ds-field-wrap ds-field-wrap--secondary" :class="{ 'ds-field-wrap--error': passwordMismatch }">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'" @click="showConfirmPassword = !showConfirmPassword">
- <Eye v-if="!showConfirmPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <p
- v-if="passwordMismatch"
- class="text-body-sm text-[var(--status-error-default)]"
- >
- 两次输入的密码不一致
- </p>
- </div>
+ <DsPasswordField v-model="confirmPassword" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码" :error="passwordMismatch">
+  <p
+   v-if="passwordMismatch"
+   class="text-body-sm text-[var(--status-error-default)]"
+  >
+   两次输入的密码不一致
+  </p>
+ </DsPasswordField>
 
  <!-- 错误提示 -->
  <div
@@ -173,15 +153,7 @@ function goLogin() {
  </label>
 
  <!-- 注册按钮 -->
- <button
- type="submit"
- class="ds-btn ds-btn--primary ds-btn--block"
- :class="{ 'ds-btn--loading': loading }"
- :disabled="loading"
- >
- <span v-if="loading" class="ds-btn__spinner" />
- 注册
- </button>
+ <DsSubmitButton :loading="loading" text="注册" />
  </form>
  </div>
 

@@ -109,19 +109,6 @@ defineExpose({ setText, inputText })
 </template>
 
 <style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* ── 磨玻璃输入卡片 + 主题色光晕边框 ──────── */
-.ai-input-card {
- border: 1px solid var(--brand-glow-border);
- box-shadow: var(--shadow-glow-input);
- backdrop-filter: blur(8px);
- transition: box-shadow var(--micro-duration) var(--micro-ease),
- border-color var(--micro-duration) var(--micro-ease);
-}
-.ai-input-card:focus-within {
- border-color: var(--brand-glow-border-strong);
- box-shadow: var(--shadow-glow-input-focus);
-}
-
 /* ── 自动增高 textarea ───────────────────────────────────── */
 .ai-textarea {
  max-height: 40vh;
@@ -153,8 +140,7 @@ defineExpose({ setText, inputText })
 }
 
 @media (prefers-reduced-motion: reduce) {
- .ai-send-btn,
- .ai-input-card {
+ .ai-send-btn {
  transition: none;
  }
  .ai-send-btn:hover:not(:disabled) {

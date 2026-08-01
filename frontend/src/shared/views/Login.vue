@@ -16,9 +16,9 @@
  */
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Lock, Eye, EyeOff, CircleAlert, MessageCircle } from '@lucide/vue'
+import { User, CircleAlert, MessageCircle } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, BrandLogo } from '@/shared/components'
+import { PageShell, BrandLogo, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 import { STAFF_ROLES, type UserRole } from '@/shared/constants/roles'
@@ -30,7 +30,6 @@ const { showFailToast } = useDsToast()
 
 const username = ref('')
 const password = ref('')
-const showPassword = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -115,14 +114,7 @@ function goForgotPassword() {
  <input v-model="username" placeholder="请输入用户名或手机号" autocomplete="username" aria-label="用户名">
  </div>
 
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <Lock class="h-4 w-4 shrink-0 text-icon-brand" />
- <input v-model="password" :type="showPassword ? 'text' : 'password'" placeholder="请输入密码" autocomplete="current-password" aria-label="密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-brand hover:text-[var(--icon-brand-hover)]" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
- <Eye v-if="showPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
+ <DsPasswordField v-model="password" placeholder="请输入密码" autocomplete="current-password" aria-label="密码" tone="brand" />
 
  <div class="flex justify-end -mt-[var(--spacer-4)]">
 <button
@@ -143,15 +135,7 @@ class="ds-link-btn"
  <span>{{ errorMsg }}</span>
  </div>
 
- <button
- type="submit"
- class="ds-btn ds-btn--primary ds-btn--block"
- :class="{ 'ds-btn--loading': loading }"
- :disabled="loading"
- >
- <span v-if="loading" class="ds-btn__spinner" />
- 登录
- </button>
+ <DsSubmitButton :loading="loading" text="登录" />
  </form>
  </section>
 

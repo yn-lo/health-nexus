@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 账号管理 — 管理员账户列表 + 创建 + 锁定/解锁
  * API: authApi.listStaffAccounts/createStaffAccount/lockStaffAccount/unlockStaffAccount
@@ -6,10 +6,10 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, UserCog, Search, Eye, EyeOff } from '@lucide/vue'
+import { UserCog, Eye, EyeOff } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { AppHeader, DsPopup, StatRow } from '@/shared/components'
-import { authApi, errmsg, getUserStored } from '@/shared'
+import { AppHeader, DsPopup, StatRow, DsFilterTabs, DsSearchBox } from '@/shared/components'
+import { authApi, errmsg, usePagedList, getUserStored } from '@/shared'
 import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount, StaffAccountCreateRequest } from '@/shared'
 
@@ -17,8 +17,11 @@ const router = useRouter()
 const { showSuccessToast, showFailToast } = useDsToast()
 const currentUserId = getUserStored()?.id ?? 0
 
-const accounts = ref<StaffAccount[]>([])
-const loading = ref(false)
+// ponytail: 后端支持分页，但单页 50 足以覆盖典型部署的账户规模；超量时再加翻页 UI
+const { items: accounts, loading, load } = usePagedList<StaffAccount>({
+ pageSize: 50,
+ fetcher: (params) => authApi.listStaffAccounts(params),
+})
 const search = ref('')
 const filterRole = ref<UserRole | 'all'>('all')
 
@@ -64,19 +67,6 @@ const roleCounts = computed<Record<string, number>>(() => {
  }
  return counts
 })
-
-// ponytail: 后端支持分页，但单页 50 足以覆盖典型部署的账户规模；超量时再加翻页 UI
-async function load() {
- loading.value = true
- try {
- const res = await authApi.listStaffAccounts({ page: 1, page_size: 50 })
- accounts.value = res.items
- } catch (e) {
- showFailToast(errmsg(e, '加载失败'))
- } finally {
- loading.value = false
- }
-}
 
 const showEditor = ref(false)
 const showPassword = ref(false)
@@ -133,43 +123,15 @@ onMounted(load)
 
 <template>
  <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
- <AppHeader title="账号管理" @back="router.back">
- <template #right>
- <button
- type="button"
- class="ds-icon-btn ds-icon-btn--sm ds-icon-btn--brand"
- aria-label="新增"
- @click="openCreate"
- >
- <Plus class="icon h-5 w-5" />
- </button>
- </template>
- </AppHeader>
+ <AppHeader title="账号管理" showCreate @create="openCreate" @back="router.back" />
 
  <section class="mx-[var(--spacer-16)] mt-[var(--spacer-12)] rounded-[var(--radius-card-large)] bg-[var(--ai-gradient-soft)] px-[var(--spacer-16)] py-[var(--spacer-16)]">
  <StatRow :stats="heroStats" />
  </section>
 
  <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
- <div class="ds-search-box">
- <Search class="h-4 w-4 shrink-0 text-icon-brand" />
- <input v-model="search" type="text" placeholder="搜索用户名" class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary">
- </div>
- <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] mt-[var(--spacer-12)] no-scrollbar overflow-x-auto">
- <button
- v-for="opt in roleOptions"
- :key="opt.value"
- type="button"
- :class="filterRole === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="filterRole = opt.value"
- >{{ opt.label }}<span
- v-if="roleCounts[opt.value] !== undefined && roleCounts[opt.value] > 0"
- class="ml-[var(--spacer-4)] inline-flex items-center justify-center min-w-[16px] h-[16px] px-[var(--spacer-4)] rounded-[var(--radius-full)] text-[10px] font-medium leading-none transition-colors"
- :class="filterRole === opt.value ? 'bg-[var(--bg-brand-light)] text-text-brand' : 'bg-[var(--bg-overlay-l1)] text-text-tertiary'"
- >{{ roleCounts[opt.value] }}</span><span v-if="filterRole === opt.value" class="ds-tab-underline" /></button>
- </div>
+ <DsSearchBox v-model="search" placeholder="搜索用户名" />
+ <DsFilterTabs v-model="filterRole" :options="roleOptions" :counts="roleCounts" />
  </section>
 
  <section class="px-[var(--spacer-16)] py-[var(--spacer-8)]">

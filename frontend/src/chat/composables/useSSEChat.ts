@@ -1,6 +1,7 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
 import { clearTokens, getAccessToken, getDeviceId, tryRefreshToken } from '@/shared/api/client'
 import type { Reference, SSEEvent } from '@/shared/types/chat'
+import { parseSSELine } from './sseParse'
 
 interface UseSSEChatOptions {
   conversationId: string
@@ -209,10 +210,11 @@ export function useSSEChat(options: UseSSEChatOptions) {
                 dispatch()
                 continue
               }
-              if (line.startsWith('event:')) {
-                currentEvent = line.slice(6).trim()
-              } else if (line.startsWith('data:')) {
-                dataLines.push(line.slice(5).replace(/^ /, '').replace(/\r$/, ''))
+              const parsed = parseSSELine(line)
+              if (parsed?.event !== undefined) {
+                currentEvent = parsed.event
+              } else if (parsed?.data !== undefined) {
+                dataLines.push(parsed.data)
               }
             }
           }
@@ -220,10 +222,11 @@ export function useSSEChat(options: UseSSEChatOptions) {
           if (buffer.trim()) {
             const residualLines = buffer.split('\n')
             for (const line of residualLines) {
-              if (line.startsWith('event:')) {
-                currentEvent = line.slice(6).trim()
-              } else if (line.startsWith('data:')) {
-                dataLines.push(line.slice(5).replace(/^ /, '').replace(/\r$/, ''))
+              const parsed = parseSSELine(line)
+              if (parsed?.event !== undefined) {
+                currentEvent = parsed.event
+              } else if (parsed?.data !== undefined) {
+                dataLines.push(parsed.data)
               }
             }
             dispatch()

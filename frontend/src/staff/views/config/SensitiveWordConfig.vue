@@ -1,28 +1,30 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 敏感词库 — CRUD（分类 + 分页）
  * API: configApi.listSensitiveWords/createSensitiveWord/updateSensitiveWord/deleteSensitiveWord
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Pencil, Trash2, Search, AlertTriangle } from '@lucide/vue'
-import { useDsToast, useDsDialog } from '@/shared/composables'
-import { AppHeader, DsPopup, StatRow } from '@/shared/components'
-import { configApi } from '@/shared'
+import { Pencil, Trash2, AlertTriangle } from '@lucide/vue'
+import { useDsToast } from '@/shared/composables'
+import { AppHeader, DsPopup, StatRow, DsFilterTabs, DsSearchBox } from '@/shared/components'
+import { configApi, usePagedList, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
-import type { SensitiveWord, SensitiveWordCategory, SensitiveWordCreateRequest, SensitiveWordUpdateRequest } from '@/shared'
+import type { SensitiveWord, SensitiveWordCategory, SensitiveWordCreateRequest } from '@/shared'
 
 const router = useRouter()
-const { showSuccessToast, showFailToast } = useDsToast()
-const { showConfirmDialog } = useDsDialog()
+const { showFailToast } = useDsToast()
 
-const words = ref<SensitiveWord[]>([])
-const loading = ref(false)
 const search = ref('')
 const filterCategory = ref<SensitiveWordCategory | 'all'>('all')
-const page = ref(1)
-const pageSize = 50
-const total = ref(0)
+
+const { items: words, loading, load, onFilterChange } = usePagedList<SensitiveWord>({
+ pageSize: 50,
+ fetcher: (params) => {
+  const p = { ...params, category: filterCategory.value !== 'all' ? filterCategory.value : undefined }
+  return configApi.listSensitiveWords(p)
+ },
+})
 
 const categoryOptions: { value: SensitiveWordCategory | 'all'; label: string }[] = [
  { value: 'all', label: '全部' },
@@ -66,101 +68,26 @@ const filtered = computed(() => {
  return list
 })
 
-async function load() {
- loading.value = true
- try {
- const params: { page: number; page_size: number; category?: SensitiveWordCategory } = {
- page: page.value,
- page_size: pageSize,
- }
- if (filterCategory.value !== 'all') params.category = filterCategory.value
- const res = await configApi.listSensitiveWords(params)
- words.value = res.items
- total.value = res.total
- } catch (e) {
- showFailToast(errmsg(e, '加载失败'))
- } finally {
- loading.value = false
- }
-}
-
-function onFilterChange() {
- page.value = 1
- load()
-}
-
-const showEditor = ref(false)
-const editing = ref<SensitiveWord | null>(null)
-const form = ref<SensitiveWordCreateRequest>(defaultForm())
-
-function defaultForm(): SensitiveWordCreateRequest {
- return { word: '', category: 'suicide', is_active: true }
-}
-
-function openCreate() {
- editing.value = null
- form.value = defaultForm()
- showEditor.value = true
-}
-
-function openEdit(w: SensitiveWord) {
- editing.value = w
- form.value = { word: w.word, category: w.category, is_active: w.is_active }
- showEditor.value = true
-}
-
-async function submit() {
- if (!form.value.word.trim()) {
- showFailToast('请输入敏感词')
- return
- }
- try {
- if (editing.value) {
- const patch: SensitiveWordUpdateRequest = {
- word: form.value.word,
- category: form.value.category,
- is_active: form.value.is_active,
- }
- await configApi.updateSensitiveWord(editing.value.id, patch)
- showSuccessToast('已更新')
- } else {
- await configApi.createSensitiveWord(form.value)
- showSuccessToast('已创建')
- }
- showEditor.value = false
- await load()
- } catch (e) {
- showFailToast(errmsg(e, '保存失败'))
- }
-}
+const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<SensitiveWord, SensitiveWordCreateRequest>({
+ listRef: words,
+ defaultForm: () => ({ word: '', category: 'suicide', is_active: true }),
+ toForm: (w) => ({ word: w.word, category: w.category, is_active: w.is_active }),
+ validate: (f) => (!f.word.trim() ? '请输入敏感词' : null),
+ create: (f) => configApi.createSensitiveWord(f),
+ update: (w, f) => configApi.updateSensitiveWord(w.id, f),
+ remove: {
+  message: (w) => `删除敏感词「${w.word}」？`,
+  run: (id) => configApi.deleteSensitiveWord(id),
+ },
+ onSaved: load,
+})
 
 async function toggleActive(w: SensitiveWord) {
  try {
- await configApi.updateSensitiveWord(w.id, { is_active: !w.is_active })
- w.is_active = !w.is_active
+  await configApi.updateSensitiveWord(w.id, { is_active: !w.is_active })
+  w.is_active = !w.is_active
  } catch (e) {
- showFailToast(errmsg(e, '切换失败'))
- }
-}
-
-async function remove(w: SensitiveWord) {
- try {
- await showConfirmDialog({
- title: '确认删除',
- message: `删除敏感词「${w.word}」？`,
- confirmButtonText: '删除',
- danger: true,
- cancelButtonText: '取消',
- })
- } catch {
- return
- }
- try {
- await configApi.deleteSensitiveWord(w.id)
- words.value = words.value.filter((x) => x.id !== w.id)
- showSuccessToast('已删除')
- } catch (e) {
- showFailToast(errmsg(e, '删除失败'))
+  showFailToast(errmsg(e, '切换失败'))
  }
 }
 
@@ -169,39 +96,15 @@ onMounted(load)
 
 <template>
  <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
- <AppHeader title="敏感词库" @back="router.back">
- <template #right>
- <button
- type="button"
- class="ds-icon-btn ds-icon-btn--sm ds-icon-btn--brand"
- aria-label="新增"
- @click="openCreate"
- >
- <Plus class="icon h-5 w-5" />
- </button>
- </template>
- </AppHeader>
+ <AppHeader title="敏感词库" showCreate @create="openCreate" @back="router.back" />
 
  <section class="mx-[var(--spacer-16)] mt-[var(--spacer-12)] rounded-[var(--radius-card-large)] bg-[var(--ai-gradient-soft)] px-[var(--spacer-16)] py-[var(--spacer-16)]">
  <StatRow :stats="heroStats" />
  </section>
 
  <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
- <div class="ds-search-box">
- <Search class="h-4 w-4 shrink-0 text-icon-brand" />
- <input v-model="search" type="text" placeholder="搜索敏感词" class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary">
- </div>
- <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] mt-[var(--spacer-12)] no-scrollbar overflow-x-auto">
- <button
- v-for="opt in categoryOptions"
- :key="opt.value"
- type="button"
- :class="filterCategory === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="filterCategory = opt.value; onFilterChange()"
- >{{ opt.label }}<span v-if="categoryCounts[opt.value] !== undefined && categoryCounts[opt.value] > 0" class="ml-[var(--spacer-4)] inline-flex items-center justify-center min-w-[16px] h-[16px] px-[var(--spacer-4)] rounded-[var(--radius-full)] text-[10px] font-medium leading-none transition-colors" :class="filterCategory === opt.value ? 'bg-[var(--bg-brand-light)] text-text-brand' : 'bg-[var(--bg-overlay-l1)] text-text-tertiary'">{{ categoryCounts[opt.value] }}</span><span v-if="filterCategory === opt.value" class="ds-tab-underline" /></button>
- </div>
+ <DsSearchBox v-model="search" placeholder="搜索敏感词" />
+ <DsFilterTabs :options="categoryOptions" :model-value="filterCategory" :counts="categoryCounts" @update:model-value="filterCategory = $event; onFilterChange()" />
  </section>
 
  <section class="px-[var(--spacer-16)] py-[var(--spacer-8)]">

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 医护端文章编辑/创建表单 — 像素级还原 design/pages/article-form.html
  * 标题 + 科室选择 + 标签 + 摘要 + TipTap 富文本编辑器 + 底部操作栏
@@ -142,64 +142,61 @@ function buildUpdatePayload() {
  }
 }
 
+/** 创建或更新文章，返回文章 ID（编辑态走更新，新建态先创建）。saveDraft/submitReview/publishDirectly 共用 */
+async function ensureArticleSaved(): Promise<number> {
+  const articleId = isEditMode.value
+    ? Number(route.params.id)
+    : (await wikiApi.createArticle(buildCreatePayload())).id
+  if (isEditMode.value) {
+    await wikiApi.updateArticle(articleId, buildUpdatePayload())
+  }
+  return articleId
+}
+
 /** 存为草稿 */
 async function saveDraft() {
- saving.value = true
- try {
- if (isEditMode.value) {
- await wikiApi.updateArticle(Number(route.params.id), buildUpdatePayload())
- } else {
- await wikiApi.createArticle(buildCreatePayload())
- }
- router.push({ name: 'staff-articles' })
- } catch (e) {
- showFailToast(errmsg(e, '保存失败'))
- } finally {
- saving.value = false
- }
+  saving.value = true
+  try {
+    await ensureArticleSaved()
+    router.push({ name: 'staff-articles' })
+  } catch (e) {
+    showFailToast(errmsg(e, '保存失败'))
+  } finally {
+    saving.value = false
+  }
 }
 
 /** 提交审核（创建或更新后提交） */
 async function submitReview() {
- saving.value = true
- try {
- const articleId = isEditMode.value
- ? Number(route.params.id)
- : (await wikiApi.createArticle(buildCreatePayload())).id
- if (isEditMode.value) {
- await wikiApi.updateArticle(articleId, buildUpdatePayload())
- }
- await wikiApi.submitArticle(articleId)
- router.push({ name: 'staff-articles' })
- } catch (e) {
- showFailToast(errmsg(e, '提交失败'))
- } finally {
- saving.value = false
- }
+  saving.value = true
+  try {
+    const articleId = await ensureArticleSaved()
+    await wikiApi.submitArticle(articleId)
+    router.push({ name: 'staff-articles' })
+  } catch (e) {
+    showFailToast(errmsg(e, '提交失败'))
+  } finally {
+    saving.value = false
+  }
 }
 
 /** 直接发布（管理员跳过审核：draft → pending → published） */
 async function publishDirectly() {
- saving.value = true
- try {
- const articleId = isEditMode.value
- ? Number(route.params.id)
- : (await wikiApi.createArticle(buildCreatePayload())).id
- if (isEditMode.value) {
- await wikiApi.updateArticle(articleId, buildUpdatePayload())
- }
- // 已是 pending 状态则无需再 submit
- if (articleStatus.value !== 'pending') {
- await wikiApi.submitArticle(articleId)
- }
- await wikiApi.approveArticle(articleId)
- showSuccessToast('发布成功')
- router.push({ name: 'staff-articles' })
- } catch (e) {
- showFailToast(errmsg(e, '发布失败'))
- } finally {
- saving.value = false
- }
+  saving.value = true
+  try {
+    const articleId = await ensureArticleSaved()
+    // 已是 pending 状态则无需再 submit
+    if (articleStatus.value !== 'pending') {
+      await wikiApi.submitArticle(articleId)
+    }
+    await wikiApi.approveArticle(articleId)
+    showSuccessToast('发布成功')
+    router.push({ name: 'staff-articles' })
+  } catch (e) {
+    showFailToast(errmsg(e, '发布失败'))
+  } finally {
+    saving.value = false
+  }
 }
 
 /** 删除文章（带确认弹窗，仅草稿可删） */

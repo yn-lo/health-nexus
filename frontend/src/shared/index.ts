@@ -50,6 +50,9 @@ export {
 
 export { useDsToast } from './composables/useDsToast';
 export { useDsDialog } from './composables/useDsDialog';
+export { useProfileSummary } from './composables/useProfileSummary';
+export { usePagedList } from './composables/usePagedList';
+export { useCrudEditor } from './composables/useCrudEditor';
 
 // Utils
 export { timeAgo, fmtDate, fmtDateTime, fmtShortDate, fmtCompact, fmtUserId, stripHtml } from './utils/format';

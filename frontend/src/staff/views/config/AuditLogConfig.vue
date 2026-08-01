@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 配置审计日志 — 只读列表 + 分页 + 实体类型筛选
  * API: configApi.listAuditLogs
@@ -6,23 +6,29 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, ClipboardList } from '@lucide/vue'
-import { useDsToast } from '@/shared/composables'
 import { AppHeader, StatRow } from '@/shared/components'
-import { configApi } from '@/shared'
-import { errmsg } from '@/shared/api/client'
+import { configApi, usePagedList } from '@/shared'
 import type { ConfigAuditLog, ConfigAuditEntityType } from '@/shared'
 
 const router = useRouter()
-const { showFailToast } = useDsToast()
 
-const logs = ref<ConfigAuditLog[]>([])
-const loading = ref(false)
-const filterType = ref<ConfigAuditEntityType | 'all'>('all')
 // entity_id 筛选：空字符串=不过滤；数字=按 ID 过滤；0=单例配置（RAG/安全话术）审计记录
 const filterEntityId = ref('')
-const page = ref(1)
-const pageSize = 20
-const total = ref(0)
+const filterType = ref<ConfigAuditEntityType | 'all'>('all')
+
+const { items: logs, loading, page, pageSize, total, load, onFilterChange } = usePagedList<ConfigAuditLog>({
+ pageSize: 20,
+ fetcher: (params) => {
+  const extra: { entity_type?: ConfigAuditEntityType; entity_id?: number } = {}
+  if (filterType.value !== 'all') extra.entity_type = filterType.value
+  const trimmedId = filterEntityId.value.trim()
+  if (trimmedId !== '') {
+   const id = Number(trimmedId)
+   if (!Number.isNaN(id) && id >= 0) extra.entity_id = id
+  }
+  return configApi.listAuditLogs({ ...params, ...extra })
+ },
+})
 
 const typeOptions: { value: ConfigAuditEntityType | 'all'; label: string }[] = [
  { value: 'all', label: '全部' },
@@ -47,35 +53,6 @@ const actionLabel: Record<string, string> = {
  create: '创建',
  update: '更新',
  delete: '删除',
-}
-
-
-async function load() {
- loading.value = true
- try {
- const params: { page: number; page_size: number; entity_type?: ConfigAuditEntityType; entity_id?: number } = {
- page: page.value,
- page_size: pageSize,
- }
- if (filterType.value !== 'all') params.entity_type = filterType.value
- const trimmedId = filterEntityId.value.trim()
- if (trimmedId !== '') {
- const id = Number(trimmedId)
- if (!Number.isNaN(id) && id >= 0) params.entity_id = id
- }
- const res = await configApi.listAuditLogs(params)
- logs.value = res.items
- total.value = res.total
- } catch (e) {
- showFailToast(errmsg(e, '加载失败'))
- } finally {
- loading.value = false
- }
-}
-
-function onFilterChange() {
- page.value = 1
- load()
 }
 
 function prevPage() {

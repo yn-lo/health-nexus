@@ -1668,7 +1668,55 @@
   animation: ds-spin 600ms linear infinite;
 }
 
-/* ── ds-toast / ds-dialog Vue Transition 动画 ─────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   聊天页共用卡片效果 — Context card 微交互 + 磨玻璃输入卡片
+   从 ChatHome / AboutUs / ChatInputBar 提取（消除 scoped 重复）
+   ═══════════════════════════════════════════════════════════════ */
+.ai-context-card {
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--micro-duration) var(--micro-ease),
+              box-shadow var(--micro-duration) var(--micro-ease);
+}
+.ai-context-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow-card);
+}
+.ai-context-card:active {
+  transform: translateY(0) scale(0.99);
+}
+.ai-context-icon {
+  transition: background-color var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease);
+}
+.ai-context-card:hover .ai-context-icon {
+  background: var(--ai-accent);
+  color: var(--text-onbrand);
+}
+.ai-input-card {
+  border: 1px solid var(--brand-glow-border);
+  box-shadow: var(--shadow-glow-input);
+  backdrop-filter: blur(8px);
+  transition: box-shadow var(--micro-duration) var(--micro-ease),
+              border-color var(--micro-duration) var(--micro-ease);
+}
+.ai-input-card:focus-within {
+  border-color: var(--brand-glow-border-strong);
+  box-shadow: var(--shadow-glow-input-focus);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-context-card,
+  .ai-context-icon,
+  .ai-input-card {
+    transition: none;
+  }
+  .ai-context-card:hover {
+    transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-toast / ds-dialog Vue Transition 动画 ─────────────── */
 .ds-toast-enter-active,
 .ds-toast-leave-active {
   transition: opacity 150ms ease, transform 150ms ease;

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 安全话术配置 — 6 字段单例 GET/PUT
  * API: configApi.getSafetyMessages/updateSafetyMessages
@@ -39,6 +39,12 @@ const outputSideFields: { key: keyof typeof form; label: string; description: st
  { key: 'no_knowledge_message', label: '无知识话术', description: '知识库检索无相关结果或检索服务故障时，以此话术告知患者。', placeholder: '抱歉，知识库中暂无与您问题相关的内容，建议您咨询主治医生或换个问法试试。', rows: 3, required: true },
  { key: 'system_error_message', label: '系统异常话术', description: 'LLM 服务故障（空输出 / 流中断）时，以此话术告知患者。', placeholder: '抱歉，系统暂时繁忙未能生成回答，请稍后重试。', rows: 3, required: true },
  { key: 'safety_warning_message', label: '安全警告话术', description: 'AI 回答涉及用药或治疗建议时，在回答末尾追加安全警告（含用药免责声明）。', placeholder: '请注意：以上信息仅供参考，不能替代专业医疗诊断和治疗。用药请严格遵照医嘱，如有疑问请咨询您的主治医生或药师。', rows: 2, required: false },
+]
+
+/** 输入/输出侧话术分组渲染（合并结构相同的两块，消除模板重复） */
+const messageSideSections = [
+ { title: '输入侧：患者消息触发时推送', borderClass: 'border-[var(--border-error)]', fields: inputSideFields },
+ { title: '输出侧：AI 回答检测 / 系统异常时推送', borderClass: 'border-[var(--border-brand)]', fields: outputSideFields },
 ]
 
 async function load() {
@@ -97,28 +103,11 @@ onMounted(load)
  </div>
 
  <div class="flex flex-col gap-[var(--spacer-16)]">
- <!-- 输入侧话术 -->
- <div>
- <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-error)]">输入侧：患者消息触发时推送</div>
+ <div v-for="section in messageSideSections" :key="section.title">
+ <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2" :class="section.borderClass">{{ section.title }}</div>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div
- v-for="f in inputSideFields"
- :key="f.key"
- class="rounded-[var(--radius-card-soft)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] p-[var(--spacer-12)]"
- >
- <span class="mb-[var(--spacer-2)] block text-body-sm font-medium text-text">{{ f.label }}<span v-if="f.required" class="text-[var(--status-error-default)]">*</span></span>
- <p class="mb-[var(--spacer-8)] text-body-sm text-text-secondary">{{ f.description }}</p>
- <textarea v-model="form[f.key]" :rows="f.rows" :placeholder="f.placeholder" class="ds-textarea ds-textarea--secondary"></textarea>
- </div>
- </div>
- </div>
-
- <!-- 输出侧话术 -->
- <div>
- <div class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">输出侧：AI 回答检测 / 系统异常时推送</div>
- <div class="flex flex-col gap-[var(--spacer-12)]">
- <div
- v-for="f in outputSideFields"
+ v-for="f in section.fields"
  :key="f.key"
  class="rounded-[var(--radius-card-soft)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] p-[var(--spacer-12)]"
  >

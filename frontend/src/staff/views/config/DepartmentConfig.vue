@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 科室管理 — 树形 CRUD
  * API: baseApi.listDepartmentTree/createDepartment/updateDepartment/deleteDepartment
@@ -7,15 +7,15 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Pencil, Trash2, Search, Building2, ChevronDown } from '@lucide/vue'
-import { useDsToast, useDsDialog } from '@/shared/composables'
-import { AppHeader, DsPopup, StatRow } from '@/shared/components'
-import { baseApi } from '@/shared'
+import { Pencil, Trash2, Building2, ChevronDown } from '@lucide/vue'
+import { useDsToast } from '@/shared/composables'
+import { AppHeader, DsPopup, StatRow, DsSearchBox } from '@/shared/components'
+import { baseApi, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { DepartmentTreeNode, DepartmentCreateRequest, DepartmentUpdateRequest } from '@/shared'
+import { buildChildMap } from '@/shared/utils/departmentTree'
 
-const { showSuccessToast, showFailToast } = useDsToast()
-const { showConfirmDialog } = useDsDialog()
+const { showFailToast } = useDsToast()
 const router = useRouter()
 
 const tree = ref<DepartmentTreeNode[]>([])
@@ -34,25 +34,18 @@ interface DisplayRow {
 }
 
 const displayRows = computed<DisplayRow[]>(() => {
- const byParent = new Map<number | null, DepartmentTreeNode[]>()
- for (const n of tree.value) {
- const key = n.parent_id
- if (!byParent.has(key)) byParent.set(key, [])
- byParent.get(key)!.push(n)
- }
- // 同层按 name 排序，保证展示稳定
- for (const list of byParent.values()) list.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const byParent = buildChildMap(tree.value)
 
- const rows: DisplayRow[] = []
- const walk = (parentId: number | null, depth: number) => {
- const children = byParent.get(parentId) ?? []
- for (const c of children) {
- rows.push({ node: c, depth })
- walk(c.id, depth + 1)
- }
- }
- walk(null, 0)
- return rows
+  const rows: DisplayRow[] = []
+  const walk = (parentId: number | null, depth: number) => {
+    const children = byParent.get(parentId) ?? []
+    for (const c of children) {
+      rows.push({ node: c, depth })
+      walk(c.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return rows
 })
 
 const filteredRows = computed<DisplayRow[]>(() => {
@@ -90,41 +83,42 @@ async function load() {
 }
 
 // ===== 编辑器（创建 + 编辑共用 popup） =====
-const showEditor = ref(false)
-const editing = ref<DepartmentTreeNode | null>(null)
-const form = ref<DepartmentCreateRequest>(defaultForm())
-
-function defaultForm(): DepartmentCreateRequest {
- return { name: '', parent_id: null, is_public: false, is_active: true, description: '' }
-}
-
-function openCreate() {
- editing.value = null
- form.value = defaultForm()
- showEditor.value = true
-}
-
-function openEdit(node: DepartmentTreeNode) {
- editing.value = node
- form.value = {
- name: node.name,
- parent_id: node.parent_id,
- is_public: node.is_public,
- is_active: node.is_active,
- description: node.description ?? '',
- }
- showEditor.value = true
-}
+const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<DepartmentTreeNode, DepartmentCreateRequest>({
+ listRef: tree,
+ defaultForm: () => ({ name: '', parent_id: null, is_public: false, is_active: true, description: '' }),
+ toForm: (n) => ({ name: n.name, parent_id: n.parent_id, is_public: n.is_public, is_active: n.is_active, description: n.description ?? '' }),
+ validate: (f) => {
+  if (!f.name.trim()) return '请输入科室名称'
+  if (f.name.length > 100) return '名称长度需为 1-100 字符'
+  return null
+ },
+ create: (f) => baseApi.createDepartment(f),
+ update: (n, f) => {
+  // PATCH：仅发送变更字段；parent_id 特殊处理（0 = 变根科室）
+  const patch: DepartmentUpdateRequest = {
+   name: f.name,
+   description: f.description ?? '',
+   is_public: f.is_public,
+   is_active: f.is_active,
+  }
+  // 父科室变更才发送 parent_id（避免无意义的 0 与原 null 误判）
+  const original = n.parent_id
+  const next = f.parent_id ?? null
+  if ((original ?? null) !== (next ?? null)) {
+   patch.parent_id = next ?? 0
+  }
+  return baseApi.updateDepartment(n.id, patch)
+ },
+ remove: {
+  message: (n) => `删除科室「${n.name}」？\n若有子科室或关联用户将无法删除。`,
+  run: (id) => baseApi.deleteDepartment(id),
+ },
+ onSaved: load,
+})
 
 // 父科室下拉候选：编辑时排除自身及其后代（避免成环）
 const parentCandidates = computed<{ id: number; label: string; depth: number }[]>(() => {
- const byParent = new Map<number | null, DepartmentTreeNode[]>()
- for (const n of tree.value) {
- const key = n.parent_id
- if (!byParent.has(key)) byParent.set(key, [])
- byParent.get(key)!.push(n)
- }
- for (const list of byParent.values()) list.sort((a, b) => a.name.localeCompare(b.name, 'zh'))
+  const byParent = buildChildMap(tree.value)
 
  // 计算编辑目标的后代集合（不能选自己后代作父）
  const forbidden = new Set<number>()
@@ -155,43 +149,6 @@ const parentCandidates = computed<{ id: number; label: string; depth: number }[]
  return out
 })
 
-async function submit() {
- if (!form.value.name.trim()) {
- showFailToast('请输入科室名称')
- return
- }
- if (form.value.name.length > 100) {
- showFailToast('名称长度需为 1-100 字符')
- return
- }
- try {
- if (editing.value) {
- // PATCH：仅发送变更字段；parent_id 特殊处理（0 = 变根科室）
- const patch: DepartmentUpdateRequest = {
- name: form.value.name,
- description: form.value.description ?? '',
- is_public: form.value.is_public,
- is_active: form.value.is_active,
- }
- // 父科室变更才发送 parent_id（避免无意义的 0 与原 null 误判）
- const original = editing.value.parent_id
- const next = form.value.parent_id ?? null
- if ((original ?? null) !== (next ?? null)) {
- patch.parent_id = next ?? 0
- }
- await baseApi.updateDepartment(editing.value.id, patch)
- showSuccessToast('已更新')
- } else {
- await baseApi.createDepartment(form.value)
- showSuccessToast('已创建')
- }
- showEditor.value = false
- await load()
- } catch (e) {
- showFailToast(errmsg(e, '保存失败'))
- }
-}
-
 async function toggleActive(node: DepartmentTreeNode, isActive: boolean) {
  try {
  await baseApi.updateDepartment(node.id, { is_active: isActive })
@@ -210,44 +167,12 @@ async function togglePublic(node: DepartmentTreeNode) {
  }
 }
 
-async function remove(node: DepartmentTreeNode) {
- try {
- await showConfirmDialog({
- title: '确认删除',
- message: `删除科室「${node.name}」？\n若有子科室或关联用户将无法删除。`,
- confirmButtonText: '删除',
- danger: true,
- cancelButtonText: '取消',
- })
- } catch {
- return
- }
- try {
- await baseApi.deleteDepartment(node.id)
- tree.value = tree.value.filter((x) => x.id !== node.id)
- showSuccessToast('已删除')
- } catch (e) {
- showFailToast(errmsg(e, '删除失败'))
- }
-}
-
 onMounted(load)
 </script>
 
 <template>
  <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
- <AppHeader title="科室管理" @back="router.back">
- <template #right>
- <button
- type="button"
- class="ds-icon-btn ds-icon-btn--sm ds-icon-btn--brand"
- aria-label="新增"
- @click="openCreate"
- >
- <Plus class="icon h-5 w-5" />
- </button>
- </template>
- </AppHeader>
+ <AppHeader title="科室管理" showCreate @create="openCreate" @back="router.back" />
 
  <!-- 搜索 -->
  <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
@@ -259,10 +184,7 @@ onMounted(load)
  ]" />
  </div>
 
- <div class="ds-search-box mt-[var(--spacer-12)]">
- <Search class="h-4 w-4 shrink-0 text-icon-brand" />
- <input v-model="search" type="text" placeholder="搜索科室名称或描述" class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary">
- </div>
+ <DsSearchBox v-model="search" placeholder="搜索科室名称或描述" class="mt-[var(--spacer-12)]" />
  </section>
 
  <!-- 树形列表 -->

@@ -6,17 +6,18 @@
  */
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Info, LogOut, KeyRound, Pencil, Phone, User, Heart } from '@lucide/vue'
+import { Info, LogOut, KeyRound, Pencil } from '@lucide/vue'
 import { useAuthStore } from '@/stores/auth'
 import { ProfileHeader, MenuList, MenuRow } from '@/shared/components'
 import { ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
+import { useProfileSummary } from '@/shared'
 import type { MenuItem } from '@/shared'
 import { fmtUserId } from '@/shared'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const GENDER_LABEL: Record<string, string> = { male: '男', female: '女', other: '其他' }
+const { profileSummary } = useProfileSummary()
 
 const user = computed(() => authStore.user)
 
@@ -33,17 +34,6 @@ const staffId = computed(
 )
 
 const metaLines = computed(() => [staffId.value])
-
-/** 资料摘要行 */
-const profileSummary = computed(() => {
-  const u = authStore.user
-  if (!u) return []
-  const lines: { icon: typeof Phone; text: string }[] = []
-  if (u.phone) lines.push({ icon: Phone, text: u.phone })
-  if (u.gender) lines.push({ icon: User, text: GENDER_LABEL[u.gender] ?? u.gender })
-  if (u.date_of_birth) lines.push({ icon: Heart, text: u.date_of_birth })
-  return lines
-})
 
 const menuItems: MenuItem[] = [
   { icon: Pencil, label: '编辑资料', routeName: 'staff-edit-profile' },

@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { ChevronLeft } from '@lucide/vue'
+import { ChevronLeft, Plus } from '@lucide/vue'
 
 withDefaults(defineProps<{
  title?: string
  showBack?: boolean
  variant?: 'solid' | 'frosted' | 'transparent'
+ showCreate?: boolean
 }>(), {
  title: '',
  showBack: true,
  variant: 'solid',
+ showCreate: false,
 })
 
 defineEmits<{
  back: []
+ create: []
 }>()
 </script>
 
@@ -54,6 +57,15 @@ defineEmits<{
  <!-- 右侧：操作区 -->
  <div class="flex items-center justify-end min-w-[40px] flex-1 gap-[var(--spacer-4)]">
  <slot name="right" />
+ <button
+  v-if="showCreate"
+  type="button"
+  class="ds-icon-btn ds-icon-btn--sm ds-icon-btn--brand"
+  aria-label="新增"
+  @click="$emit('create')"
+ >
+  <Plus class="icon h-5 w-5" />
+ </button>
  </div>
  </header>
 </template>

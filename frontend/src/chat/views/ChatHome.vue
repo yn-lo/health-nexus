@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ChatHome 聊天首页 - AI Healthcare Native 综合风格
  *
@@ -264,42 +264,11 @@ function onPromptClick(item: QuickAction) {
  100% { transform: scale(1.25); opacity: 0; }
 }
 
-/* ── Context cards + Micro hover（无单边色边框） ──────── */
-.ai-context-card {
- box-shadow: var(--shadow-xs);
- transition: transform var(--micro-duration) var(--micro-ease),
- box-shadow var(--micro-duration) var(--micro-ease);
-}
-.ai-context-card:hover {
- transform: translateY(-1px);
- box-shadow: var(--shadow-glow-card);
-}
-.ai-context-card:active {
- transform: translateY(0) scale(0.99);
-}
-
-/* 上下文卡片图标 — hover 时变实色 */
-.ai-context-icon {
- transition: background-color var(--micro-duration) var(--micro-ease),
- color var(--micro-duration) var(--micro-ease);
-}
-.ai-context-card:hover .ai-context-icon {
- background: var(--ai-accent);
- color: var(--text-onbrand);
-}
-
-/* ── A11y：减弱动效偏好 ───────────────────────────────────── */
+/* ── A11y：减弱动效偏好（Context card 规则已移至全局 components.css） ── */
 @media (prefers-reduced-motion: reduce) {
  .ai-orb-pulse-outer,
  .ai-orb-pulse-inner {
  animation: none;
- }
- .ai-context-card,
- .ai-context-icon {
- transition: none;
- }
- .ai-context-card:hover {
- transform: none;
  }
 }
 </style>

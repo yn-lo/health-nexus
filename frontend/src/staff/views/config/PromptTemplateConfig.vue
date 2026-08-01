@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 系统提示词 — 顶部展示当前生效提示词（不可删除），下方列出历史版本
  * API: configApi.getEffectivePrompt / listPromptTemplates / updatePromptTemplate
@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router'
 import { Search, CheckCircle2, FileText, ShieldCheck, Database, Trash2 } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, StatRow } from '@/shared/components'
-import { configApi, errmsg } from '@/shared'
+import { configApi, errmsg, usePagedList } from '@/shared'
 import type { PromptTemplate, EffectivePromptResponse } from '@/shared'
 
 const router = useRouter()
@@ -27,13 +27,17 @@ async function loadEffective() {
 }
 
 // ---- 历史版本列表 ----
-const templates = ref<PromptTemplate[]>([])
-const loading = ref(false)
 const search = ref('')
 const filterActive = ref<'all' | 'active' | 'inactive'>('all')
-const page = ref(1)
-const pageSize = 50
-const total = ref(0)
+
+const { items: templates, loading, load, onFilterChange } = usePagedList<PromptTemplate>({
+ pageSize: 50,
+ fetcher: (params) => configApi.listPromptTemplates({
+  ...params,
+  ...(filterActive.value === 'active' ? { is_active: true } : {}),
+  ...(filterActive.value === 'inactive' ? { is_active: false } : {}),
+ }),
+})
 
 const activeCount = computed(() => templates.value.filter(t => t.is_active).length)
 const inactiveCount = computed(() => templates.value.filter(t => !t.is_active).length)
@@ -48,31 +52,6 @@ const filtered = computed(() => {
  }
  return list
 })
-
-async function load() {
- loading.value = true
- try {
- const params: {
- page: number
- page_size: number
- is_active?: boolean
- } = { page: page.value, page_size: pageSize }
- if (filterActive.value === 'active') params.is_active = true
- if (filterActive.value === 'inactive') params.is_active = false
- const res = await configApi.listPromptTemplates(params)
- templates.value = res.items
- total.value = res.total
- } catch (e) {
- showFailToast(errmsg(e, '加载失败'))
- } finally {
- loading.value = false
- }
-}
-
-function onFilterChange() {
- page.value = 1
- load()
-}
 
 function goDetail(t: PromptTemplate) {
  router.push({ name: 'staff-config-prompt-detail', params: { id: t.id } })

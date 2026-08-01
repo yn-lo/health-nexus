@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ChangePassword 修改密码页 — 已登录用户
  *
@@ -10,9 +10,9 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Lock, Eye, EyeOff, CircleAlert } from '@lucide/vue'
+import { CircleAlert } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, AppHeader, PasswordStrength } from '@/shared/components'
+import { PageShell, AppHeader, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -23,9 +23,6 @@ const { showFailToast, showSuccessToast } = useDsToast()
 const oldPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
-const showOldPassword = ref(false)
-const showNewPassword = ref(false)
-const showConfirmPassword = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -102,82 +99,40 @@ async function handleChange() {
  <div class="flex flex-col gap-[var(--spacer-20)] rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] p-[var(--spacer-24)] border border-[var(--border-neutral-l1)] shadow-[var(--shadow-sm)]">
  <form class="flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleChange">
  <!-- 原密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="text-body-sm font-medium text-text-secondary">
- 原密码
- </label>
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="oldPassword" :type="showOldPassword ? 'text' : 'password'" placeholder="请输入原密码" autocomplete="current-password" aria-label="原密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showOldPassword ? '隐藏密码' : '显示密码'" @click="showOldPassword = !showOldPassword">
- <Eye v-if="!showOldPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- </div>
+ <DsPasswordField v-model="oldPassword" label="原密码" placeholder="请输入原密码" autocomplete="current-password" aria-label="原密码" />
 
  <!-- 新密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="text-body-sm font-medium text-text-secondary">
- 新密码
- </label>
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showNewPassword ? '隐藏密码' : '显示密码'" @click="showNewPassword = !showNewPassword">
- <Eye v-if="!showNewPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <PasswordStrength :password="newPassword" :segments="4" />
- <p
- v-if="sameAsOld"
- class="text-body-sm text-[var(--status-error-default)]"
- >
- 新密码不能与原密码相同
- </p>
- </div>
+ <DsPasswordField v-model="newPassword" label="新密码" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
+  <PasswordStrength :password="newPassword" :segments="4" />
+  <p
+   v-if="sameAsOld"
+   class="text-body-sm text-[var(--status-error-default)]"
+  >
+   新密码不能与原密码相同
+  </p>
+ </DsPasswordField>
 
  <!-- 确认新密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="text-body-sm font-medium text-text-secondary">
- 确认新密码
- </label>
- <div class="ds-field-wrap ds-field-wrap--secondary" :class="{ 'ds-field-wrap--error': passwordMismatch }">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" placeholder="请再次输入新密码" autocomplete="new-password" aria-label="确认新密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'" @click="showConfirmPassword = !showConfirmPassword">
- <Eye v-if="!showConfirmPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <p
- v-if="passwordMismatch"
- class="text-body-sm text-[var(--status-error-default)]"
- >
- 两次输入的密码不一致
- </p>
- </div>
+ <DsPasswordField v-model="confirmPassword" label="确认新密码" placeholder="请再次输入新密码" autocomplete="new-password" aria-label="确认新密码" :error="passwordMismatch">
+  <p
+   v-if="passwordMismatch"
+   class="text-body-sm text-[var(--status-error-default)]"
+  >
+   两次输入的密码不一致
+  </p>
+ </DsPasswordField>
 
  <!-- 错误提示 -->
  <div
- v-if="errorMsg"
- class="ds-alert ds-alert--error"
- role="alert"
+  v-if="errorMsg"
+  class="ds-alert ds-alert--error"
+  role="alert"
  >
- <CircleAlert class="icon" />
- <span>{{ errorMsg }}</span>
+  <CircleAlert class="icon" />
+  <span>{{ errorMsg }}</span>
  </div>
 
- <button
- type="submit"
- class="ds-btn ds-btn--primary ds-btn--block"
- :class="{ 'ds-btn--loading': loading }"
- :disabled="loading"
- >
- <span v-if="loading" class="ds-btn__spinner" />
- 确认修改
- </button>
+ <DsSubmitButton :loading="loading" text="确认修改" />
  </form>
  </div>
  </div>
