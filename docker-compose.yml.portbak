@@ -9,7 +9,7 @@ services:
     container_name: hn-postgres
     environment:
       POSTGRES_USER: health
-      POSTGRES_PASSWORD: 4b605c71292e231391b2a40d63d9fe5b
+      POSTGRES_PASSWORD: health
       POSTGRES_DB: health_nexus
       TZ: Asia/Shanghai
     # 数据库不对外暴露，仅容器内网访问
@@ -28,7 +28,6 @@ services:
     container_name: hn-redis
     command: >
       redis-server
-      --requirepass 4d58f1021dfc47f2f701a5be6f249a91
       --appendonly yes
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
@@ -36,7 +35,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "4d58f1021dfc47f2f701a5be6f249a91", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -47,18 +46,15 @@ services:
     container_name: hn-server
     command: ["/bin/server"]
     ports:
-      - "5230:5230"
+      - "5230:8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:4b605c71292e231391b2a40d63d9fe5b@postgres:5432/health_nexus?sslmode=disable"
+      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:health@postgres:5432/health_nexus?sslmode=disable"
       HEALTH_NEXUS_REDIS_ADDR: "redis:6379"
-      HEALTH_NEXUS_REDIS_PASSWORD: "4d58f1021dfc47f2f701a5be6f249a91"
-      HEALTH_NEXUS_JWT_SECRET: "38c4d857fd37f230568a8b209ef5337175afc4ac0d3bf00972f572f62b0ada83"
-      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "32c93981934e2419a59ea4d1ec66c62a154ed1239dfa11cc27671ff2f3029ea3"
     restart: unless-stopped
 
   worker:
@@ -73,11 +69,8 @@ services:
       server:
         condition: service_started
     environment:
-      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:4b605c71292e231391b2a40d63d9fe5b@postgres:5432/health_nexus?sslmode=disable"
+      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:health@postgres:5432/health_nexus?sslmode=disable"
       HEALTH_NEXUS_REDIS_ADDR: "redis:6379"
-      HEALTH_NEXUS_REDIS_PASSWORD: "4d58f1021dfc47f2f701a5be6f249a91"
-      HEALTH_NEXUS_JWT_SECRET: "38c4d857fd37f230568a8b209ef5337175afc4ac0d3bf00972f572f62b0ada83"
-      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "32c93981934e2419a59ea4d1ec66c62a154ed1239dfa11cc27671ff2f3029ea3"
     restart: unless-stopped
 
 volumes:
