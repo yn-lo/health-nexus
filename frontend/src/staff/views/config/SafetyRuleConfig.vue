@@ -186,7 +186,7 @@ onMounted(load)
  </h3>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">名称</span>
+ <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.name" class="ds-input" placeholder="如 诊断越权检测">
  </div>
  <div>
@@ -204,7 +204,7 @@ onMounted(load)
  </div>
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">正则模式</span>
+ <span class="text-body-sm text-text-secondary">正则模式<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.pattern" class="ds-input ds-input--mono" placeholder="如 确诊|诊断为">
  </div>
  <div>
@@ -227,7 +227,7 @@ onMounted(load)
  </div>
  </div>
  <div v-if="form.action === 'replace'" class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">替换文本</span>
+ <span class="text-body-sm text-text-secondary">替换文本<span class="text-[var(--status-error-default)]">*</span></span>
  <textarea v-model="form.replacement" class="ds-textarea" rows="2" placeholder="如 具体诊断请咨询您的主治医生"></textarea>
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">

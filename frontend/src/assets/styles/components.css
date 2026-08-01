@@ -1668,6 +1668,10 @@
   animation: ds-spin 600ms linear infinite;
 }
 
+.ds-toast-icon--fail {
+  color: var(--status-error-default);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    聊天页共用卡片效果 — Context card 微交互 + 磨玻璃输入卡片
    从 ChatHome / AboutUs / ChatInputBar 提取（消除 scoped 重复）
@@ -1725,7 +1729,7 @@
 .ds-toast-enter-from,
 .ds-toast-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(-8px);
+  transform: translateX(-50%) translateY(calc(-50% - 8px));
 }
 
 .ds-dialog-enter-active,

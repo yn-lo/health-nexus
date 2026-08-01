@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 账号详情 — 查看账户信息 + 重置密码 + 锁定/解锁 + 删除
  * API: authApi.listStaffAccounts/resetStaffAccountPassword/lockStaffAccount/unlockStaffAccount/deleteStaffAccount
@@ -218,7 +218,7 @@ onMounted(load)
           为 <strong class="text-text">{{ account?.username }}</strong> 设置新密码，重置后旧密码立即失效。
         </p>
         <div class="flex flex-col gap-[var(--spacer-4)]">
-          <span class="text-body-sm text-text-secondary">新密码</span>
+          <span class="text-body-sm text-text-secondary">新密码<span class="text-[var(--status-error-default)]">*</span></span>
           <div class="ds-field-wrap">
             <input v-model="newPassword" :type="showPassword ? 'text' : 'password'" placeholder="至少 8 位，含字母和数字">
             <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">

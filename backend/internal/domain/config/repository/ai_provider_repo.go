@@ -26,7 +26,7 @@ func NewAIProviderRepo(pool *pgxpool.Pool) *AIProviderRepo {
 // ErrNotFound 通用"未找到"哨兵错误，service 层翻译为 404。
 var ErrNotFound = errors.New("record not found")
 
-const aiProviderColumns = `id, name, provider_type, api_url, api_key_encrypted, api_key_masked,
+const aiProviderColumns = `id, name, provider_type, api_url, is_full_url, api_key_encrypted, api_key_masked,
 	model_name, dimension, parameters, is_active, created_at, updated_at`
 
 // List 按 provider_type 和 is_active 过滤。providerType 空表示不过滤；isActive nil 表示不过滤。
@@ -77,12 +77,12 @@ func (r *AIProviderRepo) Get(ctx context.Context, id int64) (*entity.AIProvider,
 // Create 插入新 AI 提供商。p.ID/p.CreatedAt/p.UpdatedAt 由 RETURNING 回填。
 func (r *AIProviderRepo) Create(ctx context.Context, p *entity.AIProvider) error {
 	q := `INSERT INTO ai_providers
-		(name, provider_type, api_url, api_key_encrypted, api_key_masked,
+		(name, provider_type, api_url, is_full_url, api_key_encrypted, api_key_masked,
 		 model_name, dimension, parameters, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
-		p.Name, p.ProviderType, p.APIURL, p.APIKeyEncrypted, p.APIKeyMasked,
+		p.Name, p.ProviderType, p.APIURL, p.IsFullURL, p.APIKeyEncrypted, p.APIKeyMasked,
 		p.ModelName, p.Dimension, p.Parameters, p.IsActive,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
@@ -90,12 +90,12 @@ func (r *AIProviderRepo) Create(ctx context.Context, p *entity.AIProvider) error
 // Update 全量更新（service 层负责合并 patch）。
 func (r *AIProviderRepo) Update(ctx context.Context, p *entity.AIProvider) error {
 	q := `UPDATE ai_providers SET
-		name = $2, provider_type = $3, api_url = $4, api_key_encrypted = $5, api_key_masked = $6,
-		model_name = $7, dimension = $8, parameters = $9, is_active = $10, updated_at = now()
+		name = $2, provider_type = $3, api_url = $4, is_full_url = $5, api_key_encrypted = $6, api_key_masked = $7,
+		model_name = $8, dimension = $9, parameters = $10, is_active = $11, updated_at = now()
 		WHERE id = $1
 		RETURNING created_at, updated_at`
 	tag, err := r.pool.Exec(ctx, q,
-		p.ID, p.Name, p.ProviderType, p.APIURL, p.APIKeyEncrypted, p.APIKeyMasked,
+		p.ID, p.Name, p.ProviderType, p.APIURL, p.IsFullURL, p.APIKeyEncrypted, p.APIKeyMasked,
 		p.ModelName, p.Dimension, p.Parameters, p.IsActive,
 	)
 	if err != nil {
@@ -202,7 +202,7 @@ func (r *AIProviderRepo) AlignEmbeddingDimension(ctx context.Context, dim int) e
 func scanAIProvider(s postgres.Scanner) (*entity.AIProvider, error) {
 	p := &entity.AIProvider{}
 	err := s.Scan(
-		&p.ID, &p.Name, &p.ProviderType, &p.APIURL, &p.APIKeyEncrypted, &p.APIKeyMasked,
+		&p.ID, &p.Name, &p.ProviderType, &p.APIURL, &p.IsFullURL, &p.APIKeyEncrypted, &p.APIKeyMasked,
 		&p.ModelName, &p.Dimension, &p.Parameters, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {

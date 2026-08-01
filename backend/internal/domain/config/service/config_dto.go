@@ -20,17 +20,19 @@ type CreateAIProviderRequest struct {
 	Dimension    *int           `json:"dimension,omitempty"`
 	Params       map[string]any `json:"params,omitempty"`
 	IsActive     *bool          `json:"is_active,omitempty"`
+	IsFullURL    bool           `json:"is_full_url,omitempty"` // true 时后端原样使用 api_base，不自动拼接 /v1
 }
 
 // UpdateAIProviderRequest 更新 AI 提供商请求。所有字段可选，nil 表示不更新。
 type UpdateAIProviderRequest struct {
-	Name      *string         `json:"name,omitempty"`
-	APIBase   *string         `json:"api_base,omitempty"`
-	APIKey    *string         `json:"api_key,omitempty"` // 明文传入，service 层加密
-	ModelName *string         `json:"model_name,omitempty"`
-	Dimension *int            `json:"dimension,omitempty"`
-	Params    *map[string]any `json:"params,omitempty"`
-	IsActive  *bool           `json:"is_active,omitempty"`
+	Name       *string         `json:"name,omitempty"`
+	APIBase    *string         `json:"api_base,omitempty"`
+	APIKey     *string         `json:"api_key,omitempty"` // 明文传入，service 层加密
+	ModelName  *string         `json:"model_name,omitempty"`
+	Dimension  *int            `json:"dimension,omitempty"`
+	Params     *map[string]any `json:"params,omitempty"`
+	IsActive   *bool           `json:"is_active,omitempty"`
+	IsFullURL  *bool           `json:"is_full_url,omitempty"`
 }
 
 // AIProviderResponse AI 提供商响应。APIKey 字段返回掩码（REQ-CONFIG-002）。
@@ -44,6 +46,7 @@ type AIProviderResponse struct {
 	Dimension    *int           `json:"dimension"`
 	Params       map[string]any `json:"params"`
 	IsActive     bool           `json:"is_active"`
+	IsFullURL    bool           `json:"is_full_url"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 }
@@ -66,6 +69,7 @@ func toAIProviderResponse(p *entity.AIProvider) AIProviderResponse {
 		Dimension:    p.Dimension,
 		Params:       params,
 		IsActive:     p.IsActive,
+		IsFullURL:    p.IsFullURL,
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,
 	}

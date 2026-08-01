@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { useDsToast, useDsDialog } from '@/shared/composables'
 
 const { toastState } = useDsToast()
@@ -10,10 +10,7 @@ const { dialogState, confirm, cancel } = useDsDialog()
     <Transition name="ds-toast">
       <div
         v-if="toastState.visible"
-        class="fixed top-[var(--spacer-16)] left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex items-center gap-[var(--spacer-8)] rounded-[var(--radius-8)] px-[var(--spacer-16)] py-[var(--spacer-10)] shadow-[var(--shadow-lg)] text-body-sm font-medium"
-        :class="toastState.type === 'success'
-          ? 'bg-[var(--status-success-surface-l1)] text-[var(--status-success-default)]'
-          : 'bg-[var(--status-error-surface-l1)] text-[var(--status-error-default)]'"
+        class="fixed left-1/2 top-1/2 z-[var(--z-toast)] flex -translate-x-1/2 -translate-y-1/2 items-center gap-[var(--spacer-8)] rounded-[var(--radius-8)] bg-black/70 px-[var(--spacer-16)] py-[var(--spacer-10)] text-white shadow-[var(--shadow-lg)] text-body-sm font-medium"
       >
         <span v-if="toastState.type === 'success'" class="ds-toast-icon ds-toast-icon--success" />
         <span v-else class="ds-toast-icon ds-toast-icon--fail">✕</span>

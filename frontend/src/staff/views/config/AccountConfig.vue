@@ -179,11 +179,11 @@ onMounted(load)
  </h3>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">用户名</span>
+ <span class="text-body-sm text-text-secondary">用户名<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.username" class="ds-input" placeholder="3-64 字符，字母/数字/下划线">
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">密码</span>
+ <span class="text-body-sm text-text-secondary">密码<span class="text-[var(--status-error-default)]">*</span></span>
  <div class="ds-field-wrap">
  <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="至少 8 位，含字母和数字">
  <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">

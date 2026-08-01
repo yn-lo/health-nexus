@@ -326,7 +326,7 @@ onMounted(async () => {
  <!-- 文章标题 -->
  <div class="flex flex-col gap-[var(--spacer-8)]">
  <label class="font-heading text-body-base font-medium text-text">
- 文章标题
+ 文章标题<span class="text-[var(--status-error-default)]">*</span>
  </label>
  <div class="ds-field-wrap">
  <input
@@ -340,7 +340,7 @@ onMounted(async () => {
  <!-- 科室选择 -->
  <div class="flex flex-col gap-[var(--spacer-8)]">
  <label class="font-heading text-body-base font-medium text-text">
- 科室选择
+ 科室选择<span class="text-[var(--status-error-default)]">*</span>
  </label>
  <div class="relative">
  <select

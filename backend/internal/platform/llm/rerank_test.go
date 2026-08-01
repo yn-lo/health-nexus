@@ -29,7 +29,7 @@ func TestRerank_API(t *testing.T) {
 	}))
 	defer server.Close()
 
-	chat, hc := newOpenAIClient(server.URL, "test-key", 0)
+	chat, hc := newOpenAIClient(server.URL, "test-key", 0, false)
 	client := &Client{
 		chat:       chat,
 		httpClient: hc,
@@ -58,7 +58,7 @@ func TestRerank_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	chat2, hc2 := newOpenAIClient(server.URL, "test-key", 0)
+	chat2, hc2 := newOpenAIClient(server.URL, "test-key", 0, false)
 	client := &Client{
 		chat:       chat2,
 		httpClient: hc2,
@@ -82,7 +82,7 @@ func TestPingRerank(t *testing.T) {
 	}))
 	defer server.Close()
 
-	chat3, hc3 := newOpenAIClient(server.URL, "test-key", 0)
+	chat3, hc3 := newOpenAIClient(server.URL, "test-key", 0, false)
 	client := &Client{
 		chat:       chat3,
 		httpClient: hc3,

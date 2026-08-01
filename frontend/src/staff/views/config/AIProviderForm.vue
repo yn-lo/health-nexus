@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * AI 提供商编辑/新建表单
  * API: configApi.getAIProvider/createAIProvider/updateAIProvider/deleteAIProvider
@@ -40,6 +40,7 @@ const form = ref<AIProviderCreateRequest>({
  dimension: undefined,
  params: {},
  is_active: true,
+ is_full_url: false,
 })
 
 // params 编辑：LLM 类型拆为独立表单字段，其他类型保留 JSON 文本域
@@ -80,6 +81,7 @@ async function load() {
  dimension: p.dimension ?? undefined,
  params: { ...p.params },
  is_active: p.is_active,
+ is_full_url: p.is_full_url,
  }
  paramsText.value = JSON.stringify(p.params ?? {}, null, 2)
  if (p.provider_type === 'llm') syncParamsToForm(p.params ?? {})
@@ -135,6 +137,7 @@ async function submit() {
  dimension: form.value.dimension,
  params: form.value.params,
  is_active: form.value.is_active,
+ is_full_url: form.value.is_full_url,
  }
  if (form.value.api_key) patch.api_key = form.value.api_key
  await configApi.updateAIProvider(Number(route.params.id), patch)
@@ -207,17 +210,27 @@ onMounted(() => {
  </div>
 
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">名称</span>
+ <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.name" class="ds-input" :class="{ 'ds-input--error': errors.name }" placeholder="如 OpenAI GPT-4">
  <p v-if="errors.name" class="ds-field-error">{{ errors.name }}</p>
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">API Base</span>
+ <span class="text-body-sm text-text-secondary">API Base<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.api_base" class="ds-input" :class="{ 'ds-input--error': errors.api_base }" placeholder="https://api.openai.com/v1">
  <p v-if="errors.api_base" class="ds-field-error">{{ errors.api_base }}</p>
+ <div class="flex items-center justify-between py-[var(--spacer-4)]">
+ <div class="flex flex-col">
+ <span class="text-body-base text-text">完整链接（不自动拼接 /v1）</span>
+ <span class="text-body-xs text-text-tertiary">勾选后后端原样使用 api_base，需填到版本层（如 /v1、/api/paas/v4），适合智谱等非 /v1 接口</span>
+ </div>
+ <label class="ds-switch">
+ <input type="checkbox" class="ds-switch__input" v-model="form.is_full_url">
+ <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+ </label>
+ </div>
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">API Key</span>
+ <span class="text-body-sm text-text-secondary">API Key<span class="text-[var(--status-error-default)]">*</span></span>
  <div class="relative">
  <input
  v-model="form.api_key"
@@ -225,6 +238,7 @@ onMounted(() => {
  class="ds-input pr-10"
  :class="{ 'ds-input--error': errors.api_key }"
  :placeholder="isEditMode ? '留空不改' : 'sk-...'"
+ autocomplete="new-password"
  >
  <button
  type="button"
@@ -238,7 +252,7 @@ onMounted(() => {
  <p v-if="errors.api_key" class="ds-field-error">{{ errors.api_key }}</p>
  </div>
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">模型名</span>
+ <span class="text-body-sm text-text-secondary">模型名<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.model_name" class="ds-input" :class="{ 'ds-input--error': errors.model_name }" placeholder="如 gpt-4">
  <p v-if="errors.model_name" class="ds-field-error">{{ errors.model_name }}</p>
  </div>

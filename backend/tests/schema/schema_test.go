@@ -72,6 +72,7 @@ var userDepartmentsCols = []string{"id", "user_id", "department_id", "is_primary
 // acronymOverride 处理连续大写字母（API/URL）的标准 snake_case 无法正确拆分的情况。
 var acronymOverride = map[string]string{
 	"APIURL":          "api_url",
+	"IsFullURL":       "is_full_url",
 	"APIKeyEncrypted": "api_key_encrypted",
 	"APIKeyMasked":    "api_key_masked",
 	"CoverImageURL":   "cover_image_url",

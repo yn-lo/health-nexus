@@ -39,7 +39,7 @@ async function handleReject(id: number) {
   try {
     const res = await showDialog({
       title: '驳回文章',
-      message: '请输入驳回原因，驳回后将退回作者草稿箱。',
+      message: '请输入驳回原因（必填），驳回后将退回作者草稿箱。',
       showInput: true,
       inputPlaceholder: '请输入驳回原因',
       inputValidator: (val: string) => (val && val.trim() ? true : '驳回原因不能为空'),

@@ -42,9 +42,15 @@ const (
 //   - https://api.siliconflow.cn          → 缺少 /v1，需追加
 //   - https://api.siliconflow.cn/v1       → 正确
 //   - https://api.siliconflow.cn/v1/chat/completions → 多余后缀，需截断到 /v1
-func normalizeBaseURL(baseURL string) string {
+//
+// isFullURL 由管理后台"完整链接"开关控制：用户声明 api_base 已填到版本层
+// （如 /v1、/v4、/api/paas/v4），后端原样使用，不再自动拼接或截断。
+func normalizeBaseURL(baseURL string, isFullURL bool) string {
 	if baseURL == "" {
 		return ""
+	}
+	if isFullURL {
+		return strings.TrimRight(baseURL, "/")
 	}
 	trimmed := strings.TrimRight(baseURL, "/")
 	// 常见多余后缀：用户可能粘贴了完整 API 路径，需要截断到 /v1
@@ -71,10 +77,10 @@ func normalizeBaseURL(baseURL string) string {
 // Transport 加固无条件设置——R8-Config-5 修复：TLS 握手/连接复用/HTTP2 必须始终启用；
 // ResponseHeaderTimeout 单独条件化：仅在 timeout>0 时启用（避免 0 值导致首字节等待无限期）。
 func newOpenAIClient(
-	baseURL, apiKey string, timeout time.Duration,
+	baseURL, apiKey string, timeout time.Duration, isFullURL bool,
 ) (client *openai.Client, hc *http.Client) {
 	ocfg := openai.DefaultConfig(apiKey)
-	if normalized := normalizeBaseURL(baseURL); normalized != "" {
+	if normalized := normalizeBaseURL(baseURL, isFullURL); normalized != "" {
 		ocfg.BaseURL = normalized
 	}
 	transport := &http.Transport{
@@ -102,8 +108,8 @@ func NewClient(cfg config.LLMConfig) (*Client, error) {
 			"chat/embed/rerank will be unavailable until admin configures AI provider")
 		return &Client{chat: nil, cfg: cfg}, nil
 	}
-	cfg.BaseURL = normalizeBaseURL(cfg.BaseURL)
-	chat, hc := newOpenAIClient(cfg.BaseURL, cfg.APIKey, cfg.Timeout)
+	cfg.BaseURL = normalizeBaseURL(cfg.BaseURL, false)
+	chat, hc := newOpenAIClient(cfg.BaseURL, cfg.APIKey, cfg.Timeout, false)
 	return &Client{chat: chat, cfg: cfg, httpClient: hc}, nil
 }
 
@@ -119,11 +125,11 @@ func NewEmbeddingClient(cfg config.LLMConfig) (*Client, error) {
 		return nil, nil
 	}
 	derived := cfg
-	derived.BaseURL = normalizeBaseURL(baseURL)
+	derived.BaseURL = normalizeBaseURL(baseURL, false)
 	derived.APIKey = apiKey
 	derived.EmbeddingModel = model
 	derived.Timeout = timeout
-	chat, hc := newOpenAIClient(baseURL, apiKey, timeout)
+	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, false)
 	return &Client{chat: chat, cfg: derived, httpClient: hc}, nil
 }
 
@@ -138,11 +144,11 @@ func NewRewriteClient(cfg config.LLMConfig) (*Client, error) {
 		return nil, nil
 	}
 	derived := cfg
-	derived.BaseURL = normalizeBaseURL(baseURL)
+	derived.BaseURL = normalizeBaseURL(baseURL, false)
 	derived.APIKey = apiKey
 	derived.RewriteModel = model
 	derived.Timeout = timeout
-	chat, hc := newOpenAIClient(baseURL, apiKey, timeout)
+	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, false)
 	return &Client{chat: chat, cfg: derived, httpClient: hc}, nil
 }
 
@@ -159,11 +165,11 @@ func NewRerankClient(cfg config.LLMConfig) (*Client, error) {
 		return nil, nil
 	}
 	derived := cfg
-	derived.BaseURL = normalizeBaseURL(baseURL)
+	derived.BaseURL = normalizeBaseURL(baseURL, false)
 	derived.APIKey = apiKey
 	derived.ChatModel = model // rerank model 映射到 ChatModel，供 Client.Rerank 使用
 	derived.Timeout = timeout
-	chat, hc := newOpenAIClient(baseURL, apiKey, timeout)
+	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, false)
 	return &Client{chat: chat, cfg: derived, httpClient: hc}, nil
 }
 
@@ -171,16 +177,17 @@ func NewRerankClient(cfg config.LLMConfig) (*Client, error) {
 // 用途：di 启动时从 DB 读 active provider 构造 4 个客户端（chat/embed/rerank/rewrite）。
 // providerType 决定 model 映射到 ChatModel/EmbeddingModel/RewriteModel 的哪个字段。
 // params 供应商扩展参数（temperature / top_p / max_tokens / response_format），nil 表示不注入。
+// isFullURL 来自 provider 的"完整链接"开关：true 时 api_base 原样使用，不再拼接 /v1。
 //
 // ponytail: 不依赖 config.LLMConfig，纯按 provider 实体构造，简化；
 // 单 client 只承载一个能力，model 字段映射由 providerType 内部决定。
 func NewClientFromProvider(
-	providerType, baseURL, apiKey, model string, timeout time.Duration, params map[string]any,
+	providerType, baseURL, apiKey, model string, timeout time.Duration, params map[string]any, isFullURL bool,
 ) *Client {
 	if apiKey == "" || model == "" {
 		return &Client{chat: nil, cfg: config.LLMConfig{}}
 	}
-	normalized := normalizeBaseURL(baseURL)
+	normalized := normalizeBaseURL(baseURL, isFullURL)
 	derived := config.LLMConfig{
 		BaseURL: normalized,
 		APIKey:  apiKey,
@@ -194,7 +201,7 @@ func NewClientFromProvider(
 	case constants.ProviderTypeRewrite:
 		derived.RewriteModel = model
 	}
-	chat, hc := newOpenAIClient(baseURL, apiKey, timeout)
+	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, isFullURL)
 	return &Client{chat: chat, cfg: derived, params: params, httpClient: hc}
 }
 

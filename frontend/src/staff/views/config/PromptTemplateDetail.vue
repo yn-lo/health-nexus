@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * Prompt 模板详情 — 新建 / 预览 / 同页编辑（三态复用）
  * 路由：profile/config/prompts/new → 新建（无 id，直接编辑态）
@@ -222,7 +222,7 @@ onMounted(() => {
 
  <div v-else class="px-[var(--spacer-16)] py-[var(--spacer-12)]">
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">模板内容</span>
+ <span class="text-body-sm text-text-secondary">模板内容<span class="text-[var(--status-error-default)]">*</span></span>
  <textarea v-model="form.content" class="ds-textarea" rows="10" placeholder="你是一个健康宣教助手..."></textarea>
  </div>
  <div v-if="isCreate" class="flex flex-col gap-[var(--spacer-4)]">

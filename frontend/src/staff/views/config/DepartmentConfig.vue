@@ -258,7 +258,7 @@ onMounted(load)
  </h3>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">名称</span>
+ <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.name" class="ds-input" placeholder="如 心内科" maxlength="100">
  </div>
 

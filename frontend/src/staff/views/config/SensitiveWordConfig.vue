@@ -165,7 +165,7 @@ onMounted(load)
  </h3>
  <div class="flex flex-col gap-[var(--spacer-12)]">
  <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">敏感词</span>
+ <span class="text-body-sm text-text-secondary">敏感词<span class="text-[var(--status-error-default)]">*</span></span>
  <input v-model="form.word" class="ds-input" placeholder="如 自杀">
  </div>
  <div>

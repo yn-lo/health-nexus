@@ -84,6 +84,7 @@ func (s *ConfigService) CreateAIProvider(
 		Name:            req.Name,
 		ProviderType:    req.ProviderType,
 		APIURL:          req.APIBase,
+		IsFullURL:       req.IsFullURL,
 		APIKeyEncrypted: []byte(encStr),
 		APIKeyMasked:    MaskAPIKey(req.APIKey),
 		ModelName:       req.ModelName,
@@ -189,6 +190,9 @@ func (s *ConfigService) applyAIProviderPatch(
 	if req.IsActive != nil {
 		existing.IsActive = *req.IsActive
 	}
+	if req.IsFullURL != nil {
+		existing.IsFullURL = *req.IsFullURL
+	}
 	if req.APIKey != nil && *req.APIKey != "" && !looksLikeMaskedAPIKey(*req.APIKey) {
 		encStr, encErr := crypto.Encrypt(*req.APIKey, s.aesKey)
 		if encErr != nil {
@@ -265,7 +269,7 @@ func (s *ConfigService) TestAIProvider(ctx context.Context, id int64) (*TestAIPr
 		return nil, apperrors.Internal("decrypt api key for test", err)
 	}
 	client := llm.NewClientFromProvider(
-		p.ProviderType, p.APIURL, apiKey, p.ModelName, testProviderTimeoutSec*time.Second, p.Parameters,
+		p.ProviderType, p.APIURL, apiKey, p.ModelName, testProviderTimeoutSec*time.Second, p.Parameters, p.IsFullURL,
 	)
 	start := time.Now()
 	pingErr := client.Ping(ctx, p.ProviderType)

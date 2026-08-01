@@ -16,6 +16,7 @@ export interface AIProvider {
   dimension: number | null;
   params: Record<string, unknown>;
   is_active: boolean;
+  is_full_url: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +31,7 @@ export interface AIProviderCreateRequest {
   dimension?: number;
   params?: Record<string, unknown>;
   is_active?: boolean;
+  is_full_url?: boolean;
 }
 
 /** 更新 AI 提供商请求（所有字段可选） */
@@ -41,6 +43,7 @@ export interface AIProviderUpdateRequest {
   dimension?: number;
   params?: Record<string, unknown>;
   is_active?: boolean;
+  is_full_url?: boolean;
 }
 
 /** 敏感词类别 */

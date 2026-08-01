@@ -8,6 +8,7 @@ type AIProvider struct {
 	Name            string
 	ProviderType    string
 	APIURL          string // DB 列名 api_url；对外 JSON 字段为 api_base（契约 §6.1.1）
+	IsFullURL       bool   // DB 列名 is_full_url；true 时后端原样使用 api_url，不自动拼接 /v1
 	APIKeyEncrypted []byte // base64(nonce+ciphertext)，存 BYTEA
 	APIKeyMasked    string
 	ModelName       string

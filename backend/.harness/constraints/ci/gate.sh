@@ -278,7 +278,9 @@ run_p2() {
         pct="$(echo "$line" | grep -oE '[0-9]+\.[0-9]+%' | head -n1 | tr -d '%')"
         if [ -n "$pct" ]; then
           if awk "BEGIN {exit !($pct < 60)}"; then
-            low_list="${low_list}$(echo "$line" | awk '{print $1}')\n"
+            # go test -cover 行格式：ok <pkg> <time> coverage: xx.x% ...
+            # $1 是 "ok"，包路径在 $2
+            low_list="${low_list}$(echo "$line" | awk '{print $2}')\n"
           fi
         fi
       done <<< "$(echo "$cov_out" | grep -E 'domain/.*/service')"
