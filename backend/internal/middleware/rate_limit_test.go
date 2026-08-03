@@ -2,10 +2,13 @@
 package middleware
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"health-nexus/internal/shared/contextkeys"
 )
 
 // trustedCIDRsForTest 测试用可信代理 CIDR（本地回环）。
@@ -62,6 +65,27 @@ func TestClientIP_AllTrustedChainReturnsLeftmost(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "127.0.0.1, 127.0.0.2")
 	if got := clientIP(r, rl.trustedProxies); got != "127.0.0.1" {
 		t.Errorf("all-trusted chain: got %q, want 127.0.0.1 (leftmost)", got)
+	}
+}
+
+func TestBuildRateKey_GlobalScopeSharesBucket(t *testing.T) {
+	// global: 前缀 scope 下不同设备共享同一桶（防批量伪造 device_id 绕过限流）。
+	r1 := httptest.NewRequest(http.MethodPost, "/", http.NoBody)
+	r1 = r1.WithContext(context.WithValue(r1.Context(), contextkeys.DeviceID, "device-aaa"))
+	r2 := httptest.NewRequest(http.MethodPost, "/", http.NoBody)
+	r2 = r2.WithContext(context.WithValue(r2.Context(), contextkeys.DeviceID, "device-bbb"))
+
+	k1 := buildRateKey(r1, "global:chat_stream_anon", nil)
+	k2 := buildRateKey(r2, "global:chat_stream_anon", nil)
+	if k1 != k2 {
+		t.Errorf("global scope should share bucket: %q vs %q", k1, k2)
+	}
+	if k1 != "rate:global:chat_stream_anon" {
+		t.Errorf("unexpected global key: %q", k1)
+	}
+	// 非 global scope 仍按设备区分。
+	if k := buildRateKey(r1, "chat_stream_anon", nil); k != "rate:chat_stream_anon:device-aaa" {
+		t.Errorf("per-device key: got %q", k)
 	}
 }
 

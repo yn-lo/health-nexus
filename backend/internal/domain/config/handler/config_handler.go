@@ -493,11 +493,15 @@ func parseBoolQuery(r *http.Request, key string) (*bool, error) {
 	return &b, nil
 }
 
+// maxBodyBytes 请求体大小上限（1MB，与 auth/wiki handler 一致），防大报文耗尽内存。
+const maxBodyBytes = 1 << 20
+
 // decodeJSON 解析请求体。空 body 或格式错误返回 422。
 func decodeJSON(r *http.Request, dst any) error {
 	if r.Body == nil {
 		return apperrors.Validation("CONFIG_EMPTY_BODY", "请求体不能为空")
 	}
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {

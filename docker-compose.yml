@@ -32,8 +32,8 @@ services:
       redis-server
       --requirepass 4d58f1021dfc47f2f701a5be6f249a91
       --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
     # 暴露 6379 供本地开发/测试直接连接；生产环境如需仅内网访问可删除 ports 段。
     ports:
       - "6379:6379"

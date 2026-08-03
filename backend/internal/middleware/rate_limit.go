@@ -139,8 +139,17 @@ func (rl *RateLimiter) resolveLimit(ctx context.Context, scope string, defaultLi
 	return val
 }
 
-// buildRateKey 构造限流 key：已认证用 user_id，匿名用 device_id，兜底用客户端 IP。
+// globalScopePrefix 全局共享限流桶前缀：scope 以此开头时所有请求共享同一个桶
+//（不按 user/device/IP 区分），用于匿名端点的总量保护——
+// 防止攻击者批量伪造 device_id 绕过单设备限流。
+const globalScopePrefix = "global:"
+
+// buildRateKey 构造限流 key：global: 前缀 scope 返回全局共享桶；
+// 否则已认证用 user_id，匿名用 device_id，兜底用客户端 IP。
 func buildRateKey(r *http.Request, scope string, trustedProxies []*net.IPNet) string {
+	if strings.HasPrefix(scope, globalScopePrefix) {
+		return rateKeyPrefix + ":" + scope
+	}
 	if uid, ok := r.Context().Value(contextkeys.UserID).(int64); ok && uid > 0 {
 		return fmt.Sprintf("%s:%s:%d", rateKeyPrefix, scope, uid)
 	}

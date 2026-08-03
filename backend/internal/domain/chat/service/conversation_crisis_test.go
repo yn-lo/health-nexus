@@ -398,26 +398,57 @@ func TestCrisisService_List(t *testing.T) {
 }
 
 func TestCrisisService_Handle(t *testing.T) {
+	doctorActor := CrisisActor{UserID: 99, Role: "DOCTOR", DeptID: 10}
+
 	t.Run("正常处理", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{
-			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false},
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 10},
 			markOK:    true,
 		})
-		err := svc.Handle(context.Background(), 1, 99, "已处理")
+		err := svc.Handle(context.Background(), doctorActor, 1, "已处理")
 		if err != nil {
 			t.Fatalf("期望 nil，实际 %v", err)
 		}
 	})
 
+	t.Run("超管处理未锁定科室事件_放行", func(t *testing.T) {
+		svc := NewCrisisService(&mockCrisisRepo{
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 0},
+			markOK:    true,
+		})
+		err := svc.Handle(context.Background(), CrisisActor{UserID: 1, Role: "SUPER_ADMIN", DeptID: 0}, 1, "note")
+		if err != nil {
+			t.Fatalf("期望 nil，实际 %v", err)
+		}
+	})
+
+	t.Run("跨科室处理_返回403", func(t *testing.T) {
+		svc := NewCrisisService(&mockCrisisRepo{
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 20},
+			markOK:    true,
+		})
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
+		assertAppErr(t, err, 403, "CHAT_CRISIS_FORBIDDEN")
+	})
+
+	t.Run("未锁定科室事件_非超管返回403", func(t *testing.T) {
+		svc := NewCrisisService(&mockCrisisRepo{
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 0},
+			markOK:    true,
+		})
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
+		assertAppErr(t, err, 403, "CHAT_CRISIS_FORBIDDEN")
+	})
+
 	t.Run("不存在_返回404", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{getErr: repository.ErrNotFound})
-		err := svc.Handle(context.Background(), 999, 99, "note")
+		err := svc.Handle(context.Background(), doctorActor, 999, "note")
 		assertAppErr(t, err, 404, "CHAT_CRISIS_NOT_FOUND")
 	})
 
 	t.Run("repo其他错误_向上传播", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{getErr: errors.New("db down")})
-		err := svc.Handle(context.Background(), 1, 99, "note")
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
 		if err == nil {
 			t.Fatal("期望 error，实际 nil")
 		}
@@ -425,27 +456,27 @@ func TestCrisisService_Handle(t *testing.T) {
 
 	t.Run("已处理_查询阶段_返回409", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{
-			getResult: &entity.CrisisEvent{ID: 1, IsHandled: true},
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: true, LockedDeptID: 10},
 		})
-		err := svc.Handle(context.Background(), 1, 99, "note")
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
 		assertAppErr(t, err, 409, "CHAT_CRISIS_ALREADY_HANDLED")
 	})
 
 	t.Run("并发冲突_MarkHandled返回false_返回409", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{
-			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false},
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 10},
 			markOK:    false,
 		})
-		err := svc.Handle(context.Background(), 1, 99, "note")
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
 		assertAppErr(t, err, 409, "CHAT_CRISIS_ALREADY_HANDLED")
 	})
 
 	t.Run("MarkHandled错误_向上传播", func(t *testing.T) {
 		svc := NewCrisisService(&mockCrisisRepo{
-			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false},
+			getResult: &entity.CrisisEvent{ID: 1, IsHandled: false, LockedDeptID: 10},
 			markErr:   errors.New("db down"),
 		})
-		err := svc.Handle(context.Background(), 1, 99, "note")
+		err := svc.Handle(context.Background(), doctorActor, 1, "note")
 		if err == nil {
 			t.Fatal("期望 error，实际 nil")
 		}

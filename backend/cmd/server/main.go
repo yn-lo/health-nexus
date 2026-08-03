@@ -29,6 +29,7 @@ func main() {
 		slog.Error("load config failed", "err", err)
 		panic(err)
 	}
+	config.WarnIfDevSecrets(cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

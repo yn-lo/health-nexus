@@ -80,3 +80,5 @@ rate_limit:
   auth_refresh: 10
   chat_stream: 20
   chat_stream_anon: 5
+  # 匿名流式问答全局总量桶（次/分钟），防批量伪造 device_id 绕过单设备限流
+  chat_stream_anon_global: 300

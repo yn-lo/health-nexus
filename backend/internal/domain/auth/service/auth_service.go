@@ -525,9 +525,10 @@ func (s *AuthService) CreateAccount(
 }
 
 // SetAccountActive 管理员锁定（active=false）/解锁（active=true）账户。
-// 安全约束：不可锁定自己；非 SUPER_ADMIN 不得操作管理员角色账户。
+// 安全约束：不可锁定自己；非 SUPER_ADMIN 不得操作管理员角色账户；
+// DEPT_ADMIN 仅可操作本科室账户（防跨科室账户 DoS）。
 func (s *AuthService) SetAccountActive(
-	ctx context.Context, actorID int64, actorRole string, targetID int64, active bool,
+	ctx context.Context, actorID int64, actorRole string, actorDeptID int64, targetID int64, active bool,
 ) error {
 	if actorID == targetID {
 		return apperrors.Conflict("AUTH_SELF_LOCK", "不能锁定或解锁自己的账户")
@@ -541,6 +542,9 @@ func (s *AuthService) SetAccountActive(
 	}
 	if constants.IsAdmin(target.Role) && actorRole != constants.RoleSuperAdmin {
 		return apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "无权操作管理员账户")
+	}
+	if actorRole == constants.RoleDeptAdmin && target.PrimaryDeptID != actorDeptID {
+		return apperrors.Forbidden("AUTH_FORBIDDEN_DEPT", "无权操作其他科室的账户")
 	}
 	if err := s.repo.SetActive(ctx, targetID, active); err != nil {
 		return fmt.Errorf("set active: %w", err)

@@ -99,8 +99,10 @@ func (s *CrisisService) List(
 }
 
 // Handle 标记危机事件为已处理。
-// 不存在返回 AppError(404)；已处理返回 AppError(409)。
-func (s *CrisisService) Handle(ctx context.Context, eventID, handlerID int64, note string) error {
+// 数据隔离：非超管仅可处理本科室（会话锁定科室）的危机事件；未锁定科室的事件仅超管可处理
+// （与 List 可见性一致，防止跨科室 IDOR 篡改/掩盖危机处置记录）。
+// 不存在返回 AppError(404)；无权返回 AppError(403)；已处理返回 AppError(409)。
+func (s *CrisisService) Handle(ctx context.Context, actor CrisisActor, eventID int64, note string) error {
 	// 先校验存在（404 优先于 409）。D-MED-05: 用 errors.Is 判断哨兵错误，对齐 wiki repo 模式。
 	existing, err := s.crisis.GetByID(ctx, eventID)
 	if err != nil {
@@ -109,10 +111,14 @@ func (s *CrisisService) Handle(ctx context.Context, eventID, handlerID int64, no
 		}
 		return fmt.Errorf("get crisis event: %w", err)
 	}
+	if actor.Role != constants.RoleSuperAdmin &&
+		(existing.LockedDeptID == 0 || existing.LockedDeptID != actor.DeptID) {
+		return apperrors.Forbidden("CHAT_CRISIS_FORBIDDEN", "无权处理其他科室的危机事件")
+	}
 	if existing.IsHandled {
 		return apperrors.Conflict("CHAT_CRISIS_ALREADY_HANDLED", "危机事件已处理")
 	}
-	ok, err := s.crisis.MarkHandled(ctx, eventID, handlerID, note)
+	ok, err := s.crisis.MarkHandled(ctx, eventID, actor.UserID, note)
 	if err != nil {
 		return fmt.Errorf("mark crisis handled: %w", err)
 	}

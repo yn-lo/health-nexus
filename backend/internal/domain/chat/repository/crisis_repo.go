@@ -55,16 +55,21 @@ func (r *CrisisRepo) Create(ctx context.Context, e *entity.CrisisEvent) (int64, 
 }
 
 // GetByID 按 ID 取危机事件；不存在返回 (nil, ErrNotFound)（D-MED-05 修复，对齐 wiki repo 哨兵错误模式）。
+// LockedDeptID 派生自 conversations.locked_dept_id（未锁定科室为 0），供科室归属校验。
 func (r *CrisisRepo) GetByID(ctx context.Context, id int64) (*entity.CrisisEvent, error) {
-	const sql = `SELECT id, patient_id, conversation_id, message_id, triggered_content, matched_keywords, level,
-	                    is_handled, handler_id, handled_at, handle_note, created_at
-	             FROM crisis_events WHERE id = $1`
+	const sql = `SELECT c.id, c.patient_id, c.conversation_id, c.message_id, c.triggered_content, c.matched_keywords, c.level,
+	                    c.is_handled, c.handler_id, c.handled_at, c.handle_note, c.created_at,
+	                    COALESCE(conv.locked_dept_id, 0)
+	             FROM crisis_events c
+	             LEFT JOIN conversations conv ON conv.id = c.conversation_id
+	             WHERE c.id = $1`
 	e := &entity.CrisisEvent{}
 	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id)
 	if err := row.Scan(
 		&e.ID, &e.PatientID, &e.ConversationID, &e.MessageID,
 		&e.TriggeredContent, &e.MatchedKeywords, &e.Level,
 		&e.IsHandled, &e.HandlerID, &e.HandledAt, &e.HandleNote, &e.CreatedAt,
+		&e.LockedDeptID,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound

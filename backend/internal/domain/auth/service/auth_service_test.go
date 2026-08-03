@@ -495,28 +495,44 @@ func TestCreateAccount_HappyPath_ReturnsDTO(t *testing.T) {
 func TestSetAccountActive_SelfLock_Returns409(t *testing.T) {
 	repo := &mockUserRepo{}
 	svc := newTestAuthService(repo, nil)
-	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 1, false)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 0, 1, false)
 	assertAppErr(t, err, 409, "AUTH_SELF_LOCK")
 }
 
 func TestSetAccountActive_TargetNotFound_Returns404(t *testing.T) {
 	repo := &mockUserRepo{user: nil}
 	svc := newTestAuthService(repo, nil)
-	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 99, false)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 0, 99, false)
 	assertAppErr(t, err, 404, "AUTH_USER_NOT_FOUND")
 }
 
 func TestSetAccountActive_NonSuperAdminLocksAdmin_Returns403(t *testing.T) {
 	repo := &mockUserRepo{user: &entity.User{ID: 2, Role: constants.RoleSuperAdmin, IsActive: true}}
 	svc := newTestAuthService(repo, nil)
-	err := svc.SetAccountActive(context.Background(), 1, constants.RoleDeptAdmin, 2, false)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleDeptAdmin, 10, 2, false)
 	assertAppErr(t, err, 403, "AUTH_FORBIDDEN_ROLE")
+}
+
+func TestSetAccountActive_DeptAdminCrossDept_Returns403(t *testing.T) {
+	repo := &mockUserRepo{user: &entity.User{ID: 5, Role: constants.RoleDoctor, IsActive: true, PrimaryDeptID: 20}}
+	svc := newTestAuthService(repo, nil)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleDeptAdmin, 10, 5, false)
+	assertAppErr(t, err, 403, "AUTH_FORBIDDEN_DEPT")
+}
+
+func TestSetAccountActive_DeptAdminSameDept_Succeeds(t *testing.T) {
+	repo := &mockUserRepo{user: &entity.User{ID: 5, Role: constants.RoleDoctor, IsActive: true, PrimaryDeptID: 10}}
+	svc := newTestAuthService(repo, nil)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleDeptAdmin, 10, 5, false)
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
 }
 
 func TestSetAccountActive_HappyPath_SetsActive(t *testing.T) {
 	repo := &mockUserRepo{user: &entity.User{ID: 5, Role: constants.RolePatient, IsActive: true}}
 	svc := newTestAuthService(repo, nil)
-	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 5, false)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 0, 5, false)
 	if err != nil {
 		t.Fatalf("期望 nil，实际 %v", err)
 	}
@@ -528,7 +544,7 @@ func TestSetAccountActive_HappyPath_SetsActive(t *testing.T) {
 func TestSetAccountActive_RepoDown_PropagatesError(t *testing.T) {
 	repo := &mockUserRepo{user: &entity.User{ID: 5, Role: constants.RolePatient, IsActive: true}, setActiveErr: errors.New("db down")}
 	svc := newTestAuthService(repo, nil)
-	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 5, false)
+	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 0, 5, false)
 	if err == nil {
 		t.Fatal("期望 error，实际 nil")
 	}

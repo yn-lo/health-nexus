@@ -36,6 +36,7 @@ func main() {
 		slog.Error("load config failed", "err", err)
 		panic(err)
 	}
+	config.WarnIfDevSecrets(cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -64,6 +65,14 @@ func main() {
 	// ========== wiki 域：向量化 handler（REQ-WIKI-012，Approve/Update 入队） ==========
 	aesKey := sha256.Sum256([]byte(cfg.Security.EncryptionKey))
 	vectorizeHandler := buildVectorizeHandler(ctx, cfg, infra, articleRepo, aesKey[:])
+
+	// ========== wiki 域：outbox relay（向量化任务最终一致投递兜底） ==========
+	// 写入侧快速路径 Enqueue（ArticleService 事务外）在 Redis 瞬时故障时丢失任务；
+	// relay 周期扫描 vectorize_outbox 未处理记录重新入队，保证文章发布/更新后必然被向量化。
+	outboxRepo := repository.NewOutboxRepo(infra.Pool)
+	outboxEnqueuer := adapter.NewAsynqVectorizeEnqueuer(infra.AsynqClient)
+	outboxRelay := adapter.NewOutboxRelay(outboxRepo, outboxEnqueuer)
+	go outboxRelay.Start(ctx, 30*time.Second)
 
 	srv := asynq.NewServer(cfg.Redis, defaultWorkerConcurrency)
 

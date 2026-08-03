@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ArticleDetail 文章详情 — v3 风格（ui-ux-pro-max: Content-First + Accessible & Ethical）
  * 风格升级要点：
@@ -19,6 +19,7 @@ import MarkdownIt from 'markdown-it'
 import { showFailToast } from 'vant'
 import { wikiApi, fmtDate, fmtCompact } from '@/shared'
 import type { ArticleDetail as ArticleDetailType } from '@/shared'
+import { sanitizeHtml } from '@/shared/utils/sanitize-html'
 
 const router = useRouter()
 const route = useRoute()
@@ -38,10 +39,10 @@ const md = new MarkdownIt({ html: true, breaks: true, linkify: true })
 /** 文章 ID */
 const articleId = computed(() => Number(route.params.id))
 
-/** 渲染后的正文 */
+/** 渲染后的正文（markdown-it 输出后经白名单消毒，防存储型 XSS） */
 const renderedContent = computed(() => {
  if (!article.value) return ''
- return md.render(article.value.content)
+ return sanitizeHtml(md.render(article.value.content))
 })
 
 /** 作者首字（空名时用"医"作占位，避免显示问号） */

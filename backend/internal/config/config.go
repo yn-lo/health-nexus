@@ -4,11 +4,31 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 )
+
+// 已知开发占位密钥（config.yaml dev 默认值）。生产环境必须用环境变量覆盖。
+const (
+	DevJWTSecret     = "dev-jwt-secret-change-in-production"
+	DevEncryptionKey = "dev-encryption-key-change-in-production"
+)
+
+// WarnIfDevSecrets 安全密钥仍为开发占位值或为空时输出 ERROR 级启动告警。
+// 不阻断启动：本地开发依赖 config.yaml 的 dev 值。
+// ponytail: 告警而非 panic——强拒绝会破坏本地开发流（air/make run 直接用 config.yaml）；
+// 上限——依赖部署者看到告警后注入环境变量。升级路径：引入显式运行模式（如 RUN_MODE=production）后改为 panic。
+func WarnIfDevSecrets(cfg *Config) {
+	if cfg.JWT.Secret == "" || cfg.JWT.Secret == DevJWTSecret {
+		slog.Error("SECURITY: jwt.secret 为空或仍是开发占位值，生产环境必须通过 HEALTH_NEXUS_JWT_SECRET 覆盖（否则可被离线伪造任意身份令牌）")
+	}
+	if cfg.Security.EncryptionKey == DevEncryptionKey {
+		slog.Error("SECURITY: security.encryption_key 仍是开发占位值，生产环境必须通过 HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY 覆盖")
+	}
+}
 
 // 配置默认值（供 setDefaults 注册到 viper）。
 const (
@@ -30,8 +50,9 @@ const (
 	defaultAuthLoginRateLimit      = 10
 	defaultAuthRegisterRateLimit   = 10
 	defaultAuthRefreshRateLimit    = 10
-	defaultChatStreamRateLimit     = 20
-	defaultChatStreamAnonRateLimit = 5
+	defaultChatStreamRateLimit       = 20
+	defaultChatStreamAnonRateLimit   = 5
+	defaultChatStreamAnonGlobalLimit = 300
 )
 
 // Config 应用配置根结构。
@@ -138,11 +159,12 @@ type SecurityConfig struct {
 // RateLimitConfig 限流默认值（启动时从 config.yaml 读取，运行时可通过 Redis 热更新覆盖）。
 // 零值字段使用 setDefaults 的硬编码默认值。
 type RateLimitConfig struct {
-	AuthLogin      int `mapstructure:"auth_login"`
-	AuthRegister   int `mapstructure:"auth_register"`
-	AuthRefresh    int `mapstructure:"auth_refresh"`
-	ChatStream     int `mapstructure:"chat_stream"`
-	ChatStreamAnon int `mapstructure:"chat_stream_anon"`
+	AuthLogin          int `mapstructure:"auth_login"`
+	AuthRegister       int `mapstructure:"auth_register"`
+	AuthRefresh        int `mapstructure:"auth_refresh"`
+	ChatStream         int `mapstructure:"chat_stream"`
+	ChatStreamAnon     int `mapstructure:"chat_stream_anon"`
+	ChatStreamAnonGlobal int `mapstructure:"chat_stream_anon_global"`
 }
 
 // Load 加载配置：先读 yaml，再用环境变量覆盖。
@@ -190,7 +212,8 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("redis.db", 0)
 
-	v.SetDefault("jwt.secret", "dev-jwt-secret-change-in-production")
+	// jwt.secret 不设代码默认值：必须由 config.yaml 或 HEALTH_NEXUS_JWT_SECRET 显式提供，
+	// 避免漏配时静默回落到可预测密钥（配合 WarnIfDevSecrets 启动告警）。
 	v.SetDefault("jwt.access_ttl", defaultJWTAccessTTL)
 	v.SetDefault("jwt.refresh_ttl", defaultJWTRefreshTTL)
 	v.SetDefault("jwt.issuer", "health-nexus")
@@ -210,4 +233,5 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("rate_limit.auth_refresh", defaultAuthRefreshRateLimit)
 	v.SetDefault("rate_limit.chat_stream", defaultChatStreamRateLimit)
 	v.SetDefault("rate_limit.chat_stream_anon", defaultChatStreamAnonRateLimit)
+	v.SetDefault("rate_limit.chat_stream_anon_global", defaultChatStreamAnonGlobalLimit)
 }

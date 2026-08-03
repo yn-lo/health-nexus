@@ -21,6 +21,10 @@ type CrisisEvent struct {
 	HandledAt        *time.Time
 	HandleNote       string
 	CreatedAt        time.Time
+
+	// LockedDeptID 所属科室（派生字段，非表字段）：JOIN conversations.locked_dept_id 取得。
+	// 未锁定科室的会话为 0。供 service 层做危机事件处理的科室归属校验。
+	LockedDeptID int64
 }
 
 // PatientName 仅用于列表/详情响应，非表字段（JOIN users 取得）。

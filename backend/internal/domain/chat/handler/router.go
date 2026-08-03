@@ -57,8 +57,10 @@ func NewRouter(
 	r := chi.NewRouter()
 
 	// 匿名公开端点（无需 JWT，通过 X-Device-Id 标识，限流更严格）。
+	// 双层限流：global 总量桶（防批量伪造 device_id）+ 单设备桶。
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDeviceID)
+		r.Use(rl.HotReloadMiddleware("global:chat_stream_anon", cfg.ChatStreamAnonGlobal, chatRatePeriod))
 		r.With(rl.HotReloadMiddleware("chat_stream_anon", cfg.ChatStreamAnon, chatRatePeriod)).
 			Post("/api/public/chat/stream", stream.Stream)
 	})
@@ -126,11 +128,6 @@ func currentPatientIDOrZero(r *http.Request) int64 {
 		return 0
 	}
 	return uid
-}
-
-// currentStaffID 从 ctx 取 STAFF 角色的 user_id。
-func currentStaffID(r *http.Request) (int64, error) {
-	return currentUserID(r)
 }
 
 // currentCrisisActor 从 ctx 提取危机事件操作者上下文（JWTAuth + DataIsolation 注入）。

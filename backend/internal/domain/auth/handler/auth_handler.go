@@ -406,7 +406,7 @@ func (h *AuthHandler) ResetAccountPassword(w http.ResponseWriter, r *http.Reques
 
 // setAccountActive LockAccount/UnlockAccount 共用逻辑：解析路径 ID 与操作者身份，调用 service 切换 is_active。
 func (h *AuthHandler) setAccountActive(w http.ResponseWriter, r *http.Request, active bool) {
-	actorID, actorRole, _, ok := currentIdentity(r)
+	actorID, actorRole, actorDeptID, ok := currentIdentity(r)
 	if !ok {
 		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
 		return
@@ -416,7 +416,7 @@ func (h *AuthHandler) setAccountActive(w http.ResponseWriter, r *http.Request, a
 		response.WriteError(w, r, apperrors.BadRequest("AUTH_INVALID_ID", "账户 ID 无效"))
 		return
 	}
-	if err := h.svc.SetAccountActive(r.Context(), actorID, actorRole, targetID, active); err != nil {
+	if err := h.svc.SetAccountActive(r.Context(), actorID, actorRole, actorDeptID, targetID, active); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
