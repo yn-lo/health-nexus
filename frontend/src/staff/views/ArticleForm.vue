@@ -487,7 +487,7 @@ onMounted(async () => {
 
  <!-- 底部固定操作栏 -->
  <div
- class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]"
+ class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)] pb-[env(safe-area-inset-bottom,0px)]"
  >
  <div class="mx-auto flex max-w-[480px] gap-[var(--spacer-12)] px-[var(--spacer-16)] py-[var(--spacer-12)]">
  <button

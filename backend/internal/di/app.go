@@ -301,10 +301,11 @@ func buildChatRouter(
 	if !rewriter.IsReady() {
 		rewriter = llmClient
 	}
+	crisisNotifier := adapter.NewAsynqCrisisNotifier(infra.AsynqClient)
 	chatSvc := chatservice.NewChatSendService(
 		deptResolver, inputSafety, outputSafety, knowledgeSearcher,
 		rewriter, llmClient, llmClient,
-		conversationRepo, messageRepo, crisisRepo,
+		conversationRepo, messageRepo, crisisRepo, crisisNotifier,
 		infra.Locker, infra.TxMgr, promptProvider,
 		oodThresholdFn,
 	)

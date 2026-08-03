@@ -16,6 +16,7 @@ import (
 	"health-nexus/internal/di"
 	baseentity "health-nexus/internal/domain/base/entity"
 	baserepo "health-nexus/internal/domain/base/repository"
+	chatrepo "health-nexus/internal/domain/chat/repository"
 	configrepo "health-nexus/internal/domain/config/repository"
 	configservice "health-nexus/internal/domain/config/service"
 	"health-nexus/internal/domain/wiki/repository"
@@ -62,6 +63,9 @@ func main() {
 	// ========== base 域：站内通知仓储（复审通知落库） ==========
 	notifRepo := baserepo.NewNotificationRepo(infra.Pool)
 
+	// ========== chat 域：危机事件仓储（危机通知落库） ==========
+	crisisRepo := chatrepo.NewCrisisRepo(infra.Pool)
+
 	// ========== wiki 域：向量化 handler（REQ-WIKI-012，Approve/Update 入队） ==========
 	aesKey := sha256.Sum256([]byte(cfg.Security.EncryptionKey))
 	vectorizeHandler := buildVectorizeHandler(ctx, cfg, infra, articleRepo, aesKey[:])
@@ -76,7 +80,7 @@ func main() {
 
 	srv := asynq.NewServer(cfg.Redis, defaultWorkerConcurrency)
 
-	mux := buildTaskMux(reviewSvc, vectorizeHandler, articleRepo, notifRepo)
+	mux := buildTaskMux(reviewSvc, vectorizeHandler, articleRepo, notifRepo, crisisRepo)
 
 	// Critical 1: PeriodicTask 调度器——每日 03:00 触发 TaskReviewOverdueScan。
 	scheduler := asynqlib.NewScheduler(asynqlib.RedisClientOpt{
@@ -103,9 +107,21 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("worker shutdown signal received")
-	srv.Shutdown()
-	scheduler.Shutdown()
-	slog.Info("worker stopped")
+	// 优雅关闭：srv.Shutdown + scheduler.Shutdown，30s 超时后强制退出。
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	done := make(chan struct{})
+	go func() {
+		srv.Shutdown()
+		scheduler.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+		slog.Info("worker stopped gracefully")
+	case <-shutdownCtx.Done():
+		slog.Error("worker shutdown timed out, forcing exit")
+	}
 }
 
 // buildVectorizeHandler 装配向量化 handler：加载 LLM embed client + RAG 配置提供者。
@@ -184,6 +200,7 @@ func buildTaskMux(
 	vectorizeHandler *adapter.VectorizeHandler,
 	articleRepo *repository.ArticleRepo,
 	notifRepo *baserepo.NotificationRepo,
+	crisisRepo *chatrepo.CrisisRepo,
 ) *asynqlib.ServeMux {
 	mux := asynqlib.NewServeMux()
 	// Critical 1: 每日复审逾期扫描任务——由 Scheduler 触发，handler 调用 ReviewService.MarkOverdueArticles。
@@ -229,7 +246,41 @@ func buildTaskMux(
 	// REQ-WIKI-012：文章审核通过/已发布内容更新后异步入队向量化。
 	// payload 为 articleID 的十进制字符串；handler 内部完成切片+embedding+入库。
 	mux.HandleFunc(asynq.TaskVectorizeArticle, vectorizeHandler.HandleVectorize)
-	// 阶段 2 集成时注册 chat 域 task handler：
-	// mux.HandleFunc(asynq.TaskCrisisEvent, chatHandler.HandleCrisisEvent)
+	// 危机事件主动通知：查询事件获取科室，落库站内通知给 DEPT_ADMIN。
+	mux.HandleFunc(asynq.TaskCrisisEvent, func(ctx context.Context, t *asynqlib.Task) error {
+		eventID, err := strconv.ParseInt(string(t.Payload()), 10, 64)
+		if err != nil {
+			slog.ErrorContext(ctx, "chat: crisis notify task invalid payload",
+				"payload", string(t.Payload()), "err", err)
+			return err
+		}
+		ce, err := crisisRepo.GetByID(ctx, eventID)
+		if err != nil {
+			slog.ErrorContext(ctx, "chat: crisis notify get event failed", "event_id", eventID, "err", err)
+			return err
+		}
+		// 仅向锁定科室的 DEPT_ADMIN 发送通知；未锁定科室的事件仅超管可见（通过列表查看）
+		if ce.LockedDeptID <= 0 {
+			slog.InfoContext(ctx, "chat: crisis event has no locked dept, skip notification", "event_id", eventID)
+			return nil
+		}
+		deptID := ce.LockedDeptID
+		refID := strconv.FormatInt(eventID, 10)
+		n := &baseentity.Notification{
+			RecipientRole:   constants.RoleDeptAdmin,
+			RecipientDeptID: &deptID,
+			Type:            "CRISIS_ALERT",
+			Title:           "危机事件提醒",
+			Body:            "患者表达了可能的自伤倾向，请及时处理",
+			RefID:           &refID,
+		}
+		if err := notifRepo.Create(ctx, n); err != nil {
+			slog.ErrorContext(ctx, "chat: crisis notify insert failed", "event_id", eventID, "err", err)
+			return err
+		}
+		slog.InfoContext(ctx, "chat: crisis notification created",
+			"event_id", eventID, "notification_id", n.ID, "dept_id", deptID)
+		return nil
+	})
 	return mux
 }

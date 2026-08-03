@@ -69,7 +69,7 @@ func (r *ConversationRepo) ListByPatient(
 	ctx context.Context, patientID int64, includeArchived bool, limit, offset int,
 ) ([]*entity.Conversation, int64, error) {
 	args := []any{patientID}
-	filter := "patient_id = $1"
+	filter := "patient_id = $1 AND last_message_at IS NOT NULL"
 	if !includeArchived {
 		args = append(args, false)
 		filter += fmt.Sprintf(" AND is_archived = $%d", len(args))

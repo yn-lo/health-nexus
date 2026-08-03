@@ -33,6 +33,7 @@ import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
 import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 import MarkdownIt from 'markdown-it'
+import { sanitizeHtml } from '@/shared/utils/sanitize-html'
 import { submitMessageFeedback } from '@/shared/api/chat'
 import { errmsg } from '@/shared/api/client'
 import type { Message, Reference } from '@/shared/types/chat'
@@ -43,9 +44,9 @@ const chatStore = useChatStore()
 
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
-/** 渲染 markdown 为 HTML（禁用 raw HTML 防注入） */
+/** 渲染 markdown 为 HTML（经白名单消毒，防 XSS） */
 function renderMd(text: string): string {
-  return md.render(text)
+  return sanitizeHtml(md.render(text))
 }
 
 const inputBarRef = ref<InstanceType<typeof ChatInputBar> | null>(null)

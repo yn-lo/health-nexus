@@ -59,9 +59,15 @@ type ChatSendService struct {
 	conv             ConversationPort
 	msg              MessagePort
 	crisis           CrisisPort
+	crisisNotifier   CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
 	locker           LockProvider
 	tx               TxRunner
 	oodThreshold     func(ctx context.Context) float64 // 知识库外检测阈值（动态读取 DB 配置，热生效）
+}
+
+// CrisisNotifier 危机事件主动通知接口（入队 asynq 任务，由 worker 落库站内通知）。
+type CrisisNotifier interface {
+	NotifyCrisis(ctx context.Context, eventID int64) error
 }
 
 // NewChatSendService 构造 RAG 服务。
@@ -78,6 +84,7 @@ func NewChatSendService(
 	conv ConversationPort,
 	msg MessagePort,
 	crisis CrisisPort,
+	crisisNotifier CrisisNotifier,
 	locker LockProvider,
 	tx TxRunner,
 	promptProvider rag.SystemPromptProvider,
@@ -86,7 +93,7 @@ func NewChatSendService(
 	return &ChatSendService{
 		dept: dept, safetyIn: safetyIn, safetyOut: safetyOut, knowledge: knowledge,
 		rewriter: rewriter, fallbackRewriter: fallbackRewriter, llm: llmStreamer,
-		conv: conv, msg: msg, crisis: crisis,
+		conv: conv, msg: msg, crisis: crisis, crisisNotifier: crisisNotifier,
 		locker: locker, tx: tx,
 		promptProvider: promptProvider,
 		oodThreshold:   oodThreshold,
@@ -311,6 +318,10 @@ func (s *ChatSendService) handleCrisis(
 		} else {
 			slog.InfoContext(ctx, "chat crisis event created",
 				"event_id", crisisEventID, "patient_id", in.UserID, "conversation_id", conv.ID, "keywords", c.Keywords)
+			// 主动通知：入队 asynq 任务，worker 落库站内通知给 DEPT_ADMIN（fire-and-forget，不阻断 SSE 流）
+			if err := s.crisisNotifier.NotifyCrisis(ctx, crisisEventID); err != nil {
+				slog.ErrorContext(ctx, "chat crisis notify enqueue failed", "event_id", crisisEventID, "err", err)
+			}
 		}
 	}
 

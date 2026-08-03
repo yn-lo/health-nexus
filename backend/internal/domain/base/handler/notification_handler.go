@@ -85,14 +85,19 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 	response.WriteOK(w, resp)
 }
 
-// MarkRead POST /api/staff/notifications/{id}/read — 标记单条已读。
+// MarkRead POST /api/staff/notifications/{id}/read — 标记单条已读（含角色+科室校验，防 IDOR）。
 func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	id, err := parseNotificationID(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
-	if err := h.svc.MarkRead(r.Context(), id); err != nil {
+	role, deptID, err := notificationScope(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	if err := h.svc.MarkRead(r.Context(), id, role, deptID); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}

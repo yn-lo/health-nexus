@@ -11,7 +11,7 @@ import (
 type NotificationRepo interface {
 	Create(ctx context.Context, n *entity.Notification) error
 	ListForRole(ctx context.Context, role string, deptID *int64, limit int) ([]*entity.Notification, error)
-	MarkRead(ctx context.Context, id int64) error
+	MarkRead(ctx context.Context, id int64, role string, deptID *int64) error
 	MarkAllRead(ctx context.Context, role string, deptID *int64) error
 	UnreadCount(ctx context.Context, role string, deptID *int64) (int, error)
 }
@@ -37,9 +37,9 @@ func (s *NotificationService) List(
 	return items, nil
 }
 
-// MarkRead 将单条通知标记为已读。
-func (s *NotificationService) MarkRead(ctx context.Context, id int64) error {
-	if err := s.repo.MarkRead(ctx, id); err != nil {
+// MarkRead 将单条通知标记为已读（含角色+科室校验，防 IDOR）。
+func (s *NotificationService) MarkRead(ctx context.Context, id int64, role string, deptID *int64) error {
+	if err := s.repo.MarkRead(ctx, id, role, deptID); err != nil {
 		return fmt.Errorf("mark notification read: %w", err)
 	}
 	return nil

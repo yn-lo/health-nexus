@@ -47,6 +47,17 @@ func (h *requestIDHandler) WithGroup(name string) slog.Handler {
 	return &requestIDHandler{Handler: h.Handler.WithGroup(name)}
 }
 
+// logLevelFromEnv 从环境变量 LOG_LEVEL 读取日志级别，默认 Info。
+func logLevelFromEnv() slog.Leveler {
+	level := slog.LevelInfo
+	if lvl := os.Getenv("LOG_LEVEL"); lvl != "" {
+		if err := level.UnmarshalText([]byte(lvl)); err != nil {
+			_, _ = os.Stderr.WriteString("logger: invalid LOG_LEVEL '" + lvl + "', using Info\n")
+		}
+	}
+	return level
+}
+
 // New 创建 JSON 格式、Info 级别的 slog.Logger，并设为全局默认。
 // 日志同时输出到 stdout 和 logs/app.log 文件。
 // 文件写入失败不阻塞启动——仅输出警告到 stderr，日志流退化为 stdout only。
@@ -71,7 +82,7 @@ func New(logDir string) *slog.Logger {
 		}
 	}
 	base := slog.NewJSONHandler(io.MultiWriter(writers...), &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: logLevelFromEnv(),
 	})
 	log := slog.New(&requestIDHandler{Handler: base})
 	slog.SetDefault(log)

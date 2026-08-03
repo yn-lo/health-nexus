@@ -531,6 +531,11 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 		AllowReference:  in.AllowReference,
 		ExpectedVersion: in.ExpectedVersion,
 	}
+	// 乐观锁守卫：客户端未传 ExpectedVersion 时，自动使用读取时的 version 防并发丢失更新。
+	if fields.ExpectedVersion == nil {
+		v := article.Version
+		fields.ExpectedVersion = &v
+	}
 	if in.Content != nil && *in.Content != article.Content {
 		newHash := contenthash.SHA256(*in.Content)
 		if newHash != article.ContentHash {

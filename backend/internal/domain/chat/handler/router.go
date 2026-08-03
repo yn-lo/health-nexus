@@ -67,7 +67,7 @@ func NewRouter(
 
 	// 聊天端：/api/chat/*（任意已认证角色——聊天对所有登录用户开放，仅限流值有差异）
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.JWTAuth(auth), middleware.RequireAnyRole())
+		r.Use(middleware.JWTAuth(auth), middleware.RequireAnyRole(), middleware.DataIsolation())
 		r.Route("/api/chat", func(r chi.Router) {
 			r.With(rl.HotReloadMiddleware("chat_stream", cfg.ChatStream, chatRatePeriod)).
 				Post("/stream", stream.Stream)

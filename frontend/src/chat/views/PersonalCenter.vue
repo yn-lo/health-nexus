@@ -41,7 +41,7 @@ function goMenu(routeName: string) {
 
 async function handleLogout() {
   await authStore.logout()
-  router.push({ name: 'login' })
+  window.location.href = '/login'
 }
 </script>
 

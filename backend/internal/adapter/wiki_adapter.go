@@ -30,7 +30,7 @@ func NewAsynqVectorizeEnqueuer(client *asynqlib.Client) *AsynqVectorizeEnqueuer 
 func (e *AsynqVectorizeEnqueuer) Enqueue(ctx context.Context, articleID int64) error {
 	payload := strconv.FormatInt(articleID, 10)
 	task := asynqlib.NewTask(asynq.TaskVectorizeArticle, []byte(payload))
-	_, err := e.client.EnqueueContext(ctx, task)
+	_, err := e.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
 	if err != nil {
 		return fmt.Errorf("enqueue vectorize task (articleID=%d): %w", articleID, err)
 	}
@@ -56,7 +56,7 @@ func NewAsynqReviewNotifyEnqueuer(client *asynqlib.Client) *AsynqReviewNotifyEnq
 func (e *AsynqReviewNotifyEnqueuer) Enqueue(ctx context.Context, articleID int64) error {
 	payload := strconv.FormatInt(articleID, 10)
 	task := asynqlib.NewTask(asynq.TaskReviewNotify, []byte(payload))
-	_, err := e.client.EnqueueContext(ctx, task)
+	_, err := e.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
 	if err != nil {
 		return fmt.Errorf("enqueue review notify task (articleID=%d): %w", articleID, err)
 	}
@@ -65,6 +65,28 @@ func (e *AsynqReviewNotifyEnqueuer) Enqueue(ctx context.Context, articleID int64
 
 // 编译期断言。
 var _ wikiservice.ReviewNotifyEnqueuer = (*AsynqReviewNotifyEnqueuer)(nil)
+
+// AsynqCrisisNotifier 实现 chat/service.CrisisNotifier。
+// 危机事件创建后入队 asynq TaskCrisisEvent，worker 端落库站内通知给 DEPT_ADMIN。
+type AsynqCrisisNotifier struct {
+	client *asynqlib.Client
+}
+
+// NewAsynqCrisisNotifier 构造危机通知入队适配器。
+func NewAsynqCrisisNotifier(client *asynqlib.Client) *AsynqCrisisNotifier {
+	return &AsynqCrisisNotifier{client: client}
+}
+
+// NotifyCrisis 将危机事件 ID 序列化为 payload 并入队通知任务。
+func (n *AsynqCrisisNotifier) NotifyCrisis(ctx context.Context, eventID int64) error {
+	payload := strconv.FormatInt(eventID, 10)
+	task := asynqlib.NewTask(asynq.TaskCrisisEvent, []byte(payload))
+	_, err := n.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
+	if err != nil {
+		return fmt.Errorf("enqueue crisis notify task (eventID=%d): %w", eventID, err)
+	}
+	return nil
+}
 
 // ConfigRAGConfigProvider 实现 wikiservice.RAGConfigProvider。
 // 桥接 config 域 ConfigService.GetRAGConfig 返回的 RAGConfigResponse 到 wiki 域本地 DTO，

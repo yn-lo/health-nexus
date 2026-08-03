@@ -82,17 +82,23 @@ func (r *NotificationRepo) ListForRole(
 	return result, nil
 }
 
-const markReadQuery = `UPDATE notifications SET is_read = true WHERE id = $1`
+const markReadQuery = `
+UPDATE notifications SET is_read = true
+WHERE id = $1 AND recipient_role = $2 AND ` + deptVisibility
 
-// MarkRead 将单条通知标记为已读。
-func (r *NotificationRepo) MarkRead(ctx context.Context, id int64) error {
+// MarkRead 将单条通知标记为已读（含角色+科室校验，防 IDOR）。
+func (r *NotificationRepo) MarkRead(ctx context.Context, id int64, role string, deptID *int64) error {
 	tx, _ := postgres.TxFromCtx(ctx)
 	exec := r.pool.Exec
 	if tx != nil {
 		exec = tx.Exec
 	}
-	if _, err := exec(ctx, markReadQuery, id); err != nil {
+	tag, err := exec(ctx, markReadQuery, id, role, deptID)
+	if err != nil {
 		return fmt.Errorf("mark notification read: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("mark notification read: no rows affected (id=%d, role=%s)", id, role)
 	}
 	return nil
 }

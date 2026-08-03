@@ -81,10 +81,10 @@ function onLogoClick() {
 </template>
 
 <style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* ── Header 操作按钮：统一 35px 圆形 + 阴影悬浮 ─────────── */
+/* ── Header 操作按钮：统一 44px 圆形 + 阴影悬浮（WCAG 最小触摸目标） ──── */
 .header-action-btn {
-  width: 35px;
-  height: 35px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   border: none;
   cursor: pointer;

@@ -64,7 +64,10 @@ function sanitizeChildren(parent: Element | DocumentFragment): DocumentFragment 
       if (v === null) continue
       if (name === 'alt' || isSafeUrl(v)) clean.setAttribute(name, v)
     }
-    if (tag === 'a') clean.setAttribute('target', '_blank')
+    if (tag === 'a') {
+      clean.setAttribute('target', '_blank')
+      clean.setAttribute('rel', 'noopener noreferrer')
+    }
     clean.appendChild(sanitizeChildren(el))
     frag.appendChild(clean)
   }

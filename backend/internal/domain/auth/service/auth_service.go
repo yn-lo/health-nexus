@@ -385,8 +385,11 @@ func (s *AuthService) ConfirmPasswordReset(ctx context.Context, token, newPasswo
 	if err := s.repo.UpdatePasswordHash(ctx, userID, hash); err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
-	// 删除已使用的 token（一次性）。
-	_ = s.rdb.Del(ctx, key).Err()
+	// 删除已使用的 token（一次性）。Del 失败时 fail-closed：token 残留可被重复使用重置密码。
+	if err := s.rdb.Del(ctx, key).Err(); err != nil {
+		slog.ErrorContext(ctx, "password reset token delete failed, token may be reusable", "err", err, "key", key)
+		return apperrors.ServiceUnavailable("AUTH_RESET_UNAVAILABLE", "密码重置完成但清理失败，请联系管理员")
+	}
 	slog.InfoContext(ctx, "password reset success", "user_id", userID)
 	return nil
 }

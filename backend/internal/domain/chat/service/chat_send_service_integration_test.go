@@ -246,6 +246,11 @@ func (m *mockLockProvider) Lock(_ context.Context, _ string, _ time.Duration) (f
 
 // --- mockSSEWriter ---
 
+// noopCrisisNotifier 空操作危机通知器（测试用，不实际入队）。
+type noopCrisisNotifier struct{}
+
+func (n *noopCrisisNotifier) NotifyCrisis(_ context.Context, _ int64) error { return nil }
+
 type sseEvent struct {
 	event string
 	data  any
@@ -312,7 +317,7 @@ func newTestChatSendService(
 	return NewChatSendService(
 		dept, safetyIn, safetyOut, knowledge,
 		rewriter, nil, streamer,
-		conv, msg, crisis,
+		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // promptProvider=nil -> 降级为 defaultSystemPrompt
 		func(context.Context) float64 { return 0.3 }, // oodThreshold
 	)
@@ -864,7 +869,7 @@ func newTestChatSendServiceWithRewriters(
 	return NewChatSendService(
 		dept, safetyIn, safetyOut, knowledge,
 		rewriter, fallbackRewriter, streamer,
-		conv, msg, crisis,
+		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil,
 		func(context.Context) float64 { return 0.3 },
 	)
