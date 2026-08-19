@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Pencil, Trash2, Building2, ChevronDown } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { AppHeader, DsPopup, StatRow, DsSearchBox } from '@/shared/components'
+import { ConfigCrudPage } from '@/shared/components'
 import { baseApi, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { DepartmentTreeNode, DepartmentCreateRequest, DepartmentUpdateRequest } from '@/shared'
@@ -171,142 +171,127 @@ onMounted(load)
 </script>
 
 <template>
- <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
- <AppHeader title="科室管理" showCreate @create="openCreate" @back="router.back" />
-
- <!-- 搜索 -->
- <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
- <div class="rounded-[var(--radius-card-large)] bg-[var(--ai-gradient-soft)] px-[var(--spacer-16)] py-[var(--spacer-12)]">
- <StatRow :stats="[
- { value: totalCount, label: '总数' },
- { value: activeCount, label: '启用' },
- { value: publicCount, label: '公开' },
- ]" />
- </div>
-
- <DsSearchBox v-model="search" placeholder="搜索科室名称或描述" class="mt-[var(--spacer-12)]" />
- </section>
-
- <!-- 树形列表 -->
- <section class="px-[var(--spacer-16)] py-[var(--spacer-8)]">
- <div v-if="filteredRows.length > 0" class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden">
- <article
- v-for="row in filteredRows"
- :key="row.node.id"
- class="ds-list-item ds-list-item--divider"
- :style="{ paddingLeft: `calc(var(--spacer-16) + ${row.depth * 20}px)` }"
+ <ConfigCrudPage
+  title="科室管理"
+  :stats="[
+   { value: totalCount, label: '总数' },
+   { value: activeCount, label: '启用' },
+   { value: publicCount, label: '公开' },
+  ]"
+  v-model:search="search"
+  search-placeholder="搜索科室名称或描述"
+  :list-count="filteredRows.length"
+  :loading="loading"
+  empty-title="还没有科室"
+  empty-desc="创建第一个科室"
+  :empty-icon="Building2"
+  :editor-show="showEditor"
+  :editor-title="editing ? '编辑科室' : '新建科室'"
+  @update:editor-show="showEditor = $event"
+  @create="openCreate"
+  @back="router.back"
+  @save="submit"
+  @cancel="showEditor = false"
  >
- <span
- class="ds-list-item__icon"
- :class="row.node.is_active ? 'ds-list-item__icon--brand' : 'ds-list-item__icon--medical'"
- >
- <Building2 :size="20" />
- </span>
- <div class="ds-list-item__content">
- <span class="ds-list-item__title">{{ row.node.name }}</span>
- <span class="ds-list-item__meta">
- <span v-if="row.node.description" class="truncate">{{ row.node.description }}</span>
- </span>
- </div>
- <div class="ds-list-item__trailing">
- <button
- type="button"
- class="ds-list-item__action-btn"
- :aria-label="row.node.is_public ? '设为私有' : '设为公开'"
- @click="togglePublic(row.node)"
- >
- <span class="ds-tag ds-tag--plain ds-tag--md" :class="row.node.is_public ? 'ds-tag--primary' : 'ds-tag--default'">{{ row.node.is_public ? '公开' : '私有' }}</span>
- </button>
- <label class="ds-switch">
- <input type="checkbox" class="ds-switch__input" :checked="row.node.is_active" @change="toggleActive(row.node, ($event.target as HTMLInputElement).checked)">
- <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
- </label>
- <button
- type="button"
- class="ds-list-item__action-btn"
- aria-label="编辑"
- @click="openEdit(row.node)"
- >
- <Pencil :size="16" />
- </button>
- <button
- type="button"
- class="ds-list-item__action-btn"
- aria-label="删除"
- @click="remove(row.node)"
- >
- <Trash2 :size="16" />
- </button>
- </div>
- </article>
- </div>
- <div v-else-if="!loading" class="flex flex-col items-center py-20">
- <span class="flex h-14 w-14 items-center justify-center rounded-[var(--radius-full)] bg-[var(--bg-brand-light)]">
- <Building2 :size="28" class="text-icon-brand" />
- </span>
- <p class="mt-[var(--spacer-12)] text-heading-sm font-semibold text-text">还没有科室</p>
- <p class="mt-[var(--spacer-4)] text-body-sm text-text-tertiary">创建第一个科室</p>
- <button type="button" class="ds-btn ds-btn--primary ds-btn--sm mt-[var(--spacer-16)]" @click="openCreate">新建</button>
- </div>
- </section>
+  <template #default>
+   <article
+    v-for="row in filteredRows"
+    :key="row.node.id"
+    class="ds-list-item ds-list-item--divider"
+    :style="{ paddingLeft: `calc(var(--spacer-16) + ${row.depth * 20}px)` }"
+   >
+    <span
+     class="ds-list-item__icon"
+     :class="row.node.is_active ? 'ds-list-item__icon--brand' : 'ds-list-item__icon--medical'"
+    >
+     <Building2 :size="20" />
+    </span>
+    <div class="ds-list-item__content">
+     <span class="ds-list-item__title">{{ row.node.name }}</span>
+     <span class="ds-list-item__meta">
+      <span v-if="row.node.description" class="truncate">{{ row.node.description }}</span>
+     </span>
+    </div>
+    <div class="ds-list-item__trailing">
+     <button
+      type="button"
+      class="ds-list-item__action-btn"
+      :aria-label="row.node.is_public ? '设为私有' : '设为公开'"
+      @click="togglePublic(row.node)"
+     >
+      <span class="ds-tag ds-tag--plain ds-tag--md" :class="row.node.is_public ? 'ds-tag--primary' : 'ds-tag--default'">{{ row.node.is_public ? '公开' : '私有' }}</span>
+     </button>
+     <label class="ds-switch">
+      <input type="checkbox" class="ds-switch__input" :checked="row.node.is_active" @change="toggleActive(row.node, ($event.target as HTMLInputElement).checked)">
+      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+     </label>
+     <button
+      type="button"
+      class="ds-list-item__action-btn"
+      aria-label="编辑"
+      @click="openEdit(row.node)"
+     >
+      <Pencil :size="16" />
+     </button>
+     <button
+      type="button"
+      class="ds-list-item__action-btn"
+      aria-label="删除"
+      @click="remove(row.node)"
+     >
+      <Trash2 :size="16" />
+     </button>
+    </div>
+   </article>
+  </template>
 
- <!-- 编辑/新建 popup -->
- <DsPopup v-model:show="showEditor">
- <div class="p-[var(--spacer-16)] pb-[var(--spacer-24)]">
- <h3 class="mb-[var(--spacer-16)] text-heading-sm font-semibold text-text">
- {{ editing ? '编辑科室' : '新建科室' }}
- </h3>
- <div class="flex flex-col gap-[var(--spacer-12)]">
- <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
- <input v-model="form.name" class="ds-input" placeholder="如 心内科" maxlength="100">
- </div>
+  <template #form>
+   <div class="flex flex-col gap-[var(--spacer-12)]">
+    <div class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
+     <input v-model="form.name" class="ds-input" placeholder="如 心内科" maxlength="100">
+    </div>
 
- <!-- 父科室下拉：使用原生 select 保持与 ArticleForm 一致风格 -->
- <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">父科室</span>
- <div class="relative">
- <select
- v-model="form.parent_id"
- class="ds-select"
- >
- <option :value="null">— 根科室（顶级） —</option>
- <option v-for="c in parentCandidates" :key="c.id" :value="c.id">
- {{ c.label }}
- </option>
- </select>
- <ChevronDown class="pointer-events-none absolute right-[var(--spacer-12)] top-1/2 h-4 w-4 -translate-y-1/2 text-icon-tertiary" />
- </div>
- <span v-if="editing && form.parent_id === null" class="text-body-xs text-text-tertiary">
- 注意：保存后此科室将变为根科室
- </span>
- </div>
+    <!-- 父科室下拉：使用原生 select 保持与 ArticleForm 一致风格 -->
+    <div class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">父科室</span>
+     <div class="relative">
+      <select
+       v-model="form.parent_id"
+       class="ds-select"
+      >
+       <option :value="null">— 根科室（顶级） —</option>
+       <option v-for="c in parentCandidates" :key="c.id" :value="c.id">
+        {{ c.label }}
+       </option>
+      </select>
+      <ChevronDown class="pointer-events-none absolute right-[var(--spacer-12)] top-1/2 h-4 w-4 -translate-y-1/2 text-icon-tertiary" />
+     </div>
+     <span v-if="editing && form.parent_id === null" class="text-body-xs text-text-tertiary">
+      注意：保存后此科室将变为根科室
+     </span>
+    </div>
 
- <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">描述</span>
- <textarea v-model="form.description" class="ds-textarea" rows="2" placeholder="可选，如 心血管内科"></textarea>
- </div>
+    <div class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">描述</span>
+     <textarea v-model="form.description" class="ds-textarea" rows="2" placeholder="可选，如 心血管内科"></textarea>
+    </div>
 
- <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
- <span class="text-body-base text-text">对患者公开</span>
- <label class="ds-switch">
- <input type="checkbox" class="ds-switch__input" v-model="form.is_public">
- <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
- </label>
- </div>
- <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
- <span class="text-body-base text-text">启用</span>
- <label class="ds-switch">
- <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
- <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
- </label>
- </div>
- </div>
- <div class="mt-[var(--spacer-16)] flex gap-[var(--spacer-12)]">
- <button type="button" class="ds-btn ds-btn--secondary ds-btn--block" @click="showEditor = false">取消</button>
- <button type="button" class="ds-btn ds-btn--primary ds-btn--block" @click="submit">保存</button>
- </div>
- </div>
- </DsPopup>
- </main>
+    <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
+     <span class="text-body-base text-text">对患者公开</span>
+     <label class="ds-switch">
+      <input type="checkbox" class="ds-switch__input" v-model="form.is_public">
+      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+     </label>
+    </div>
+    <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
+     <span class="text-body-base text-text">启用</span>
+     <label class="ds-switch">
+      <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
+      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+     </label>
+    </div>
+   </div>
+  </template>
+ </ConfigCrudPage>
 </template>

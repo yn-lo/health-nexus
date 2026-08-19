@@ -8,7 +8,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { UserCog, Eye, EyeOff } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { AppHeader, DsPopup, StatRow, DsFilterTabs, DsSearchBox } from '@/shared/components'
+import { ConfigCrudPage, DsFilterTabs } from '@/shared/components'
 import { authApi, errmsg, usePagedList, getUserStored, useDepartmentOptions } from '@/shared'
 import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, SUPER_ADMIN_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount, StaffAccountCreateRequest } from '@/shared'
@@ -138,104 +138,96 @@ onMounted(() => {
 </script>
 
 <template>
- <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
- <AppHeader title="账号管理" showCreate @create="openCreate" @back="router.back" />
-
- <section class="mx-[var(--spacer-16)] mt-[var(--spacer-12)] rounded-[var(--radius-card-large)] bg-[var(--ai-gradient-soft)] px-[var(--spacer-16)] py-[var(--spacer-16)]">
- <StatRow :stats="heroStats" />
- </section>
-
- <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
- <DsSearchBox v-model="search" placeholder="搜索用户名" />
- <DsFilterTabs v-model="filterRole" :options="roleOptions" :counts="roleCounts" />
- </section>
-
- <section class="px-[var(--spacer-16)] py-[var(--spacer-8)]">
- <div v-if="filtered.length > 0" class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden">
- <article
- v-for="a in filtered"
- :key="a.id"
- class="ds-list-item ds-list-item--divider cursor-pointer"
- @click="router.push({ name: 'staff-config-account-detail', params: { id: a.id } })"
+ <ConfigCrudPage
+  title="账号管理"
+  :stats="heroStats"
+  v-model:search="search"
+  search-placeholder="搜索用户名"
+  :list-count="filtered.length"
+  :loading="loading"
+  empty-title="还没有账户"
+  empty-desc="创建第一个管理员账户"
+  :empty-icon="UserCog"
+  :editor-show="showEditor"
+  editor-title="新建账户"
+  save-label="创建"
+  @update:editor-show="showEditor = $event"
+  @create="openCreate"
+  @back="router.back"
+  @save="submit"
+  @cancel="showEditor = false"
  >
- <span class="ds-list-item__icon ds-list-item__icon--brand">
- <UserCog :size="20" />
- </span>
- <div class="ds-list-item__content">
- <span class="ds-list-item__title">
- {{ a.username }}<span v-if="a.id === currentUserId" class="ml-[var(--spacer-4)] text-body-xs text-text-tertiary">（我）</span>
- </span>
- <span class="ds-list-item__meta">
- <span class="ds-tag ds-tag--primary ds-tag--plain">{{ ROLE_LABEL[a.role] }}</span>
- <span v-if="a.primary_dept_name" class="text-body-xs text-text-tertiary">{{ a.primary_dept_name }}</span>
- <span>· {{ a.is_active ? '正常' : '已锁定' }}</span>
- </span>
- </div>
- <div class="ds-list-item__trailing" @click.stop>
- <label class="ds-switch ds-switch--sm" :class="{ 'pointer-events-none opacity-50': a.id === currentUserId }">
- <input type="checkbox" class="ds-switch__input" :checked="a.is_active" :disabled="a.id === currentUserId" @change="toggleLock(a)">
- <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
- </label>
- </div>
- </article>
- </div>
- <div v-else-if="!loading" class="flex flex-col items-center py-20">
- <span class="flex h-14 w-14 items-center justify-center rounded-[var(--radius-full)] bg-[var(--bg-brand-light)]">
- <UserCog :size="28" class="text-icon-brand" />
- </span>
- <p class="mt-[var(--spacer-12)] text-body-base font-medium text-text">还没有账户</p>
- <p class="mt-[var(--spacer-4)] text-body-sm text-text-tertiary">创建第一个管理员账户</p>
- <button type="button" class="ds-btn ds-btn--primary ds-btn--sm mt-[var(--spacer-16)]" @click="openCreate">新建</button>
- </div>
- </section>
+  <template #toolbar>
+   <DsFilterTabs v-model="filterRole" :options="roleOptions" :counts="roleCounts" />
+  </template>
 
- <DsPopup v-model:show="showEditor">
- <div class="p-[var(--spacer-16)] pb-[var(--spacer-24)]">
- <h3 class="mb-[var(--spacer-16)] text-heading-sm font-semibold text-text">
- 新建账户
- </h3>
- <div class="flex flex-col gap-[var(--spacer-12)]">
- <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">用户名<span class="text-[var(--status-error-default)]">*</span></span>
- <input v-model="form.username" class="ds-input" placeholder="3-64 字符，字母/数字/下划线">
- </div>
- <div class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">密码<span class="text-[var(--status-error-default)]">*</span></span>
- <div class="ds-field-wrap">
- <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="至少 8 位，含字母和数字">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
- <Eye v-if="showPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- </div>
- <div>
- <span class="mb-[var(--spacer-4)] block text-body-sm text-text-secondary">角色</span>
- <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] no-scrollbar overflow-x-auto">
- <button
- v-for="opt in formRoleOptions"
- :key="opt.value"
- type="button"
- :class="form.role === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="form.role = opt.value"
- >{{ opt.label }}<span v-if="form.role === opt.value" class="ds-tab-underline" /></button>
- </div>
- </div>
- <div v-if="isSuperAdmin && !PATIENT_ROLES.includes(form.role)" class="flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">科室<span class="text-[var(--status-error-default)]">*</span></span>
- <select v-model.number="form.dept_id" class="ds-input">
- <option :value="0" disabled>请选择科室</option>
- <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
- </select>
- </div>
- </div>
- <div class="mt-[var(--spacer-16)] flex gap-[var(--spacer-12)]">
- <button type="button" class="ds-btn ds-btn--secondary ds-btn--block" @click="showEditor = false">取消</button>
- <button type="button" class="ds-btn ds-btn--primary ds-btn--block" @click="submit">创建</button>
- </div>
- </div>
- </DsPopup>
- </main>
+  <template #default>
+   <article
+    v-for="a in filtered"
+    :key="a.id"
+    class="ds-list-item ds-list-item--divider cursor-pointer"
+    @click="router.push({ name: 'staff-config-account-detail', params: { id: a.id } })"
+   >
+    <span class="ds-list-item__icon ds-list-item__icon--brand">
+     <UserCog :size="20" />
+    </span>
+    <div class="ds-list-item__content">
+     <span class="ds-list-item__title">
+      {{ a.username }}<span v-if="a.id === currentUserId" class="ml-[var(--spacer-4)] text-body-xs text-text-tertiary">（我）</span>
+     </span>
+     <span class="ds-list-item__meta">
+      <span class="ds-tag ds-tag--primary ds-tag--plain">{{ ROLE_LABEL[a.role] }}</span>
+      <span v-if="a.primary_dept_name" class="text-body-xs text-text-tertiary">{{ a.primary_dept_name }}</span>
+      <span>· {{ a.is_active ? '正常' : '已锁定' }}</span>
+     </span>
+    </div>
+    <div class="ds-list-item__trailing" @click.stop>
+     <label class="ds-switch ds-switch--sm" :class="{ 'pointer-events-none opacity-50': a.id === currentUserId }">
+      <input type="checkbox" class="ds-switch__input" :checked="a.is_active" :disabled="a.id === currentUserId" @change="toggleLock(a)">
+      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+     </label>
+    </div>
+   </article>
+  </template>
+
+  <template #form>
+   <div class="flex flex-col gap-[var(--spacer-12)]">
+    <div class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">用户名<span class="text-[var(--status-error-default)]">*</span></span>
+     <input v-model="form.username" class="ds-input" placeholder="3-64 字符，字母/数字/下划线">
+    </div>
+    <div class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">密码<span class="text-[var(--status-error-default)]">*</span></span>
+     <div class="ds-field-wrap">
+      <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="至少 8 位，含字母和数字">
+      <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
+       <Eye v-if="showPassword" class="h-4 w-4" />
+       <EyeOff v-else class="h-4 w-4" />
+      </button>
+     </div>
+    </div>
+    <div>
+     <span class="mb-[var(--spacer-4)] block text-body-sm text-text-secondary">角色</span>
+     <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] no-scrollbar overflow-x-auto">
+      <button
+       v-for="opt in formRoleOptions"
+       :key="opt.value"
+       type="button"
+       :class="form.role === opt.value
+        ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
+        : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
+       @click="form.role = opt.value"
+      >{{ opt.label }}<span v-if="form.role === opt.value" class="ds-tab-underline" /></button>
+     </div>
+    </div>
+    <div v-if="isSuperAdmin && !PATIENT_ROLES.includes(form.role)" class="flex flex-col gap-[var(--spacer-4)]">
+     <span class="text-body-sm text-text-secondary">科室<span class="text-[var(--status-error-default)]">*</span></span>
+     <select v-model.number="form.dept_id" class="ds-input">
+      <option :value="0" disabled>请选择科室</option>
+      <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+     </select>
+    </div>
+   </div>
+  </template>
+ </ConfigCrudPage>
 </template>

@@ -118,9 +118,9 @@ defineExpose({ setText, inputText })
 
 /* ── 发送按钮 hover/press（44px 最小触摸目标） ────────── */
 .ai-send-btn {
- width: 44px;
- height: 44px;
- box-shadow: var(--shadow-glow-btn);
+  width: var(--ds-control-height-md);
+  height: var(--ds-control-height-md);
+  box-shadow: var(--shadow-glow-btn);
  transition: transform var(--micro-duration) var(--micro-ease),
  background-color var(--micro-duration) var(--micro-ease),
  box-shadow var(--micro-duration) var(--micro-ease);

@@ -11,6 +11,7 @@ export { default as StatRow } from './StatRow.vue'
 export { default as ProfileHeader } from './ProfileHeader.vue'
 export { default as DisclaimerFooter } from './DisclaimerFooter.vue'
 export { default as EmptyState } from './EmptyState.vue'
+export { default as ConfigCrudPage } from './ConfigCrudPage.vue'
 export { default as DepartmentTabs } from './DepartmentTabs.vue'
 export { default as PasswordStrength } from './PasswordStrength.vue'
 
