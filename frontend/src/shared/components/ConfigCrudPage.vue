@@ -52,7 +52,7 @@ defineSlots<{
   default?(): unknown
   /** 搜索框上方的备注/说明（可选） */
   'header-note'?(): unknown
-  /** 搜索框下方的筛选控件（可选，如 DsFilterTabs） */
+  /** 搜索框下方的筛选控件（可选，如下拉框/筛选区） */
   toolbar?(): unknown
   /** 编辑弹窗表单主体 */
   form?(): unknown

@@ -48,6 +48,7 @@ const passwordResetTTL = 15 * time.Minute
 type UserRepo interface {
 	GetByUsername(ctx context.Context, username string) (*entity.User, error)
 	GetByID(ctx context.Context, id int64) (*entity.User, error)
+	GetByIDIncludeDeleted(ctx context.Context, id int64) (*entity.User, error)
 	Create(ctx context.Context, username, passwordHash, role string) (*entity.User, error)
 	SetPrimaryDept(ctx context.Context, userID, deptID int64) error
 	UpdatePrimaryDept(ctx context.Context, userID, deptID int64) error
@@ -647,7 +648,7 @@ func (s *AuthService) RestoreUser(ctx context.Context, actorID int64, actorRole 
 	if actorRole != constants.RoleSuperAdmin {
 		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可恢复用户")
 	}
-	target, err := s.repo.GetByID(ctx, targetID)
+	target, err := s.repo.GetByIDIncludeDeleted(ctx, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("get target user: %w", err)
 	}

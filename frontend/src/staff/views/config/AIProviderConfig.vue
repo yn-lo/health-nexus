@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * AI 提供商配置 — 列表
  * API: configApi.listAIProviders/updateAIProvider/deleteAIProvider
@@ -142,15 +142,11 @@ onMounted(load)
  <Search class="h-4 w-4 shrink-0 text-icon-brand" />
  <input v-model="search" type="text" placeholder="搜索名称或模型" class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary">
  </div>
- <div class="no-scrollbar mt-[var(--spacer-12)] flex gap-[var(--spacer-24)] overflow-x-auto border-b border-[var(--border-neutral-l1)] pl-[var(--spacer-8)]">
- <button
- v-for="opt in typeOptions"
- :key="opt.value"
- type="button"
- class="relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors"
- :class="filterType === opt.value ? 'font-medium text-text-brand' : 'text-text-tertiary hover:text-text-brand'"
- @click="filterType = opt.value"
- >{{ opt.label }}<span v-if="typeCounts[opt.value] !== undefined && typeCounts[opt.value] > 0" class="ml-[var(--spacer-4)] inline-flex items-center justify-center min-w-[16px] h-[16px] px-[var(--spacer-4)] rounded-[var(--radius-full)] text-[10px] font-medium leading-none transition-colors" :class="filterType === opt.value ? 'bg-[var(--bg-brand-light)] text-text-brand' : 'bg-[var(--bg-overlay-l1)] text-text-tertiary'">{{ typeCounts[opt.value] }}</span><span v-if="filterType === opt.value" class="ds-tab-underline" /></button>
+ <div class="mt-[var(--spacer-12)]">
+  <select v-model="filterType" class="ds-input">
+   <option value="all">全部类型</option>
+   <option v-for="opt in typeOptions.slice(1)" :key="opt.value" :value="opt.value">{{ opt.label }}（{{ typeCounts[opt.value] }}）</option>
+  </select>
  </div>
  </section>
 

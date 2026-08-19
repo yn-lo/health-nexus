@@ -37,7 +37,8 @@ const savingDept = ref(false)
 async function load() {
   loading.value = true
   try {
-    const res = await authApi.listStaffAccounts({ page: 1, page_size: 50 })
+    // 超管需包含已删除用户，否则已删除账户详情无法加载（无法恢复）
+    const res = await authApi.listStaffAccounts(isSuperAdmin ? { page: 1, page_size: 50, include_deleted: true } : { page: 1, page_size: 50 })
     account.value = res.items.find((a) => a.id === accountId.value) ?? null
   } catch (e) {
     showFailToast(errmsg(e, '加载失败'))

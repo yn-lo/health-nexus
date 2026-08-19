@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * CrisisEventList 危机事件列表 — 医护端
  * 对应需求: REQ-CHAT-015 / REQ-CHAT-016
@@ -150,20 +150,12 @@ onMounted(loadEvents)
  </div>
 
  <!-- 状态筛选 -->
- <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] mt-[var(--spacer-12)]">
- <button
- v-for="opt in [
- { value: 'unresolved', label: '未处理' },
- { value: 'resolved', label: '已处理' },
- { value: 'all', label: '全部' },
- ] as const"
- :key="opt.value"
- type="button"
- :class="filterStatus === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="filterStatus = opt.value"
- >{{ opt.label }}<span v-if="filterStatus === opt.value" class="ds-tab-underline" /></button>
+ <div class="mt-[var(--spacer-12)]">
+  <select v-model="filterStatus" class="ds-input">
+   <option value="unresolved">未处理</option>
+   <option value="resolved">已处理</option>
+   <option value="all">全部</option>
+  </select>
  </div>
 
  <!-- 级别筛选 — chip 胶囊组（次级筛选，与状态 Tab 形成层级） -->

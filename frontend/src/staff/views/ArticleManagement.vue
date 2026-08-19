@@ -256,35 +256,10 @@ onMounted(async () => {
 
  <!-- 筛选标签页 - v4 风格：计数徽章（新建入口统一在 AppHeader 右侧） -->
  <section class="px-[var(--spacer-16)]">
- <div class="flex items-center gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] pl-[var(--spacer-8)]">
- <button
- v-for="tab in tabItems"
- :key="tab.key"
- type="button"
- class="relative inline-flex items-center whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base min-h-[var(--touch-target-min)] transition-colors"
- :class="
- activeTab === tab.key
- ? 'font-medium text-text-brand'
- : 'text-text-tertiary hover:text-text-brand'
- "
- @click="activeTab = tab.key"
- >
- {{ tab.label }}
- <span
- v-if="statusCounts[tab.key] !== undefined && statusCounts[tab.key] > 0"
- class="ml-[var(--spacer-4)] inline-flex items-center justify-center min-w-[16px] h-[16px] px-[var(--spacer-4)] rounded-[var(--radius-full)] text-[10px] font-medium leading-none transition-colors"
- :class="
- activeTab === tab.key
- ? 'bg-[var(--bg-brand-light)] text-text-brand'
- : 'bg-[var(--bg-overlay-l1)] text-text-tertiary'
- "
- >{{ statusCounts[tab.key] }}</span>
- <span
- v-if="activeTab === tab.key"
- class="ds-tab-underline"
- />
- </button>
- </div>
+  <select v-model="activeTab" class="ds-input">
+   <option value="all">全部状态</option>
+   <option v-for="tab in tabItems.slice(1)" :key="tab.key" :value="tab.key">{{ tab.label }}（{{ statusCounts[tab.key] ?? 0 }}）</option>
+  </select>
  </section>
 
  <!-- 文章列表 -->

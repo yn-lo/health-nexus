@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-07-23
+last_updated: 2026-08-19
 status: active
 owner: backend-team
 ---
@@ -58,7 +58,7 @@ HTTP 协议边界：解析 JSON 请求体（严格模式 `DisallowUnknownFields`
 跨域通用原语：`errors`（AppError）、`response`（JSON 响应）、`constants`、`contextkeys`、`pagination`、`mask`、`contenthash`。**叶子层**，不依赖 domain/platform/middleware（除标准库与极少数基础依赖）。
 
 ### middleware（中间件层）
-HTTP 中间件：JWT 认证、CORS、限流、请求日志、数据隔离、恢复、请求 ID。可依赖 shared、config、platform（经接口）。handler 通过 chi `r.Use()` 装配。
+HTTP 中间件：JWT 认证、CORS、限流、请求日志、数据隔离、恢复、请求 ID。可依赖 shared、config。平台能力（如 JWT 公钥、限流存储、token 黑名单）须定义为消费者接口由 di 注入，**禁止直接 import platform 具体实现**（AC-ARCH-15）。handler 通过 chi `r.Use()` 装配。
 
 ### di（依赖注入层）
 `NewApp` 按序构造基础设施 + 5 个域的 handler/service/repository，注入接口实现。是唯一允许 import 所有层的地方。编译期接口断言（如 `var _ rag.LLMSafetyChecker = (*llm.LLMSafetyChecker)(nil)`）只能在此完成（AC-ARCH-09 禁止 platform 反向 import domain，故断言在 di 层）。
@@ -69,6 +69,7 @@ HTTP 中间件：JWT 认证、CORS、限流、请求日志、数据隔离、恢�
 > - **结构性依赖方向**（谁能 import 谁）→ `arch_test.go`（AST/import 路径检查）
 > - **代码风格**（行数/函数长度/错误处理/死代码）→ `.golangci.yml`（funlen/lll/errcheck/staticcheck）
 > - **安全**（gosec G304/G306 等）→ `.golangci.yml`（AC-SEC）
+> - **无约束层兜底**（AC-ARCH-16）→ 任何源文件必须落入已定义层，`unknown` / `domain-root` / `domain-other` 直接报错，防止文件塞进非标准目录躲避层规则
 
 ## 棕地陷阱（不要复制）
 

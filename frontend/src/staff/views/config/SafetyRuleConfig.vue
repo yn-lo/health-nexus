@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ShieldBan, Pencil, Trash2 } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage, DsFilterTabs } from '@/shared/components'
+import { ConfigCrudPage } from '@/shared/components'
 import { configApi, usePagedList, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { SafetyRule, SafetyRuleCategory, SafetyRuleAction, SafetyRuleCreateRequest } from '@/shared'
@@ -136,7 +136,12 @@ onMounted(load)
   </template>
 
   <template #toolbar>
-   <DsFilterTabs :options="categoryOptions" :model-value="filterCategory" :counts="categoryCounts" @update:model-value="filterCategory = $event; onFilterChange()" />
+   <div class="mt-[var(--spacer-12)]">
+    <select v-model="filterCategory" class="ds-input" @change="onFilterChange">
+     <option value="all">全部分类</option>
+     <option v-for="opt in categoryOptions.slice(1)" :key="opt.value" :value="opt.value">{{ opt.label }}（{{ categoryCounts[opt.value] }}）</option>
+    </select>
+   </div>
   </template>
 
   <template #default>

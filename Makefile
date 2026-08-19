@@ -16,7 +16,6 @@ BACKEND_GO := $(ROOT_DIR)/backend
 
 # 工具版本（与 go.mod 对齐或固定）
 GOLANGCI_VERSION := v1.62.0
-ARCHLINT_VERSION := v1.5.0
 GOOSE_VERSION := v3.22.1
 WIRE_VERSION := v0.6.0
 SQLC_VERSION := v1.27.0
@@ -77,10 +76,6 @@ test-harness: ## 运行 harness 架构约束测试（AC-ARCH-* AST 检查）
 lint: ## golangci-lint 全量检查
 	cd $(BACKEND_GO) && golangci-lint run ./...
 
-.PHONY: arch-lint
-arch-lint: ## go-arch-lint 架构约束（包级别依赖）
-	cd $(BACKEND_GO) && go-arch-lint check -c .arch-lint.yml
-
 .PHONY: vet
 vet: ## go vet
 	cd $(BACKEND_GO) && $(GO) vet ./...
@@ -139,9 +134,8 @@ migrate-create: ## 创建新迁移: make migrate-create name=add_xxx
 # 工具安装（一次性）
 # ============================================================================
 .PHONY: tools
-tools: ## 安装开发工具（golangci-lint / go-arch-lint / goose / wire / sqlc）
+tools: ## 安装开发工具（golangci-lint / goose / wire / sqlc）
 	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
-	$(GO) install github.com/fe3dback/go-arch-lint@$(ARCHLINT_VERSION)
 	$(GO) install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 	$(GO) install github.com/google/wire/cmd/wire@$(WIRE_VERSION)
 	$(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)

@@ -24,6 +24,7 @@
  *   AC-ARCH-FE-19  路由跨端 import 检测（staff 路由禁止 import chat 视图）
  *   AC-ARCH-FE-20  v-html 使用审计（仅允许白名单组件使用）
  *   AC-ARCH-FE-21  禁止外部 CDN 资源引用（必须使用本地资源）
+ *   AC-ARCH-FE-22  shared 层禁止反向依赖门户端（shared 不得 import chat/staff）
  */
 import { describe, it } from 'vitest'
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
@@ -1092,6 +1093,30 @@ describe('AC-ARCH-FE-* 架构约束', () => {
     if (violations.length > 0) {
       throw new Error(
         `AC-ARCH-FE-21 失败：发现 ${violations.length} 处外部 CDN 引用（违反 CLAUDE.md 硬性规则第 8 条：禁止使用 CDN）:\n${violations.join('\n')}`,
+      )
+    }
+  })
+
+  // ── AC-ARCH-FE-22: shared 层禁止反向依赖门户端 ─────────────────────
+  it('AC-ARCH-FE-22: shared/ 禁止 import chat/ 或 staff/（共享层不得反向依赖门户端）', () => {
+    const violations: string[] = []
+
+    for (const file of [...tsFiles, ...vueFiles]) {
+      const rel = relPath(file)
+      if (!rel.startsWith('shared/')) continue
+
+      const content = readFileSync(file, 'utf-8')
+      for (const importPath of extractImports(content).map(resolveAliasPath)) {
+        if (importPath === 'chat' || importPath.startsWith('chat/') ||
+            importPath === 'staff' || importPath.startsWith('staff/')) {
+          violations.push(`${rel} imports ${importPath}`)
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      throw new Error(
+        `AC-ARCH-FE-22 失败：shared 层不得反向依赖门户端（chat/staff），应将共享能力下沉到 shared/ 或在两端独立实现:\n${violations.join('\n')}`,
       )
     }
   })

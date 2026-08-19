@@ -68,6 +68,12 @@ func (r *UserRepo) GetByID(ctx context.Context, id int64) (*entity.User, error) 
 	return r.getUser(ctx, "u.id = $1 AND u.is_deleted = false", id, "by id")
 }
 
+// GetByIDIncludeDeleted 按 ID 查询用户（含已删除）。
+// 用于超管恢复账户等必须能看到软删除记录的场景；未找到返回 (nil, nil)。
+func (r *UserRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*entity.User, error) {
+	return r.getUser(ctx, "u.id = $1", id, "by id (include deleted)")
+}
+
 // UpdatePasswordHash 更新用户密码哈希。
 // 用户不存在时返回 nil error（由调用方校验 user 是否存在）。
 func (r *UserRepo) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error {

@@ -99,16 +99,11 @@ onMounted(load)
  ]" />
  </div>
 
- <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)] no-scrollbar overflow-x-auto mt-[var(--spacer-12)]">
- <button
- v-for="opt in typeOptions"
- :key="opt.value"
- type="button"
- :class="filterType === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="filterType = opt.value; onFilterChange()"
- >{{ opt.label }}<span v-if="opt.value === 'all' && totalCount > 0" class="ml-[var(--spacer-4)] inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[var(--radius-full)] bg-[var(--bg-brand-light)] px-[var(--spacer-4)] text-[10px] font-medium text-text-brand">{{ totalCount }}</span><span v-if="filterType === opt.value" class="ds-tab-underline" /></button>
+ <div class="mt-[var(--spacer-12)]">
+  <select v-model="filterType" class="ds-input" @change="onFilterChange">
+   <option value="all">全部类型（{{ totalCount }}）</option>
+   <option v-for="opt in typeOptions.slice(1)" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+  </select>
  </div>
  <!-- entity_id 筛选：留空=全部；填数字=按 ID；0=单例配置审计记录 -->
  <div class="mt-[var(--spacer-12)] flex items-center gap-[var(--spacer-8)]">

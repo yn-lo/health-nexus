@@ -68,6 +68,14 @@ func (m *mockUserRepo) GetByUsername(_ context.Context, _ string) (*entity.User,
 }
 
 func (m *mockUserRepo) GetByID(_ context.Context, _ int64) (*entity.User, error) {
+	// 模拟真实实现：GetByID 仅返回未删除用户。
+	if m.user != nil && m.user.IsDeleted {
+		return nil, nil
+	}
+	return m.user, m.getErr
+}
+
+func (m *mockUserRepo) GetByIDIncludeDeleted(_ context.Context, _ int64) (*entity.User, error) {
 	return m.user, m.getErr
 }
 
@@ -121,6 +129,11 @@ func (m *mockUserRepo) SoftDelete(_ context.Context, userID int64) error {
 
 func (m *mockUserRepo) Restore(_ context.Context, userID int64) error {
 	m.gotRestoreID = userID
+	// 模拟真实实现：恢复后重新启用账户，后续 GetByID 能重新查到。
+	if m.user != nil {
+		m.user.IsDeleted = false
+		m.user.IsActive = true
+	}
 	return m.restoreErr
 }
 

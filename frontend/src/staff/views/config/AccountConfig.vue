@@ -8,7 +8,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { UserCog, Eye, EyeOff } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage, DsFilterTabs } from '@/shared/components'
+import { ConfigCrudPage } from '@/shared/components'
 import { authApi, errmsg, usePagedList, getUserStored, useDepartmentOptions } from '@/shared'
 import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, SUPER_ADMIN_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount, StaffAccountCreateRequest } from '@/shared'
@@ -24,6 +24,9 @@ const currentDeptId = currentUser?.dept_id ?? 0
 // 科室选项（staff 端含未公开科室），仅超管创建账户时可选
 const { options: deptOptions, load: loadDepts } = useDepartmentOptions()
 
+/** 当前用户科室名（科室管理员展示用） */
+const currentDeptLabel = computed(() => deptOptions.value.find((d) => d.id === currentDeptId)?.label ?? '')
+
 // ponytail: 后端支持分页，但单页 50 足以覆盖典型部署的账户规模；超量时再加翻页 UI
 const { items: accounts, loading, load } = usePagedList<StaffAccount>({
  pageSize: 50,
@@ -33,14 +36,11 @@ const { items: accounts, loading, load } = usePagedList<StaffAccount>({
 const search = ref('')
 const filterRole = ref<UserRole | 'all'>('all')
 const filterDeleted = ref<'all' | 'active' | 'deleted'>('all')
+// 科室筛选：超管默认全部；科室管理员数据仅限本科室，固定为本科室
+const filterDept = ref<number | 'all'>(isSuperAdmin ? 'all' : currentDeptId)
 
 /** 全部角色（STAFF + PATIENT），顺序：管理员 → 医护 → 患者 */
 const ALL_ROLES: UserRole[] = [...STAFF_ROLES, ...PATIENT_ROLES]
-
-const roleOptions: { value: UserRole | 'all'; label: string }[] = [
- { value: 'all', label: '全部' },
- ...ALL_ROLES.map((r) => ({ value: r, label: ROLE_LABEL[r] })),
-]
 
 const formRoleOptions: { value: UserRole; label: string }[] = ALL_ROLES.map((r) => ({
  value: r,
@@ -61,6 +61,9 @@ const filtered = computed(() => {
  } else if (filterDeleted.value === 'active') {
  list = list.filter((a) => !a.is_deleted)
  }
+ if (filterDept.value !== 'all') {
+ list = list.filter((a) => a.primary_dept_id === filterDept.value)
+ }
  return list
 })
 
@@ -79,16 +82,10 @@ const heroStats = computed(() => [
 const roleCounts = computed<Record<string, number>>(() => {
  const counts: Record<string, number> = { all: accounts.value.length }
  for (const r of ALL_ROLES) {
- counts[r] = accounts.value.filter(a => a.role === r).length
+  counts[r] = accounts.value.filter(a => a.role === r).length
  }
  return counts
 })
-
-const deletedFilterOptions = computed(() => [
- { value: 'all', label: '全部' },
- { value: 'active', label: '正常' },
- ...(isSuperAdmin ? [{ value: 'deleted', label: '已删除' }] : []),
-])
 
 const showEditor = ref(false)
 const showPassword = ref(false)
@@ -148,7 +145,8 @@ async function toggleLock(a: StaffAccount) {
 
 onMounted(() => {
  load()
- if (isSuperAdmin) loadDepts()
+ // 科室筛选下拉框需要科室选项，所有管理员均加载
+ loadDepts()
 })
 </script>
 
@@ -173,8 +171,25 @@ onMounted(() => {
   @cancel="showEditor = false"
  >
   <template #toolbar>
-   <DsFilterTabs v-model="filterRole" :options="roleOptions" :counts="roleCounts" />
-   <DsFilterTabs v-model="filterDeleted" :options="deletedFilterOptions" />
+   <div class="mt-[var(--spacer-12)] flex gap-[var(--spacer-8)]">
+    <select v-model="filterRole" class="ds-input flex-1">
+     <option value="all">全部角色</option>
+     <option v-for="r in ALL_ROLES" :key="r" :value="r">{{ ROLE_LABEL[r] }}（{{ roleCounts[r] }}）</option>
+    </select>
+    <select v-model="filterDeleted" class="ds-input flex-1">
+     <option value="all">全部状态</option>
+     <option value="active">正常</option>
+     <option v-if="isSuperAdmin" value="deleted">已删除</option>
+    </select>
+    <!-- 科室筛选：超管可选任意科室；科室管理员数据仅限本科室，禁用并固定显示本科室 -->
+    <select v-model="filterDept" class="ds-input flex-1" :disabled="!isSuperAdmin">
+     <template v-if="isSuperAdmin">
+      <option value="all">全部科室</option>
+      <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+     </template>
+     <option v-else :value="currentDeptId">{{ currentDeptLabel || '本科室' }}</option>
+    </select>
+   </div>
   </template>
 
   <template #default>

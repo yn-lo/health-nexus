@@ -337,6 +337,11 @@ func checkOne(f layerInfo, imp string) []violation {
 		}
 
 	case "middleware":
+		// AC-ARCH-15: middleware 不得直接 import platform（platform 能力须经接口由 di 注入）
+		if strings.HasPrefix(suffix, "platform/") {
+			add("AC-ARCH-15", "middleware 不得直接依赖 platform/"+strings.TrimPrefix(suffix, "platform/"),
+				"middleware 所需平台能力定义为消费者接口，由 di 注入实现；参见 .harness/specs/architecture/boundaries.md")
+		}
 		// AC-ARCH-12: middleware 不得 import domain 的 service/repository/handler
 		if isDomainImport(suffix, "") {
 			sl := sublayerOfImport(suffix)
@@ -533,6 +538,46 @@ func TestArch_SharedIsLeafLayer(t *testing.T) {
 					reason: "shared 叶子层不得依赖 " + suffix,
 					fix:    "shared 是跨域原语，不应反向依赖"})
 			}
+		}
+	}
+	reportViolations(t, vs)
+}
+
+// TestArch_MiddlewareMustNotImportPlatform AC-ARCH-15: middleware 不得直接 import platform，
+// 所需平台能力须定义为消费者接口由 di 注入。
+func TestArch_MiddlewareMustNotImportPlatform(t *testing.T) {
+	files := collectFiles(t)
+	var vs []violation
+	for _, f := range files {
+		if f.layer != "middleware" {
+			continue
+		}
+		for _, imp := range f.imports {
+			suffix := internalImport(imp)
+			if strings.HasPrefix(suffix, "platform/") {
+				vs = append(vs, violation{file: f.file, badImport: imp,
+					reason: "middleware 不得直接依赖 platform（AC-ARCH-15）",
+					fix:    "平台能力定义为消费者接口，由 di 注入实现"})
+			}
+		}
+	}
+	reportViolations(t, vs)
+}
+
+// TestArch_NoUnlayeredFiles AC-ARCH-16: 源文件必须落入已定义层。
+// 兜底检查 unknown / domain-root / domain-other，防止把违规代码塞进
+// 非标准子目录以躲避其他层规则的检查。
+func TestArch_NoUnlayeredFiles(t *testing.T) {
+	files := collectFiles(t)
+	var vs []violation
+	for _, f := range files {
+		switch f.layer {
+		case "unknown", "domain-root", "domain-other":
+			vs = append(vs, violation{
+				rule:   "AC-ARCH-16",
+				file:   f.file,
+				reason: "文件落入无约束层 " + f.layer + "，层规则不覆盖",
+				fix:    "移入标准子层（entity/repository/service/handler/rag）或合法顶层（platform/shared/middleware/adapter/di/config）"})
 		}
 	}
 	reportViolations(t, vs)

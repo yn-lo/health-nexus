@@ -159,16 +159,12 @@ onMounted(() => {
  <input v-model="search" type="text" placeholder="搜索内容" class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary">
  </div>
 
- <div class="mt-[var(--spacer-8)] flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)]">
- <button
- v-for="opt in [{ value: 'all', label: '全部' }, { value: 'active', label: '生效' }, { value: 'inactive', label: '未生效' }] as const"
- :key="opt.value"
- type="button"
- :class="filterActive === opt.value
- ? 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors font-medium text-text-brand'
- : 'relative whitespace-nowrap border-none bg-transparent py-[var(--spacer-12)] font-heading text-body-base transition-colors text-text-tertiary hover:text-text-brand'"
- @click="filterActive = opt.value; onFilterChange()"
- >{{ opt.label }}<span v-if="filterActive === opt.value" class="ds-tab-underline" /></button>
+ <div class="mt-[var(--spacer-8)]">
+  <select v-model="filterActive" class="ds-input" @change="onFilterChange">
+   <option value="all">全部状态</option>
+   <option value="active">生效</option>
+   <option value="inactive">未生效</option>
+  </select>
  </div>
  </section>
 
