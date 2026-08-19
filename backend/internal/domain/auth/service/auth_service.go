@@ -49,6 +49,8 @@ type UserRepo interface {
 	GetByUsername(ctx context.Context, username string) (*entity.User, error)
 	GetByID(ctx context.Context, id int64) (*entity.User, error)
 	Create(ctx context.Context, username, passwordHash, role string) (*entity.User, error)
+	SetPrimaryDept(ctx context.Context, userID, deptID int64) error
+	UpdatePrimaryDept(ctx context.Context, userID, deptID int64) error
 	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error
 	UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time,
 		gender, emergencyContact, emergencyPhone string) error
@@ -111,6 +113,8 @@ type AccountDTO struct {
 	Gender           string     `json:"gender"`
 	EmergencyContact string     `json:"emergency_contact"`
 	EmergencyPhone   string     `json:"emergency_phone"`
+	PrimaryDeptID    int64      `json:"primary_dept_id"`
+	PrimaryDeptName  string     `json:"primary_dept_name"`
 	IsActive         bool       `json:"is_active"`
 	IsDeleted        bool       `json:"is_deleted"`
 	CreatedAt        time.Time  `json:"created_at"`
@@ -496,8 +500,9 @@ func (s *AuthService) ListAccounts(ctx context.Context, actorRole string,
 
 // CreateAccount 管理员创建账户。
 // 权限收口：非 SUPER_ADMIN 不得创建管理员角色（SUPER_ADMIN/DEPT_ADMIN）账户，防止 DEPT_ADMIN 提权。
+// deptID 为绑定主科室；>0 时写入 user_departments。非 SUPER_ADMIN 只能绑定本科室（防跨科室越权）。
 func (s *AuthService) CreateAccount(
-	ctx context.Context, actorRole, username, password, role string,
+	ctx context.Context, actorRole string, actorDeptID int64, username, password, role string, deptID int64,
 ) (*AccountDTO, error) {
 	if !validRole(role) {
 		return nil, apperrors.BadRequest("AUTH_ROLE_INVALID", "角色无效")
@@ -511,6 +516,10 @@ func (s *AuthService) CreateAccount(
 	if err := validatePasswordStrength(password); err != nil {
 		return nil, err
 	}
+	// 非超管只能给本科室绑定科室（防跨科室越权）。
+	if actorRole != constants.RoleSuperAdmin && deptID != 0 && deptID != actorDeptID {
+		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_DEPT", "只能绑定本科室")
+	}
 	hash, err := crypto.HashPassword(password, s.cfg.Argon2)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
@@ -522,7 +531,17 @@ func (s *AuthService) CreateAccount(
 		}
 		return nil, fmt.Errorf("create user: %w", err)
 	}
-	slog.InfoContext(ctx, "account created", "actor_role", actorRole, "user_id", u.ID, "role", role)
+	if deptID > 0 {
+		if err := s.repo.SetPrimaryDept(ctx, u.ID, deptID); err != nil {
+			return nil, fmt.Errorf("set primary dept: %w", err)
+		}
+		// 重新加载用户以填充主科室名（JOIN departments）。
+		u, err = s.repo.GetByID(ctx, u.ID)
+		if err != nil {
+			return nil, fmt.Errorf("reload user: %w", err)
+		}
+	}
+	slog.InfoContext(ctx, "account created", "actor_role", actorRole, "user_id", u.ID, "role", role, "dept_id", deptID)
 	dto := accountDTO(u)
 	return &dto, nil
 }
@@ -554,6 +573,44 @@ func (s *AuthService) SetAccountActive(
 	}
 	slog.InfoContext(ctx, "account active state changed", "actor_id", actorID, "target_id", targetID, "active", active)
 	return nil
+}
+
+// UpdateAccountDept 修改账户主科室（PATCH /api/staff/auth/accounts/{id}/department）。
+// 权限：超管可改任意账户科室；科室管理员仅可改本科室账户，且只能改成本科室（防跨科室越权）。
+// deptID 必须 >0（科室必填）；目标账户不存在返回 404。
+func (s *AuthService) UpdateAccountDept(
+	ctx context.Context, actorRole string, actorDeptID int64, targetID, deptID int64,
+) (*AccountDTO, error) {
+	if deptID <= 0 {
+		return nil, apperrors.Validation("AUTH_DEPT_REQUIRED", "dept_id 不能为空")
+	}
+	target, err := s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("get target user: %w", err)
+	}
+	if target == nil {
+		return nil, apperrors.NotFound("AUTH_USER_NOT_FOUND", "用户不存在")
+	}
+	// 科室管理员只能改本科室账户，且只能改成本科室。
+	if actorRole == constants.RoleDeptAdmin {
+		if target.PrimaryDeptID != actorDeptID {
+			return nil, apperrors.Forbidden("AUTH_FORBIDDEN_DEPT", "无权操作其他科室的账户")
+		}
+		if deptID != actorDeptID {
+			return nil, apperrors.Forbidden("AUTH_FORBIDDEN_DEPT", "只能将账户绑定到本科室")
+		}
+	}
+	if err := s.repo.UpdatePrimaryDept(ctx, targetID, deptID); err != nil {
+		return nil, fmt.Errorf("update primary dept: %w", err)
+	}
+	// 重新加载用户以填充新的主科室名（JOIN departments）。
+	target, err = s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("reload user: %w", err)
+	}
+	slog.InfoContext(ctx, "account dept updated", "actor_role", actorRole, "target_id", targetID, "dept_id", deptID)
+	dto := accountDTO(target)
+	return &dto, nil
 }
 
 // SoftDeleteUser 超级管理员软删除用户。
@@ -623,6 +680,8 @@ func accountDTO(u *entity.User) AccountDTO {
 		Gender:           u.Gender,
 		EmergencyContact: u.EmergencyContact,
 		EmergencyPhone:   u.EmergencyPhone,
+		PrimaryDeptID:    u.PrimaryDeptID,
+		PrimaryDeptName:  u.PrimaryDeptName,
 		IsActive:         u.IsActive,
 		IsDeleted:        u.IsDeleted,
 		CreatedAt:        u.CreatedAt,

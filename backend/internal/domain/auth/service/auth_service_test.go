@@ -68,6 +68,14 @@ func (m *mockUserRepo) Create(_ context.Context, _, _, _ string) (*entity.User, 
 	return m.createUser, m.createErr
 }
 
+func (m *mockUserRepo) SetPrimaryDept(_ context.Context, _, _ int64) error {
+	return nil
+}
+
+func (m *mockUserRepo) UpdatePrimaryDept(_ context.Context, _, _ int64) error {
+	return nil
+}
+
 func (m *mockUserRepo) UpdatePasswordHash(_ context.Context, userID int64, passwordHash string) error {
 	m.gotUpdateID = userID
 	m.gotUpdatePwd = passwordHash
@@ -457,21 +465,21 @@ func TestListAccounts_RepoDown_PropagatesError(t *testing.T) {
 func TestCreateAccount_InvalidRole_Returns400(t *testing.T) {
 	repo := &mockUserRepo{}
 	svc := newTestAuthService(repo, nil)
-	_, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, "newuser", "Pass1234", "INVALID_ROLE")
+	_, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, 0, "newuser", "Pass1234", "INVALID_ROLE", 0)
 	assertAppErr(t, err, 400, "AUTH_ROLE_INVALID")
 }
 
 func TestCreateAccount_NonSuperAdminCreatesAdmin_Returns403(t *testing.T) {
 	repo := &mockUserRepo{}
 	svc := newTestAuthService(repo, nil)
-	_, err := svc.CreateAccount(context.Background(), constants.RoleDeptAdmin, "newadmin", "Pass1234", constants.RoleSuperAdmin)
+	_, err := svc.CreateAccount(context.Background(), constants.RoleDeptAdmin, 0, "newadmin", "Pass1234", constants.RoleSuperAdmin, 0)
 	assertAppErr(t, err, 403, "AUTH_FORBIDDEN_ROLE")
 }
 
 func TestCreateAccount_WeakPassword_Returns422(t *testing.T) {
 	repo := &mockUserRepo{}
 	svc := newTestAuthService(repo, nil)
-	_, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, "newuser", "123", constants.RoleDoctor)
+	_, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, 0, "newuser", "123", constants.RoleDoctor, 0)
 	assertAppErr(t, err, 422, "AUTH_PASSWORD_WEAK")
 }
 
@@ -479,7 +487,7 @@ func TestCreateAccount_HappyPath_ReturnsDTO(t *testing.T) {
 	now := time.Now()
 	repo := &mockUserRepo{createUser: &entity.User{ID: 10, Username: "newdoc", Role: constants.RoleDoctor, IsActive: true, CreatedAt: now}}
 	svc := newTestAuthService(repo, nil)
-	dto, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, "newdoc", "Pass1234", constants.RoleDoctor)
+	dto, err := svc.CreateAccount(context.Background(), constants.RoleSuperAdmin, 0, "newdoc", "Pass1234", constants.RoleDoctor, 0)
 	if err != nil {
 		t.Fatalf("期望 nil，实际 %v", err)
 	}

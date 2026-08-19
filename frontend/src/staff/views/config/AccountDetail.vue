@@ -5,16 +5,20 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { UserCog, Shield, Lock, Unlock, RotateCcw, Trash2, Eye, EyeOff } from '@lucide/vue'
+import { UserCog, Shield, Building2, Lock, Unlock, RotateCcw, Trash2, Eye, EyeOff, Pencil } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, PasswordStrength, DsPopup } from '@/shared/components'
-import { authApi, errmsg, getUserStored, fmtDateTime } from '@/shared'
-import { ROLE_LABEL } from '@/shared/constants/roles'
+import { authApi, errmsg, getUserStored, fmtDateTime, useDepartmentOptions } from '@/shared'
+import { ROLE_LABEL, SUPER_ADMIN_ROLE } from '@/shared/constants/roles'
 import type { StaffAccount } from '@/shared'
 
 const router = useRouter()
 const route = useRoute()
-const currentUserId = getUserStored()?.id ?? 0
+const currentUser = getUserStored()
+const currentUserId = currentUser?.id ?? 0
+/** 是否超管：超管可改任意账户科室；科室管理员仅本科室账户且只能改成本科室 */
+const isSuperAdmin = currentUser?.role === SUPER_ADMIN_ROLE
+const currentDeptId = currentUser?.dept_id ?? 0
 const { showSuccessToast, showFailToast } = useDsToast()
 const { showConfirmDialog } = useDsDialog()
 
@@ -23,6 +27,12 @@ const loading = ref(false)
 
 const accountId = computed(() => Number(route.params.id))
 const isSelf = computed(() => account.value?.id === currentUserId)
+
+// 修改科室弹窗
+const showDeptDialog = ref(false)
+const deptOptions = ref<{ id: number | null; label: string }[]>([])
+const selectedDeptId = ref(0)
+const savingDept = ref(false)
 
 async function load() {
   loading.value = true
@@ -33,6 +43,37 @@ async function load() {
     showFailToast(errmsg(e, '加载失败'))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDepts() {
+  const { options, load } = useDepartmentOptions()
+  await load()
+  deptOptions.value = options.value
+}
+
+function openDeptDialog() {
+  if (!account.value) return
+  selectedDeptId.value = account.value.primary_dept_id
+  showDeptDialog.value = true
+}
+
+async function submitDept() {
+  if (!account.value) return
+  if (!selectedDeptId.value) {
+    showFailToast('请选择科室')
+    return
+  }
+  savingDept.value = true
+  try {
+    const updated = await authApi.updateStaffAccountDept(account.value.id, selectedDeptId.value)
+    account.value = updated
+    showSuccessToast('科室已更新')
+    showDeptDialog.value = false
+  } catch (e) {
+    showFailToast(errmsg(e, '更新失败'))
+  } finally {
+    savingDept.value = false
   }
 }
 
@@ -104,7 +145,10 @@ async function deleteAccount() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadDepts()
+})
 </script>
 
 <template>
@@ -148,6 +192,18 @@ onMounted(load)
             <div class="ds-list-item__content">
               <span class="ds-list-item__title">角色</span>
               <span class="ds-list-item__meta">{{ ROLE_LABEL[account.role] }}</span>
+            </div>
+          </div>
+          <div class="ds-list-item ds-list-item--divider cursor-pointer" @click="openDeptDialog">
+            <span class="ds-list-item__icon">
+              <Building2 :size="20" class="text-icon-secondary" />
+            </span>
+            <div class="ds-list-item__content">
+              <span class="ds-list-item__title">科室</span>
+              <span class="ds-list-item__meta">{{ account.primary_dept_name || '未绑定' }}</span>
+            </div>
+            <div class="ds-list-item__trailing">
+              <Pencil :size="16" class="text-icon-tertiary" />
             </div>
           </div>
           <div class="ds-list-item ds-list-item--divider">
@@ -233,6 +289,33 @@ onMounted(load)
         <div class="mt-[var(--spacer-16)] flex gap-[var(--spacer-12)]">
           <button type="button" class="ds-btn ds-btn--secondary ds-btn--block" @click="showResetDialog = false">取消</button>
           <button type="button" class="ds-btn ds-btn--primary ds-btn--block" :disabled="resetting" @click="submitReset">{{ resetting ? '重置中…' : '确认重置' }}</button>
+        </div>
+      </div>
+    </DsPopup>
+
+    <DsPopup v-model:show="showDeptDialog">
+      <div class="p-[var(--spacer-16)] pb-[var(--spacer-24)]">
+        <h3 class="mb-[var(--spacer-16)] text-heading-sm font-semibold text-text">
+          修改科室
+        </h3>
+        <p class="mb-[var(--spacer-12)] text-body-sm text-text-secondary">
+          为 <strong class="text-text">{{ account?.username }}</strong> 设置主科室。
+        </p>
+        <div class="flex flex-col gap-[var(--spacer-4)]">
+          <span class="text-body-sm text-text-secondary">科室<span class="text-[var(--status-error-default)]">*</span></span>
+          <select v-model.number="selectedDeptId" class="ds-input">
+            <option :value="0" disabled>请选择科室</option>
+            <option
+              v-for="opt in deptOptions"
+              :key="opt.id"
+              :value="opt.id"
+              :disabled="!isSuperAdmin && opt.id !== currentDeptId"
+            >{{ opt.label }}</option>
+          </select>
+        </div>
+        <div class="mt-[var(--spacer-16)] flex gap-[var(--spacer-12)]">
+          <button type="button" class="ds-btn ds-btn--secondary ds-btn--block" @click="showDeptDialog = false">取消</button>
+          <button type="button" class="ds-btn ds-btn--primary ds-btn--block" :disabled="savingDept" @click="submitDept">{{ savingDept ? '保存中…' : '保存' }}</button>
         </div>
       </div>
     </DsPopup>

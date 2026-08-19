@@ -174,6 +174,9 @@ describe('AC-ARCH-FE-* 架构约束', () => {
     ]
 
     for (const file of [...tsFiles, ...vueFiles]) {
+      const rel = relPath(file)
+      // 豁免：sanitize-html 是富文本 XSS 消毒器，DOM 解析/重建是其核心职责（安全关键代码）。
+      if (rel.startsWith('shared/utils/sanitize-html.ts')) continue
       const content = readFileSync(file, 'utf-8')
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
@@ -181,7 +184,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
         if (isCommentLine(line)) continue
         for (const pattern of domPatterns) {
           if (pattern.test(line)) {
-            violations.push(`${relPath(file)}:${i + 1}: ${line.trim()}`)
+            violations.push(`${rel}:${i + 1}: ${line.trim()}`)
           }
         }
       }

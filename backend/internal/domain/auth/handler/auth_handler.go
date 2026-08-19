@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -82,11 +83,17 @@ type createAccountRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Role     string `json:"role"`
+	DeptID   int64  `json:"dept_id"`
 }
 
 // resetPasswordRequest 超级管理员重置用户密码请求体。
 type resetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
+}
+
+// updateDeptRequest 修改账户科室请求体。
+type updateDeptRequest struct {
+	DeptID int64 `json:"dept_id"`
 }
 
 // refreshResponse 刷新响应体。
@@ -161,41 +168,43 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	response.WriteOK(w, refreshResponse{Access: access, Refresh: refresh})
 }
 
-// Logout POST /api/auth/logout — 登出（JWT 认证，将 refresh token 加黑名单）。
-func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	var req logoutRequest
+// handleSingleFieldAction 处理"解码单字段请求 + 校验非空 + 调用无返回 service + 写成功"的端点流程，
+// 抽离 Logout/PasswordResetRequest 的重复样板（fieldValue 取出被校验的请求字段）。
+func handleSingleFieldAction[T any](
+	w http.ResponseWriter, r *http.Request,
+	fieldName string, fieldValue func(*T) string,
+	action func(context.Context, string) error,
+) {
+	var req T
 	if err := decodeJSON(r, &req); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
-	if req.Refresh == "" {
-		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "refresh 字段必填"))
+	val := fieldValue(&req)
+	if val == "" {
+		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", fieldName+" 字段必填"))
 		return
 	}
-	if err := h.svc.Logout(r.Context(), req.Refresh); err != nil {
+	if err := action(r.Context(), val); err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
 	response.WriteOK(w, successResponse{Success: true})
 }
 
+// Logout POST /api/auth/logout — 登出（JWT 认证，将 refresh token 加黑名单）。
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	handleSingleFieldAction(w, r, "refresh",
+		func(q *logoutRequest) string { return q.Refresh },
+		h.svc.Logout)
+}
+
 // PasswordResetRequest POST /api/auth/password-reset/request — 请求密码重置。
 // 生成重置 token 存入 Redis（TTL 15 分钟），始终返回成功（安全设计：不泄露用户是否存在）。
 func (h *AuthHandler) PasswordResetRequest(w http.ResponseWriter, r *http.Request) {
-	var req passwordResetRequestRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	if req.Username == "" {
-		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "username 字段必填"))
-		return
-	}
-	if err := h.svc.RequestPasswordReset(r.Context(), req.Username); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	response.WriteOK(w, successResponse{Success: true})
+	handleSingleFieldAction(w, r, "username",
+		func(q *passwordResetRequestRequest) string { return q.Username },
+		h.svc.RequestPasswordReset)
 }
 
 // PasswordResetConfirm POST /api/auth/password-reset/confirm — 确认密码重置。
@@ -315,7 +324,7 @@ func (h *AuthHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 // CreateAccount POST /api/staff/auth/accounts — 管理员创建账户（JWT + RequireAdmin，201）。
 // 角色提权收口在 service 层：非 SUPER_ADMIN 不得创建管理员角色账户。
 func (h *AuthHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
-	_, actorRole, _, ok := currentIdentity(r)
+	_, actorRole, actorDeptID, ok := currentIdentity(r)
 	if !ok {
 		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
 		return
@@ -337,7 +346,9 @@ func (h *AuthHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "role 字段必填"))
 		return
 	}
-	account, err := h.svc.CreateAccount(r.Context(), actorRole, req.Username, req.Password, req.Role)
+	account, err := h.svc.CreateAccount(
+		r.Context(), actorRole, actorDeptID, req.Username, req.Password, req.Role, req.DeptID,
+	)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -421,6 +432,32 @@ func (h *AuthHandler) setAccountActive(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	response.WriteOK(w, successResponse{Success: true})
+}
+
+// UpdateAccountDept PATCH /api/staff/auth/accounts/{id}/department — 修改账户主科室（JWT + RequireAdmin）。
+// 权限收口在 service 层：超管可改任意；科室管理员仅本科室账户且只能改成本科室。
+func (h *AuthHandler) UpdateAccountDept(w http.ResponseWriter, r *http.Request) {
+	_, actorRole, actorDeptID, ok := currentIdentity(r)
+	if !ok {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
+		return
+	}
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || targetID <= 0 {
+		response.WriteError(w, r, apperrors.BadRequest("AUTH_INVALID_ID", "账户 ID 无效"))
+		return
+	}
+	var req updateDeptRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	account, err := h.svc.UpdateAccountDept(r.Context(), actorRole, actorDeptID, targetID, req.DeptID)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, account)
 }
 
 // currentIdentity 从 JWT 中间件注入的 ctx 提取操作者 (userID, role, deptID)。

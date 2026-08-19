@@ -18,6 +18,7 @@ type User struct {
 	IsActive         bool
 	IsDeleted        bool
 	PrimaryDeptID    int64
+	PrimaryDeptName  string // View 字段：主科室名（JOIN departments 填充，写操作忽略）
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }

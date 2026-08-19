@@ -112,3 +112,11 @@ export function resetStaffAccountPassword(id: number, newPassword: string) {
 export function deleteStaffAccount(id: number) {
   return apiClient<SuccessResponse>(`/staff/auth/accounts/${id}`, { method: 'DELETE' });
 }
+
+/** 修改账户主科室（超管可改任意；科室管理员仅本科室账户且只能改成本科室） */
+export function updateStaffAccountDept(id: number, deptId: number) {
+  return apiClient<StaffAccount>(`/staff/auth/accounts/${id}/department`, {
+    method: 'PATCH',
+    body: { dept_id: deptId },
+  });
+}

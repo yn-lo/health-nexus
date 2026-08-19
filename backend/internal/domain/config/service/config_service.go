@@ -118,12 +118,13 @@ func (s *ConfigService) audit(ctx context.Context, action, entityType string, en
 	}
 
 	// 1. slog 双写（保留原有日志行为，operator_id 用数值化修复空串问题）
-	args := []any{
+	args := make([]any, 0, 8+len(slogKV))
+	args = append(args,
 		"action", action,
 		"entity_type", entityType,
 		"operator_id", operatorID,
 		"entity_id", entityID,
-	}
+	)
 	args = append(args, slogKV...)
 	slog.InfoContext(ctx, "config: audit", args...)
 

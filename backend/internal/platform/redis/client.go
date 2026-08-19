@@ -15,13 +15,25 @@ func NewClient(cfg config.RedisConfig) *redis.Client {
 		Addr:            cfg.Addr,
 		Password:        cfg.Password,
 		DB:              cfg.DB,
-		DialTimeout:     5 * time.Second,
-		ReadTimeout:     3 * time.Second,
-		WriteTimeout:    3 * time.Second,
-		PoolSize:        20,
-		MinIdleConns:    5,
-		ConnMaxIdleTime: 5 * time.Minute,
-		MaxRetries:      3,
-		PoolTimeout:     4 * time.Second,
+		DialTimeout:     redisDialTimeout,
+		ReadTimeout:     redisReadTimeout,
+		WriteTimeout:    redisWriteTimeout,
+		PoolSize:        redisPoolSize,
+		MinIdleConns:    redisMinIdleConns,
+		ConnMaxIdleTime: redisConnMaxIdleTime,
+		MaxRetries:      redisMaxRetries,
+		PoolTimeout:     redisPoolTimeout,
 	})
 }
+
+// go-redis 连接默认参数（数字语义集中在常量，避免魔法值）。
+const (
+	redisDialTimeout     = 5 * time.Second
+	redisReadTimeout     = 3 * time.Second
+	redisWriteTimeout    = 3 * time.Second
+	redisPoolSize        = 20
+	redisMinIdleConns    = 5
+	redisConnMaxIdleTime = 5 * time.Minute
+	redisMaxRetries      = 3
+	redisPoolTimeout     = 4 * time.Second
+)

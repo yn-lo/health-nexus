@@ -10,14 +10,14 @@ server:
     - "::1/128"
 
 postgres:
-  dsn: "postgres://health:health@localhost:5432/health_nexus?sslmode=disable"
+  dsn: "postgres://health:4b605c71292e231391b2a40d63d9fe5b@localhost:5432/health_nexus?sslmode=disable"
   max_conns: 25
   min_conns: 5
   max_conn_lifetime: 1h
 
 redis:
   addr: "localhost:6379"
-  password: ""
+  password: "4d58f1021dfc47f2f701a5be6f249a91"
   db: 0
 
 jwt:

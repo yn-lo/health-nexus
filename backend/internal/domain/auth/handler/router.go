@@ -77,5 +77,6 @@ func (h *AuthHandler) Mount(
 		r.Post("/accounts/{id}/unlock", h.UnlockAccount)
 		r.Delete("/accounts/{id}", h.SoftDeleteAccount)
 		r.Post("/accounts/{id}/reset-password", h.ResetAccountPassword)
+		r.Patch("/accounts/{id}/department", h.UpdateAccountDept)
 	})
 }

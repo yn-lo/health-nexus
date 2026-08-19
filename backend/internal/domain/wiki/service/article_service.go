@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -905,7 +906,8 @@ func (s *ArticleService) revokeReferencesAfterArticleChange(ctx context.Context,
 	}
 }
 
-// assertCanManage 校验：作者本人或本科室医护（或超管）可编辑/提交/删除（REQ-SEC-002）。
+// assertCanManage 校验：超管 / 本科室管理员 / 作者本人可编辑/提交/删除（REQ-SEC-002）。
+// 权限矩阵：超管任意科室任意文章；科室管理员本科室任意文章；普通医护仅本人文章。
 func assertCanManage(a *entity.Article, actor Actor) error {
 	if actor.Role == constants.RoleSuperAdmin {
 		return nil
@@ -913,20 +915,24 @@ func assertCanManage(a *entity.Article, actor Actor) error {
 	if a.AuthorID == actor.UserID {
 		return nil
 	}
-	if a.DepartmentID != nil && *a.DepartmentID == actor.DeptID {
+	// 科室管理员可操作本科室任意文章（含他人）。
+	if actor.Role == constants.RoleDeptAdmin && a.DepartmentID != nil && *a.DepartmentID == actor.DeptID {
 		return nil
 	}
 	return apperrors.Forbidden("WIKI_FORBIDDEN", "无权操作该文章")
 }
 
-// assertCanAuthorOrAdmin 校验：仅作者本人或超管可操作（用于 Update/Delete，契约 §4.5/4.7）。
-// 同科室非作者仍返回 403——契约原文 "非作者或非本科室" 取并集，意为"既需是作者又需是本科室"，
-// 简化为：作者满足"作者且本科室"（作者本身必属于其文章科室），超管跨作者豁免。
+// assertCanAuthorOrAdmin 校验：超管 / 本科室管理员 / 作者本人可操作（用于 Update/Delete，契约 §4.5/4.7）。
+// 权限矩阵：超管任意文章；科室管理员本科室任意文章；普通医护仅本人文章。
 func assertCanAuthorOrAdmin(a *entity.Article, actor Actor) error {
 	if actor.Role == constants.RoleSuperAdmin {
 		return nil
 	}
 	if a.AuthorID == actor.UserID {
+		return nil
+	}
+	// 科室管理员可操作本科室任意文章（含他人）。
+	if actor.Role == constants.RoleDeptAdmin && a.DepartmentID != nil && *a.DepartmentID == actor.DeptID {
 		return nil
 	}
 	return apperrors.Forbidden("WIKI_FORBIDDEN", "无权操作该文章")
@@ -1036,7 +1042,9 @@ func auditSummary(a *entity.Article) string {
 var reHTMLTags = regexp.MustCompile(`<[^>]*>`)
 
 func stripHTMLTags(s string) string {
-	return reHTMLTags.ReplaceAllString(s, "")
+	// 先剥标签，再解码 HTML 实体（如 &quot;→"、&amp;→&），
+	// 否则自动摘要会残留字面量实体，前端纯文本渲染时原样显示为 &quot;。
+	return html.UnescapeString(reHTMLTags.ReplaceAllString(s, ""))
 }
 
 // truncateRunes 按 rune 截断字符串，避免截断多字节字符。

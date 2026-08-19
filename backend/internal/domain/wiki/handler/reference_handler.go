@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"health-nexus/internal/domain/wiki/service"
@@ -115,26 +116,10 @@ func (h *ReferenceHandler) Approve(w http.ResponseWriter, r *http.Request) {
 
 // Reject POST /api/staff/wiki/references/{reference_id}/reject — 驳回引用申请（REQ-WIKI-022）。
 func (h *ReferenceHandler) Reject(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	id, err := parseReferenceID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req reasonRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	if err := h.svc.RejectReference(r.Context(), id, req.Reason, actor); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	writeSuccess(w)
+	actorIDAction(w, r, parseReferenceID,
+		func(ctx context.Context, id int64, req *reasonRequest, actor service.Actor) error {
+			return h.svc.RejectReference(ctx, id, req.Reason, actor)
+		})
 }
 
 // Revoke DELETE /api/staff/wiki/references/{reference_id} — 撤销引用授权（approved→revoked，REQ-WIKI-022）。

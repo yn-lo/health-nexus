@@ -31,6 +31,12 @@ import (
 // defaultWorkerConcurrency asynq worker 默认并发数。
 const defaultWorkerConcurrency = 10
 
+// outboxRelayInterval outbox 兜底投递的轮询间隔。
+const outboxRelayInterval = 30 * time.Second
+
+// shutdownTimeout worker 优雅关闭的等待超时。
+const shutdownTimeout = 30 * time.Second
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -76,7 +82,7 @@ func main() {
 	outboxRepo := repository.NewOutboxRepo(infra.Pool)
 	outboxEnqueuer := adapter.NewAsynqVectorizeEnqueuer(infra.AsynqClient)
 	outboxRelay := adapter.NewOutboxRelay(outboxRepo, outboxEnqueuer)
-	go outboxRelay.Start(ctx, 30*time.Second)
+	go outboxRelay.Start(ctx, outboxRelayInterval)
 
 	srv := asynq.NewServer(cfg.Redis, defaultWorkerConcurrency)
 
@@ -108,7 +114,7 @@ func main() {
 	<-ctx.Done()
 	slog.Info("worker shutdown signal received")
 	// 优雅关闭：srv.Shutdown + scheduler.Shutdown，30s 超时后强制退出。
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 	done := make(chan struct{})
 	go func() {
@@ -185,7 +191,8 @@ func startWorkerLLMReloadSubscriber(
 					return
 				}
 				slog.Info("llm: worker received reload notification", "channel", msg.Channel)
-				reloadCtx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
+				// 用订阅 ctx（收到关闭信号即取消），而非 Background，避免 goroutine 泄漏并跟随 worker 生命周期。
+				reloadCtx, cancel := context.WithTimeout(ctx, reloadTimeout)
 				if err := adapter.ReloadAndSwap(reloadCtx, sc, infra.Pool, aesKey, llmCfg); err != nil {
 					slog.Error("llm: worker hot-reload failed", "err", err)
 				}

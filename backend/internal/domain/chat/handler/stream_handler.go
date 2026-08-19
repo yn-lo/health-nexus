@@ -100,7 +100,7 @@ func parseStreamInput(r *http.Request) (service.StreamInput, error) {
 		SelectedDeptID *int64 `json:"selected_dept_id"`
 	}
 	// 限 1MB 防大报文耗尽内存（匿名端点无鉴权门槛，风险最高；与 auth/wiki handler 一致）。
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return service.StreamInput{}, apperrors.BadRequest("CHAT_INVALID_PARAM", "请求体须为 JSON")
 	}

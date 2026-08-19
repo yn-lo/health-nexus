@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"health-nexus/internal/domain/wiki/service"
@@ -346,24 +347,8 @@ type setFeaturedRequest struct {
 }
 
 func (h *StaffArticleHandler) SetFeatured(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	id, err := parseArticleID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req setFeaturedRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	if err := h.svc.SetFeaturedRank(r.Context(), id, req.Rank, actor); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	writeSuccess(w)
+	actorIDAction(w, r, parseArticleID,
+		func(ctx context.Context, id int64, req *setFeaturedRequest, actor service.Actor) error {
+			return h.svc.SetFeaturedRank(ctx, id, req.Rank, actor)
+		})
 }

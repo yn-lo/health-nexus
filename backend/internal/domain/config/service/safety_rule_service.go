@@ -13,22 +13,33 @@ import (
 
 // ============ Safety Rule ============
 
+// listCategoryCatalog 按 category 过滤 + 分页 + 转换响应的通用列表流程，
+// 抽离 ListSafetyRules/ListSensitiveWords 的重复样板（两域目录接口结构一致）。
+func listCategoryCatalog[T any, R any](
+	ctx context.Context, category string, validCategories []string,
+	list func(context.Context, string, pagination.Params) ([]*T, int64, error),
+	conv func(*T) R, p pagination.Params,
+) (out []R, total int64, err error) {
+	if category != "" && !slices.Contains(validCategories, category) {
+		return nil, 0, apperrors.Validation("CONFIG_INVALID_CATEGORY", "category 无效")
+	}
+	var items []*T
+	items, total, err = list(ctx, category, p)
+	if err != nil {
+		return nil, 0, err
+	}
+	out = make([]R, 0, len(items))
+	for _, item := range items {
+		out = append(out, conv(item))
+	}
+	return out, total, nil
+}
+
 // ListSafetyRules 列出安全规则，可选 category 过滤，分页。
 func (s *ConfigService) ListSafetyRules(
 	ctx context.Context, category string, p pagination.Params,
 ) ([]SafetyRuleResponse, int64, error) {
-	if category != "" && !slices.Contains(safetyCategories, category) {
-		return nil, 0, apperrors.Validation("CONFIG_INVALID_CATEGORY", "category 无效")
-	}
-	items, total, err := s.safetyRuleRepo.List(ctx, category, p)
-	if err != nil {
-		return nil, 0, err
-	}
-	out := make([]SafetyRuleResponse, 0, len(items))
-	for _, item := range items {
-		out = append(out, toSafetyRuleResponse(item))
-	}
-	return out, total, nil
+	return listCategoryCatalog(ctx, category, safetyCategories, s.safetyRuleRepo.List, toSafetyRuleResponse, p)
 }
 
 // CreateSafetyRule 创建安全规则。Pattern 必须是合法正则（REQ-CONFIG-004）。

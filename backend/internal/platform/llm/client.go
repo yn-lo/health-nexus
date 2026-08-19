@@ -78,7 +78,7 @@ func normalizeBaseURL(baseURL string, isFullURL bool) string {
 
 // versionSuffixRe 匹配已含版本段的 base URL 结尾（如 /v1、/v4）。
 // v1beta 之类不带版本号结尾的 URL 不匹配，仍会追加 /v1。
-var versionSuffixRe = regexp.MustCompile(`/v[0-9]+$`)
+var versionSuffixRe = regexp.MustCompile(`/v\d+$`)
 
 // newOpenAIClient 工厂：依据 baseURL/apiKey/timeout 构造 OpenAI 兼容客户端。
 // Transport 加固无条件设置——R8-Config-5 修复：TLS 握手/连接复用/HTTP2 必须始终启用；
@@ -120,43 +120,49 @@ func NewClient(cfg config.LLMConfig) (*Client, error) {
 	return &Client{chat: chat, cfg: cfg, httpClient: hc}, nil
 }
 
-// NewEmbeddingClient 依据 cfg.Embedding 子配置创建独立 embedding 客户端（OpenAI 兼容）。
-// 子配置零值字段回退到主配置（BaseURL/APIKey/Timeout 通用，Model→EmbeddingModel）。
-// API key 为空（含回退后）时返回 nil，让上层（SearchService/VectorizeHandler）走降级路径。
-func NewEmbeddingClient(cfg config.LLMConfig) (*Client, error) {
-	baseURL, apiKey, model, timeout := resolveProvider(
-		cfg.Embedding, cfg.BaseURL, cfg.APIKey, cfg.EmbeddingModel, cfg.Timeout,
-	)
+// newSubModelClient 创建独立的子模型客户端（embedding/rewrite 共享同一套回退与降级逻辑）。
+// pc 为子 provider 配置（零值字段回退到主配置）；setModel 把解析出的模型名写入 derived 对应字段。
+// API key 为空（含回退后）时返回 nil，上层走降级路径。
+func newSubModelClient(
+	cfg config.LLMConfig,
+	pc config.ProviderConfig,
+	fallbackModel, absentWarn string,
+	setModel func(*config.LLMConfig, string),
+) (*Client, error) {
+	baseURL, apiKey, model, timeout := resolveProvider(pc, cfg.BaseURL, cfg.APIKey, fallbackModel, cfg.Timeout)
 	if apiKey == "" {
-		slog.Warn("llm: embedding API key not configured, embedding will be unavailable")
+		slog.Warn(absentWarn)
 		return nil, nil
 	}
 	derived := cfg
 	derived.BaseURL = normalizeBaseURL(baseURL, false)
 	derived.APIKey = apiKey
-	derived.EmbeddingModel = model
 	derived.Timeout = timeout
+	setModel(&derived, model)
 	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, false)
 	return &Client{chat: chat, cfg: derived, httpClient: hc}, nil
+}
+
+// NewEmbeddingClient 依据 cfg.Embedding 子配置创建独立 embedding 客户端（OpenAI 兼容）。
+// 子配置零值字段回退到主配置（BaseURL/APIKey/Timeout 通用，Model→EmbeddingModel）。
+// API key 为空（含回退后）时返回 nil，让上层（SearchService/VectorizeHandler）走降级路径。
+func NewEmbeddingClient(cfg config.LLMConfig) (*Client, error) {
+	return newSubModelClient(
+		cfg, cfg.Embedding, cfg.EmbeddingModel,
+		"llm: embedding API key not configured, embedding will be unavailable",
+		func(c *config.LLMConfig, m string) { c.EmbeddingModel = m },
+	)
 }
 
 // NewRewriteClient 依据 cfg.Rewrite 子配置创建独立 rewrite 客户端（OpenAI 兼容）。
 // 子配置零值字段回退到主配置（BaseURL/APIKey/Timeout 通用，Model→RewriteModel）。
 // API key 为空（含回退后）时返回 nil，让上层（di 装配）回退到主 chat client。
 func NewRewriteClient(cfg config.LLMConfig) (*Client, error) {
-	baseURL, apiKey, model, timeout := resolveProvider(
-		cfg.Rewrite, cfg.BaseURL, cfg.APIKey, cfg.RewriteModel, cfg.Timeout)
-	if apiKey == "" {
-		slog.Warn("llm: rewrite API key not configured, rewrite will fallback to main chat client")
-		return nil, nil
-	}
-	derived := cfg
-	derived.BaseURL = normalizeBaseURL(baseURL, false)
-	derived.APIKey = apiKey
-	derived.RewriteModel = model
-	derived.Timeout = timeout
-	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, false)
-	return &Client{chat: chat, cfg: derived, httpClient: hc}, nil
+	return newSubModelClient(
+		cfg, cfg.Rewrite, cfg.RewriteModel,
+		"llm: rewrite API key not configured, rewrite will fallback to main chat client",
+		func(c *config.LLMConfig, m string) { c.RewriteModel = m },
+	)
 }
 
 // NewRerankClient 依据 cfg.Rerank 子配置创建独立 rerank 客户端（原生 /v1/rerank API）。

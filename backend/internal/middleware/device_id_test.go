@@ -9,8 +9,9 @@ import (
 	"health-nexus/internal/shared/contextkeys"
 )
 
-// passThrough 记录请求是否到达下游并捕获 ctx 中的 device_id。
-func runRequireDeviceID(deviceID string) (int, string) {
+// runRequireDeviceID 记录请求是否到达下游并捕获 ctx 中的 device_id。
+// 返回 HTTP 状态码与下游捕获到的 device_id。
+func runRequireDeviceID(deviceID string) (httpCode int, deviceIDCaptured string) {
 	var gotID string
 	h := RequireDeviceID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotID, _ = r.Context().Value(contextkeys.DeviceID).(string)
@@ -40,11 +41,11 @@ func TestRequireDeviceID_MissingHeader(t *testing.T) {
 
 func TestRequireDeviceID_InvalidFormat(t *testing.T) {
 	cases := []string{
-		"short",                              // 过短（<8）
-		"包含中文的设备标识符哦",                    // 非 ASCII 字符
-		"device id with spaces 123",          // 空格
-		"a:b:c:d:e",                          // 冒号（Redis key 分隔符，防 key 结构污染）
-		"abc\n\rinjection",                   // 控制字符
+		"short",                     // 过短（<8）
+		"包含中文的设备标识符哦",               // 非 ASCII 字符
+		"device id with spaces 123", // 空格
+		"a:b:c:d:e",                 // 冒号（Redis key 分隔符，防 key 结构污染）
+		"abc\n\rinjection",          // 控制字符
 		"012345678901234567890123456789012345678901234567890123456789012345", // 过长（>64）
 	}
 	for _, c := range cases {

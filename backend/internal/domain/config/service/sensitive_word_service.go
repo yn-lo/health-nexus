@@ -17,18 +17,7 @@ import (
 func (s *ConfigService) ListSensitiveWords(
 	ctx context.Context, category string, p pagination.Params,
 ) ([]SensitiveWordResponse, int64, error) {
-	if category != "" && !slices.Contains(sensitiveCategories, category) {
-		return nil, 0, apperrors.Validation("CONFIG_INVALID_CATEGORY", "category 无效")
-	}
-	items, total, err := s.sensitiveWordRepo.List(ctx, category, p)
-	if err != nil {
-		return nil, 0, err
-	}
-	out := make([]SensitiveWordResponse, 0, len(items))
-	for _, item := range items {
-		out = append(out, toSensitiveWordResponse(item))
-	}
-	return out, total, nil
+	return listCategoryCatalog(ctx, category, sensitiveCategories, s.sensitiveWordRepo.List, toSensitiveWordResponse, p)
 }
 
 // CreateSensitiveWord 创建敏感词。

@@ -9,13 +9,20 @@ import { useRouter } from 'vue-router'
 import { UserCog, Eye, EyeOff } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
 import { AppHeader, DsPopup, StatRow, DsFilterTabs, DsSearchBox } from '@/shared/components'
-import { authApi, errmsg, usePagedList, getUserStored } from '@/shared'
-import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, type UserRole } from '@/shared/constants/roles'
+import { authApi, errmsg, usePagedList, getUserStored, useDepartmentOptions } from '@/shared'
+import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, SUPER_ADMIN_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount, StaffAccountCreateRequest } from '@/shared'
 
 const router = useRouter()
 const { showSuccessToast, showFailToast } = useDsToast()
-const currentUserId = getUserStored()?.id ?? 0
+const currentUser = getUserStored()
+const currentUserId = currentUser?.id ?? 0
+/** 是否超管：超管可自由选择科室；科室管理员只能绑定本科室 */
+const isSuperAdmin = currentUser?.role === SUPER_ADMIN_ROLE
+const currentDeptId = currentUser?.dept_id ?? 0
+
+// 科室选项（staff 端含未公开科室），仅超管创建账户时可选
+const { options: deptOptions, load: loadDepts } = useDepartmentOptions()
 
 // ponytail: 后端支持分页，但单页 50 足以覆盖典型部署的账户规模；超量时再加翻页 UI
 const { items: accounts, loading, load } = usePagedList<StaffAccount>({
@@ -74,7 +81,8 @@ const form = ref<StaffAccountCreateRequest>(defaultForm())
 
 function defaultForm(): StaffAccountCreateRequest {
  // 默认选最后一个医护角色（NURSE）— 通过常量索引避免硬编码字面量
- return { username: '', password: '', role: STAFF_ROLES[STAFF_ROLES.length - 1] }
+ // 科室管理员创建账户默认绑定本科室；超管默认不选（需手动选择）
+ return { username: '', password: '', role: STAFF_ROLES[STAFF_ROLES.length - 1], dept_id: isSuperAdmin ? 0 : currentDeptId }
 }
 
 function openCreate() {
@@ -89,36 +97,44 @@ async function submit() {
  return
  }
  if (form.value.password.length < 8 || !/\p{L}/u.test(form.value.password) || !/\p{N}/u.test(form.value.password)) {
- showFailToast('密码至少 8 位，需含字母和数字')
- return
+  showFailToast('密码至少 8 位，需含字母和数字')
+  return
+ }
+ // 超管创建医护/管理员账户必须绑定科室（患者无需科室）
+ if (isSuperAdmin && !PATIENT_ROLES.includes(form.value.role) && !form.value.dept_id) {
+  showFailToast('请选择科室')
+  return
  }
  try {
- await authApi.createStaffAccount({ ...form.value, username: u })
- showSuccessToast('已创建')
- showEditor.value = false
- await load()
+  await authApi.createStaffAccount({ ...form.value, username: u })
+  showSuccessToast('已创建')
+  showEditor.value = false
+  await load()
  } catch (e) {
- showFailToast(errmsg(e, '创建失败'))
+  showFailToast(errmsg(e, '创建失败'))
  }
 }
 
 async function toggleLock(a: StaffAccount) {
  try {
- if (a.is_active) {
- await authApi.lockStaffAccount(a.id)
- a.is_active = false
- showSuccessToast('已锁定')
- } else {
- await authApi.unlockStaffAccount(a.id)
- a.is_active = true
- showSuccessToast('已解锁')
- }
+  if (a.is_active) {
+   await authApi.lockStaffAccount(a.id)
+   a.is_active = false
+   showSuccessToast('已锁定')
+  } else {
+   await authApi.unlockStaffAccount(a.id)
+   a.is_active = true
+   showSuccessToast('已解锁')
+  }
  } catch (e) {
- showFailToast(errmsg(e, '操作失败'))
+  showFailToast(errmsg(e, '操作失败'))
  }
 }
 
-onMounted(load)
+onMounted(() => {
+ load()
+ if (isSuperAdmin) loadDepts()
+})
 </script>
 
 <template>
@@ -151,6 +167,7 @@ onMounted(load)
  </span>
  <span class="ds-list-item__meta">
  <span class="ds-tag ds-tag--primary ds-tag--plain">{{ ROLE_LABEL[a.role] }}</span>
+ <span v-if="a.primary_dept_name" class="text-body-xs text-text-tertiary">{{ a.primary_dept_name }}</span>
  <span>· {{ a.is_active ? '正常' : '已锁定' }}</span>
  </span>
  </div>
@@ -205,6 +222,13 @@ onMounted(load)
  @click="form.role = opt.value"
  >{{ opt.label }}<span v-if="form.role === opt.value" class="ds-tab-underline" /></button>
  </div>
+ </div>
+ <div v-if="isSuperAdmin && !PATIENT_ROLES.includes(form.role)" class="flex flex-col gap-[var(--spacer-4)]">
+ <span class="text-body-sm text-text-secondary">科室<span class="text-[var(--status-error-default)]">*</span></span>
+ <select v-model.number="form.dept_id" class="ds-input">
+ <option :value="0" disabled>请选择科室</option>
+ <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+ </select>
  </div>
  </div>
  <div class="mt-[var(--spacer-16)] flex gap-[var(--spacer-12)]">

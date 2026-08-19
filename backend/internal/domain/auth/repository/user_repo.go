@@ -23,62 +23,49 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
 
-// GetByUsername 按用户名查询用户，LEFT JOIN user_departments 取主科室 ID。
-// 仅返回未删除用户。未找到返回 (nil, nil)，由 service 层映射为业务错误。
-func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.User, error) {
-	const q = `
-		SELECT u.id, u.username, u.role, u.password_hash,
-		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
-		       u.is_active, u.is_deleted,
-		       u.created_at, u.updated_at,
-		       COALESCE(ud.department_id, 0) AS primary_dept_id
-		FROM users u
-		LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = TRUE
-		WHERE u.username = $1 AND u.is_deleted = false`
+// userSelectPrefix 用户查询的公共 SELECT 列 + JOIN（WHERE 谓词由用户区分）。
+const userSelectPrefix = `
+	SELECT u.id, u.username, u.role, u.password_hash,
+	       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
+	       u.is_active, u.is_deleted,
+	       u.created_at, u.updated_at,
+	       COALESCE(ud.department_id, 0) AS primary_dept_id,
+	       COALESCE(d.name, '') AS primary_dept_name
+	FROM users u
+	LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = TRUE
+	LEFT JOIN departments d ON d.id = ud.department_id
+	WHERE `
+
+// getUser 执行单行用户查询并扫描。how 用于错误消息（by username / by id）。
+func (r *UserRepo) getUser(ctx context.Context, predicate string, arg any, how string) (*entity.User, error) {
+	q := userSelectPrefix + predicate
 	u := &entity.User{}
-	err := r.pool.QueryRow(ctx, q, username).Scan(
+	err := r.pool.QueryRow(ctx, q, arg).Scan(
 		&u.ID, &u.Username, &u.Role, &u.PasswordHash,
 		&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
 		&u.IsActive, &u.IsDeleted,
 		&u.CreatedAt, &u.UpdatedAt,
-		&u.PrimaryDeptID,
+		&u.PrimaryDeptID, &u.PrimaryDeptName,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("query user by username: %w", err)
+		return nil, fmt.Errorf("query user %s: %w", how, err)
 	}
 	return u, nil
+}
+
+// GetByUsername 按用户名查询用户，LEFT JOIN user_departments 取主科室 ID。
+// 仅返回未删除用户。未找到返回 (nil, nil)，由 service 层映射为业务错误。
+func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.User, error) {
+	return r.getUser(ctx, "u.username = $1 AND u.is_deleted = false", username, "by username")
 }
 
 // GetByID 按 ID 查询用户，LEFT JOIN user_departments 取主科室 ID。
 // 仅返回未删除用户。未找到返回 (nil, nil)，由 service 层映射为业务错误。
 func (r *UserRepo) GetByID(ctx context.Context, id int64) (*entity.User, error) {
-	const q = `
-		SELECT u.id, u.username, u.role, u.password_hash,
-		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
-		       u.is_active, u.is_deleted,
-		       u.created_at, u.updated_at,
-		       COALESCE(ud.department_id, 0) AS primary_dept_id
-		FROM users u
-		LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = TRUE
-		WHERE u.id = $1 AND u.is_deleted = false`
-	u := &entity.User{}
-	err := r.pool.QueryRow(ctx, q, id).Scan(
-		&u.ID, &u.Username, &u.Role, &u.PasswordHash,
-		&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
-		&u.IsActive, &u.IsDeleted,
-		&u.CreatedAt, &u.UpdatedAt,
-		&u.PrimaryDeptID,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query user by id: %w", err)
-	}
-	return u, nil
+	return r.getUser(ctx, "u.id = $1 AND u.is_deleted = false", id, "by id")
 }
 
 // UpdatePasswordHash 更新用户密码哈希。
@@ -144,9 +131,11 @@ func (r *UserRepo) List(ctx context.Context, limit, offset int) ([]*entity.User,
 		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
 		       u.is_active, u.is_deleted,
 		       u.created_at, u.updated_at,
-		       COALESCE(ud.department_id, 0) AS primary_dept_id
+		       COALESCE(ud.department_id, 0) AS primary_dept_id,
+		       COALESCE(d.name, '') AS primary_dept_name
 		FROM users u
 		LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = TRUE
+		LEFT JOIN departments d ON d.id = ud.department_id
 		WHERE u.is_deleted = false
 		ORDER BY u.id ASC
 		LIMIT $1 OFFSET $2`
@@ -164,7 +153,7 @@ func (r *UserRepo) List(ctx context.Context, limit, offset int) ([]*entity.User,
 			&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
 			&u.IsActive, &u.IsDeleted,
 			&u.CreatedAt, &u.UpdatedAt,
-			&u.PrimaryDeptID,
+			&u.PrimaryDeptID, &u.PrimaryDeptName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan user: %w", err)
 		}
@@ -194,10 +183,12 @@ func (r *UserRepo) ListByDept(ctx context.Context, deptID, limit, offset int64) 
 		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
 		       u.is_active, u.is_deleted,
 		       u.created_at, u.updated_at,
-		       COALESCE(ud2.department_id, 0) AS primary_dept_id
+		       COALESCE(ud2.department_id, 0) AS primary_dept_id,
+		       COALESCE(d2.name, '') AS primary_dept_name
 		FROM users u
 		JOIN user_departments ud ON ud.user_id = u.id AND ud.department_id = $1
 		LEFT JOIN user_departments ud2 ON ud2.user_id = u.id AND ud2.is_primary = TRUE
+		LEFT JOIN departments d2 ON d2.id = ud2.department_id
 		WHERE u.is_deleted = false
 		ORDER BY u.id ASC
 		LIMIT $2 OFFSET $3`
@@ -215,7 +206,7 @@ func (r *UserRepo) ListByDept(ctx context.Context, deptID, limit, offset int64) 
 			&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
 			&u.IsActive, &u.IsDeleted,
 			&u.CreatedAt, &u.UpdatedAt,
-			&u.PrimaryDeptID,
+			&u.PrimaryDeptID, &u.PrimaryDeptName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan user by dept: %w", err)
 		}
@@ -247,4 +238,48 @@ func (r *UserRepo) Create(ctx context.Context, username, passwordHash, role stri
 	}
 	// 新用户无 user_departments 行，PrimaryDeptID 保持零值 0。
 	return u, nil
+}
+
+// SetPrimaryDept 设置用户主科室（user_departments.is_primary=true）。
+// 幂等：若已存在该 (user_id, department_id) 行则更新 is_primary；否则插入。
+// 依赖 uq_user_departments_one_primary 部分唯一索引保证每用户至多一个主科室。
+func (r *UserRepo) SetPrimaryDept(ctx context.Context, userID, deptID int64) error {
+	const q = `
+		INSERT INTO user_departments (user_id, department_id, is_primary)
+		VALUES ($1, $2, TRUE)
+		ON CONFLICT (user_id, department_id)
+		DO UPDATE SET is_primary = TRUE`
+	if _, err := r.pool.Exec(ctx, q, userID, deptID); err != nil {
+		return fmt.Errorf("set primary dept: %w", err)
+	}
+	return nil
+}
+
+// UpdatePrimaryDept 切换用户主科室（事务内：旧主科室置 false，新科室置 true）。
+// 用于账户管理"修改科室"端点。新科室行不存在时插入，已存在（兼任）时更新为 primary。
+func (r *UserRepo) UpdatePrimaryDept(ctx context.Context, userID, deptID int64) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// 旧主科室（若有）置 false
+	if _, err := tx.Exec(ctx,
+		`UPDATE user_departments SET is_primary = FALSE WHERE user_id = $1 AND is_primary = TRUE`,
+		userID); err != nil {
+		return fmt.Errorf("clear old primary dept: %w", err)
+	}
+	// 新科室置 true（不存在则插入）
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO user_departments (user_id, department_id, is_primary)
+		VALUES ($1, $2, TRUE)
+		ON CONFLICT (user_id, department_id)
+		DO UPDATE SET is_primary = TRUE`, userID, deptID); err != nil {
+		return fmt.Errorf("set new primary dept: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }

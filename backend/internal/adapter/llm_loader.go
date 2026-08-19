@@ -44,5 +44,8 @@ func buildClientFromEntity(p *entity.AIProvider, aesKey []byte) (*llm.Client, er
 	if err != nil {
 		return nil, fmt.Errorf("decrypt api key: %w", err)
 	}
-	return llm.NewClientFromProvider(p.ProviderType, p.APIURL, apiKey, p.ModelName, llmClientTimeout, p.Parameters, p.IsFullURL), nil
+	return llm.NewClientFromProvider(
+		p.ProviderType, p.APIURL, apiKey, p.ModelName,
+		llmClientTimeout, p.Parameters, p.IsFullURL,
+	), nil
 }

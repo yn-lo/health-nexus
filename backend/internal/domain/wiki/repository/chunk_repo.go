@@ -171,7 +171,8 @@ func (r *ChunkRepo) SearchByFullText(
 	if topK <= 0 || query == "" {
 		return nil, nil
 	}
-	args := []any{query, topK}
+	args := make([]any, 0, 3)
+	args = append(args, query, topK)
 	visSQL, nextArg := deptVisibilitySQL(deptIDs, len(args)+1, &args)
 	args = append(args, constants.ArticleStatusPublished)
 

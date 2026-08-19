@@ -41,6 +41,7 @@ function goMenu(routeName: string) {
 
 async function handleLogout() {
   await authStore.logout()
+  // ponytail:allow-location 跨 MPA 跳转（chat → 登录页），非 SPA 内部路由
   window.location.href = '/login'
 }
 </script>

@@ -57,9 +57,10 @@ func (r *CrisisRepo) Create(ctx context.Context, e *entity.CrisisEvent) (int64, 
 // GetByID 按 ID 取危机事件；不存在返回 (nil, ErrNotFound)（D-MED-05 修复，对齐 wiki repo 哨兵错误模式）。
 // LockedDeptID 派生自 conversations.locked_dept_id（未锁定科室为 0），供科室归属校验。
 func (r *CrisisRepo) GetByID(ctx context.Context, id int64) (*entity.CrisisEvent, error) {
-	const sql = `SELECT c.id, c.patient_id, c.conversation_id, c.message_id, c.triggered_content, c.matched_keywords, c.level,
-	                    c.is_handled, c.handler_id, c.handled_at, c.handle_note, c.created_at,
-	                    COALESCE(conv.locked_dept_id, 0)
+	const sql = `SELECT c.id, c.patient_id, c.conversation_id, c.message_id,
+	             c.triggered_content, c.matched_keywords, c.level,
+	             c.is_handled, c.handler_id, c.handled_at, c.handle_note, c.created_at,
+	             COALESCE(conv.locked_dept_id, 0)
 	             FROM crisis_events c
 	             LEFT JOIN conversations conv ON conv.id = c.conversation_id
 	             WHERE c.id = $1`
@@ -132,12 +133,12 @@ func (r *CrisisRepo) List(
 	for rows.Next() {
 		row := &CrisisListRow{}
 		if err := rows.Scan(
-			&row.CrisisEvent.ID, &row.CrisisEvent.PatientID,
-			&row.CrisisEvent.ConversationID, &row.CrisisEvent.MessageID,
-			&row.CrisisEvent.TriggeredContent, &row.CrisisEvent.MatchedKeywords,
-			&row.CrisisEvent.Level, &row.CrisisEvent.IsHandled,
-			&row.CrisisEvent.HandlerID, &row.CrisisEvent.HandledAt,
-			&row.CrisisEvent.HandleNote, &row.CrisisEvent.CreatedAt,
+			&row.ID, &row.PatientID,
+			&row.ConversationID, &row.MessageID,
+			&row.TriggeredContent, &row.MatchedKeywords,
+			&row.Level, &row.IsHandled,
+			&row.HandlerID, &row.HandledAt,
+			&row.HandleNote, &row.CreatedAt,
 			&row.PatientName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan crisis event: %w", err)

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -107,6 +108,35 @@ func currentActor(r *http.Request) (service.Actor, error) {
 	}
 	deptID, _ := ctx.Value(contextkeys.DeptID).(int64) // omitempty，PATIENT/部分账号可能为 0
 	return service.Actor{UserID: uid, Role: role, DeptID: deptID}, nil
+}
+
+// actorIDAction 封装"取当前操作者 + 解析 id + 解码请求体 + 调用 service + 写成功"的动作端点流程，
+// 抽离 Reject/SetFeatured 等"按 id + 请求字段 + 操作者"类 handler 的重复样板。
+func actorIDAction[R any](
+	w http.ResponseWriter, r *http.Request,
+	parseID func(*http.Request) (int64, error),
+	act func(context.Context, int64, *R, service.Actor) error,
+) {
+	actor, err := currentActor(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	id, err := parseID(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	var req R
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	if err := act(r.Context(), id, &req, actor); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	writeSuccess(w)
 }
 
 // parseArticleID 解析 {article_id} 路径参数为 int64。

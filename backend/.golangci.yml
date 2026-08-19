@@ -1,201 +1,207 @@
-# golangci-lint 配置 — Go 后端代码风格与静态检查门禁
+# golangci-lint 配置 — Go 后端代码风格与静态检查门禁（v2）
 # 文档: https://golangci-lint.run/usage/configuration/
-# 约束对应: harness/go/specs/conventions.md
-#           harness/go/specs/architecture/boundaries.md §5
-
+# 约束对应: .harness/specs/conventions.md, .harness/specs/architecture/boundaries.md §5
+# 由 `golangci-lint migrate` 从 v1 自动迁移；v1 语法不再兼容，修改请遵照 v2 语法。
+version: "2"
 run:
-  timeout: 5m
   go: "1.22"
-  tests: true
   modules-download-mode: readonly
-
+  tests: true
 output:
   formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-
-# ============================================================================
-# 启用的 linter
-# ============================================================================
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 linters:
-  disable-all: true
+  default: none
   enable:
-    # ---------- 默认必要 ----------
-    - errcheck       # AC-ARCH-08: 错误必须显式处理（不允许 _ = ...）
-    - govet          # go vet 基本检查
-    - ineffassign    # 无效赋值
-    - staticcheck    # AC-ARCH-10: 死代码 (U1000) + 综合 SA 系列
-    - unused         # 未引用代码
-
-    # ---------- 编码规范 ----------
-    - gofmt          # 格式化
-    - goimports      # import 分组与排序
-    - lll            # AC-ARCH-06: 单行长度 ≤ 120 字符
-    - funlen         # AC-ARCH-06: 函数 ≤ 80 行 / 60 statements
-    - gocyclo        # 圈复杂度 ≤ 15
-    - gocritic       # 通用代码改进建议
-    - misspell       # 拼写检查
-    - revive         # golint 替代，风格检查
-    - mnd            # 魔法值检测（数字常量应命名；gomnd 于 v1.58.0 重命名为 mnd）
-
-    # ---------- 安全 ----------
-    - gosec          # AC-SEC: G104 忽略错误、G304 路径遍历、G306 文件权限等
-
-    # ---------- 项目特定 ----------
-    - forbidigo      # 禁用 fmt.Println/log.Printf 等
-    - depguard       # import 白名单/黑名单
-    - nakedret        # 禁止裸 return
-    - prealloc        # 切片预分配建议
-    - unconvert       # 移除不必要类型转换
-    - unparam         # 检测未使用的函数参数
-
-# ============================================================================
-# linter 配置
-# ============================================================================
-linters-settings:
-  errcheck:
-    # AC-ARCH-08: 检查所有错误（包括类型断言和 defer）
-    check-type-assertions: true
-    check-blank: false          # _ = err 单独豁免（由 gosec G104 覆盖）
-    exclude-functions:
-      - (io.Closer).Close       # defer f.Close() 是惯用模式
-
-  funlen:
-    lines: 80
-    statements: 60
-    ignore-comments: true
-
-  lll:
-    line-length: 120
-    tab-width: 4
-
-  gocyclo:
-    min-complexity: 15
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - hugeParam         # 大值传递有时不可避免（entity struct）
-      - rangeValCopy      # 已用指针
-
-  revive:
-    severity: warning
+    - depguard
+    - dupl          # 重复代码块（克隆）检测——补齐重复代码门禁
+    - errcheck
+    - forbidigo
+    - funlen
+    - gocritic
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - mnd
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck   # 死代码 (U1000) + 综合 SA 系列
+    - unconvert
+    - unparam
+    - unused        # 未引用代码
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: ^log$
+              desc: use log/slog instead
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog instead
+            - pkg: github.com/pkg/errors
+              desc: use standard errors + %w
+            - pkg: github.com/golang/protobuf
+              desc: use google.golang.org/protobuf
+        test-only:
+          files:
+            - '**_test.go'
+            - '**/test/**'
+          deny:
+            - pkg: github.com/stretchr/testify
+              desc: use standard testing + errors.As (mock 由手写实现)
+    dupl:
+      threshold: 100
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print(ln|f)?\(
+        - pattern: ^log\.Print(ln|f)?\(
+        - pattern: ^panic\(
+        - pattern: ^os\.Exit\(
+    funlen:
+      lines: 80
+      statements: 60
+      ignore-comments: true
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G104
+      config:
+        global:
+          audit: true
+    lll:
+      line-length: 120
+      tab-width: 4
+    mnd:
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+      ignored-functions:
+        - strconv.ParseInt
+        - strconv.ParseUint
+        - strconv.ParseFloat
+        - strconv.Itoa
+        - strconv.FormatInt
+        - strconv.FormatFloat
+        - fmt.Sprintf
+        - fmt.Errorf
+        - errors.New
+        - slog.Info
+        - slog.Warn
+        - slog.Error
+        - slog.Debug
+        - make
+        - append
+    revive:
+      severity: warning
+      rules:
+        - name: exported
+          disabled: true
+        - name: var-naming
+          arguments:
+            - - ID
+              - URL
+              - HTTP
+              - JSON
+            - - vm
+              - ip
+  exclusions:
+    generated: lax
     rules:
-      - name: exported
-        disabled: true    # 已由注释规范覆盖
-      - name: var-naming
-        arguments: [["ID", "URL", "HTTP", "JSON"], ["vm", "ip"]]
-
-  gosec:
-    excludes:
-      - G104              # errcheck 已覆盖
-    config:
-      global:
-        audit: true
-
-  forbidigo:
-    forbid:
-      - ^fmt\.Print(ln|f)?\(        # 禁用 fmt.Print*（生产用 slog）
-      - ^log\.Print(ln|f)?\(        # 禁用 log 标准库
-      - ^panic\(                     # 禁用 panic（业务代码）
-      - ^os\.Exit\(                  # 禁用 os.Exit（仅 cmd/ 允许）
-
-  depguard:
-    rules:
-      main:
-        deny:
-          - pkg: "^log$"            # 仅禁标准库 log 包，不影响 log/slog（正则精确匹配）
-            desc: "use log/slog instead"
-          - pkg: "github.com/sirupsen/logrus"
-            desc: "use log/slog instead"
-          - pkg: "github.com/pkg/errors"
-            desc: "use standard errors + %w"
-          - pkg: "github.com/golang/protobuf"
-            desc: "use google.golang.org/protobuf"
-      test-only:
-        files:
-          - "**_test.go"
-          - "**/test/**"
-        deny:
-          - pkg: "github.com/stretchr/testify"
-            desc: "use standard testing + errors.As (mock 由手写实现)"
-
-  goimports:
-    local-prefixes: health-nexus
-
-  goconst:
-    min-occurrence: 3
-    min-length: 3
-    ignore-tests: true
-    match-constant: true
-    numbers: false
-    min-len: 2
-
-  mnd:
-    # 魔法值检测：数字应命名为常量。白名单如下（合法的直接数字）。
-    # 注：linter 于 v1.58.0 从 gomnd 重命名为 mnd，配置键同步改为 mnd（旧的 gomnd.settings.mnd 嵌套不生效）。
-    # 不检查以下函数的参数（通常是协议/格式参数，数字语义明确）
-    ignored-functions:
-      - 'strconv.ParseInt'
-      - 'strconv.ParseUint'
-      - 'strconv.ParseFloat'
-      - 'strconv.Itoa'
-      - 'strconv.FormatInt'
-      - 'strconv.FormatFloat'
-      - 'fmt.Sprintf'
-      - 'fmt.Errorf'
-      - 'errors.New'
-      - 'slog.Info'
-      - 'slog.Warn'
-      - 'slog.Error'
-      - 'slog.Debug'
-      - 'make'
-      - 'append'
-    # 不检查以下数字（0/1 是基础值，2 偶尔用于成对操作）
-    ignored-numbers: ['0', '1', '2']
-
-# ============================================================================
-# 排除规则
-# ============================================================================
+      - linters:
+          - dupl
+          - errcheck
+          - funlen
+          - gocyclo
+          - gosec
+          - lll
+          - unparam
+        path: _test\.go
+      - linters:
+          - dupl
+          - errcheck
+          - funlen
+          - gocyclo
+          - gosec
+          - lll
+          - unparam
+        path: tests/integration
+      - linters:
+          - forbidigo
+        path: cmd/
+      - linters:
+          - funlen
+          - gocritic
+          - gocyclo
+          - lll
+          - revive
+        path: wire_gen\.go
+      - linters:
+          - dupl
+          - errcheck
+          - funlen
+          - gocritic
+          - gocyclo
+          - gosec
+          - lll
+          - revive
+          - unparam
+        path: internal/platform/postgres/sqlc/
+      - linters:
+          - all
+        path: migrations/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    # 测试代码豁免部分 linter
-    - path: _test\.go
-      linters: [gocyclo, funlen, errcheck, gosec, lll, unparam]
-    # 测试集成目录豁免
-    - path: tests/integration
-      linters: [gocyclo, funlen, errcheck, gosec]
-    # cmd/ 入口允许 os.Exit / panic（启动失败）
-    - path: cmd/
-      linters: [forbidigo]
-    # wire_gen.go 是生成文件，豁免所有 linter
-    - path: wire_gen\.go
-      linters: [gocritic, goimports, revive, gocyclo, funlen, lll]
-    # sqlc 生成代码豁免
-    - path: internal/platform/postgres/sqlc/
-      linters: [gocritic, revive, gocyclo, funlen, lll, errcheck, gosec, unparam]
-    # migrations 豁免
-    - path: migrations/
-      linters: [all]
-
-  # 不显示误报
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-
-# ============================================================================
-# 新版本检查
-# ============================================================================
 severity:
-  default-severity: warning
+  default: warning
   rules:
-    - linters: [gosec]
+    - linters:
+        - gosec
       severity: error
-    - linters: [staticcheck]
+    - linters:
+        - staticcheck
       severity: error
-    - linters: [errcheck]
+    - linters:
+        - errcheck
       severity: error
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - health-nexus
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - wire_gen\.go

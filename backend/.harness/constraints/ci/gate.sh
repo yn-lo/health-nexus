@@ -161,6 +161,19 @@ run_p0() {
     warn "golangci-lint 未安装，已跳过 P0-7 lint（CI 服务器应装齐；本地可 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest）"
   fi
 
+  # P0-7b 全程序可达性死代码扫描（golang.org/x/tools/cmd/deadcode）
+  # 与 P0-7 的 unused/staticcheck U1000 互补：unused 按构建上下文分析，
+  # deadcode 从 main/init 做整包可达性分析，能抓「仅被未用导出间接引用」的死函数。
+  if has_tool deadcode; then
+    capture_fail \
+      "deadcode 发现不可达的死代码" \
+      "删除 deadcode 报告中的未使用符号（非测试产物）" \
+      "golang.org/x/tools/cmd/deadcode" \
+      -- deadcode ./...
+  else
+    warn "deadcode 未安装，已跳过 P0-7b 全程序死代码扫描（go install golang.org/x/tools/cmd/deadcode@latest；CI 服务器应装齐）"
+  fi
+
   # P0-8 数据库迁移完整性（goose 命名规范 + 编号唯一连续）
   if [ -d migrations ]; then
     local mig_bad=0

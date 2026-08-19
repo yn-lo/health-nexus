@@ -107,7 +107,7 @@ func (h *CrisisHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	var req HandleRequest
 	// body 可选——空 body 也能处理。限 1MB 防大报文耗尽内存（与 auth/wiki handler 一致）。
 	if r.ContentLength > 0 {
-		r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+		r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			response.WriteError(w, r, apperrors.Validation("CHAT_CRISIS_BODY_INVALID", "请求体格式错误"))
 			return

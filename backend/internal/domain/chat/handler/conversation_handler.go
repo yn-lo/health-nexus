@@ -13,6 +13,9 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
+// maxBodyBytes 请求体大小上限（1MB），防大报文耗尽内存。chat 域各 handler 共用。
+const maxBodyBytes = 1 << 20
+
 // 消息列表分页上限（契约 §3.6：默认 50，最大 200）。
 const (
 	defaultMessagesLimit = 50
@@ -94,7 +97,7 @@ func (h *ConversationHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req PatchRequest
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	// ponytail: 空 body 返回 io.EOF，与未知字段/类型错误统一映射为 CHAT_PATCH_BODY_INVALID，折中，
@@ -184,7 +187,7 @@ func (h *ConversationHandler) Feedback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req FeedbackRequest
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {

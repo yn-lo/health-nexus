@@ -140,7 +140,7 @@ func (rl *RateLimiter) resolveLimit(ctx context.Context, scope string, defaultLi
 }
 
 // globalScopePrefix 全局共享限流桶前缀：scope 以此开头时所有请求共享同一个桶
-//（不按 user/device/IP 区分），用于匿名端点的总量保护——
+// （不按 user/device/IP 区分），用于匿名端点的总量保护——
 // 防止攻击者批量伪造 device_id 绕过单设备限流。
 const globalScopePrefix = "global:"
 

@@ -353,7 +353,8 @@ func startLLMReloadSubscriber(
 					return
 				}
 				slog.Info("llm: received reload notification", "channel", msg.Channel)
-				reloadCtx, cancel := context.WithTimeout(context.Background(), reloadTimeout)
+				// 用订阅 ctx（收到关闭信号即取消），而非 Background，避免 goroutine 泄漏并跟随服务生命周期。
+				reloadCtx, cancel := context.WithTimeout(ctx, reloadTimeout)
 				if err := adapter.ReloadAndSwap(reloadCtx, sc, infra.Pool, aesKey, llmCfg); err != nil {
 					slog.Error("llm: hot-reload failed", "err", err)
 				}

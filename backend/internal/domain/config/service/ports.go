@@ -20,6 +20,8 @@ type AIProviderPort interface {
 }
 
 // SensitiveWordPort 敏感词仓储能力。
+//
+//nolint:dupl // SensitiveWordPort 与 SafetyRulePort 为不同域的 CRUD 接口，结构相近但语义独立，合并成泛型过度设计
 type SensitiveWordPort interface {
 	List(ctx context.Context, category string, p pagination.Params) ([]*entity.SensitiveWord, int64, error)
 	Get(ctx context.Context, id int64) (*entity.SensitiveWord, error)
@@ -29,6 +31,8 @@ type SensitiveWordPort interface {
 }
 
 // SafetyRulePort 安全规则仓储能力。
+//
+//nolint:dupl // 同上：SafetyRulePort 为安全规则域 CRUD 接口，与 SensitiveWordPort 结构相近但语义独立
 type SafetyRulePort interface {
 	List(ctx context.Context, category string, p pagination.Params) ([]*entity.SafetyRule, int64, error)
 	Get(ctx context.Context, id int64) (*entity.SafetyRule, error)

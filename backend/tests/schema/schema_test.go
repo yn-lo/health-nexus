@@ -109,7 +109,7 @@ func toSnakeCase(name string) string {
 // goColumns 通过反射获取 entity struct 的 DB 列名列表（排除 View 字段）。
 func goColumns(entity any, viewFields map[string]bool) []string {
 	t := reflect.TypeOf(entity)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	var cols []string

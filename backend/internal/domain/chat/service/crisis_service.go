@@ -72,22 +72,22 @@ func (s *CrisisService) List(
 	out := make([]*CrisisListItem, 0, len(rows))
 	for _, r := range rows {
 		item := &CrisisListItem{
-			ID:               r.CrisisEvent.ID,
-			PatientID:        r.CrisisEvent.PatientID,
+			ID:               r.ID,
+			PatientID:        r.PatientID,
 			PatientName:      r.PatientName,
-			ConversationID:   r.CrisisEvent.ConversationID.String(),
-			TriggeredContent: r.CrisisEvent.TriggeredContent,
-			MatchedKeywords:  r.CrisisEvent.MatchedKeywords,
-			Level:            r.CrisisEvent.Level,
-			IsHandled:        r.CrisisEvent.IsHandled,
-			HandleNote:       r.CrisisEvent.HandleNote,
-			CreatedAt:        r.CrisisEvent.CreatedAt.Format(timeRFC3339),
+			ConversationID:   r.ConversationID.String(),
+			TriggeredContent: r.TriggeredContent,
+			MatchedKeywords:  r.MatchedKeywords,
+			Level:            r.Level,
+			IsHandled:        r.IsHandled,
+			HandleNote:       r.HandleNote,
+			CreatedAt:        r.CreatedAt.Format(timeRFC3339),
 		}
-		if r.CrisisEvent.HandlerID != nil {
-			item.HandlerID = r.CrisisEvent.HandlerID
+		if r.HandlerID != nil {
+			item.HandlerID = r.HandlerID
 		}
-		if r.CrisisEvent.HandledAt != nil {
-			s := r.CrisisEvent.HandledAt.Format(timeRFC3339)
+		if r.HandledAt != nil {
+			s := r.HandledAt.Format(timeRFC3339)
 			item.HandledAt = &s
 		}
 		if item.MatchedKeywords == nil {

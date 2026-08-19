@@ -25,7 +25,7 @@ import { AppHeader } from '@/shared/components'
 import { wikiApi, useDepartmentOptions, stripHtml } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import { useAuthStore } from '@/stores/auth'
-import { ADMIN_ROLES } from '@/shared/constants/roles'
+import { ADMIN_ROLES, SUPER_ADMIN_ROLE } from '@/shared/constants/roles'
 import type { ArticleStatus, ArticleChunk } from '@/shared'
 
 const router = useRouter()
@@ -39,6 +39,17 @@ const isAdmin = computed(() => {
  const role = authStore.user?.role
  return !!role && (ADMIN_ROLES as readonly string[]).includes(role)
 })
+
+/** 是否超管：超管可写任意科室文章，其余医护/科室管理员仅能写本科室 */
+const isSuperAdmin = computed(() => authStore.user?.role === SUPER_ADMIN_ROLE)
+/** 当前用户主科室 ID（医护/科室管理员仅能在此科室创作） */
+const ownDeptId = computed(() => authStore.user?.dept_id ?? null)
+/** 科室选择器可选范围：超管可见全部科室，其余只可见本科室 */
+const allowedDepartments = computed(() =>
+ isSuperAdmin.value
+ ? departmentOptions.value
+ : departmentOptions.value.filter((o) => o.id === ownDeptId.value),
+)
 
 const title = ref('')
 const departmentId = ref<number | null>(null)
@@ -166,12 +177,16 @@ async function saveDraft() {
   }
 }
 
-/** 提交审核（创建或更新后提交） */
+/** 提交审核（创建或更新后提交）。草稿/新建才真正提交；已是 pending/published 则无需重复提交 */
 async function submitReview() {
   saving.value = true
   try {
     const articleId = await ensureArticleSaved()
-    await wikiApi.submitArticle(articleId)
+    const st = articleStatus.value
+    if (st !== 'pending' && st !== 'published') {
+      await wikiApi.submitArticle(articleId)
+    }
+    showSuccessToast(st === 'published' ? '已保存' : (st === 'pending' ? '已在审核中' : '已提交审核'))
     router.push({ name: 'staff-articles' })
   } catch (e) {
     showFailToast(errmsg(e, '提交失败'))
@@ -185,13 +200,16 @@ async function publishDirectly() {
   saving.value = true
   try {
     const articleId = await ensureArticleSaved()
-    // 已是 pending 状态则无需再 submit
-    if (articleStatus.value !== 'pending') {
-      await wikiApi.submitArticle(articleId)
-    }
+  const st = articleStatus.value
+  // 直接发布 = 草稿/新建：先提交再审核通过；pending：仅审核通过；已发布：更新已保持发布，无需再走状态机
+  if (st !== 'pending' && st !== 'published') {
+    await wikiApi.submitArticle(articleId)
+  }
+  if (st !== 'published') {
     await wikiApi.approveArticle(articleId)
-    showSuccessToast('发布成功')
-    router.push({ name: 'staff-articles' })
+  }
+  showSuccessToast(st === 'published' ? '已保存' : '发布成功')
+  router.push({ name: 'staff-articles' })
   } catch (e) {
     showFailToast(errmsg(e, '发布失败'))
   } finally {
@@ -284,7 +302,13 @@ onMounted(async () => {
  // 科室列表用于下拉选择（GET /api/base/departments 需 JWT + RequireStaff）
  loadDepartments()
 
- if (!isEditMode.value) return
+ if (!isEditMode.value) {
+   // 医护/科室管理员仅能在本科室创作，自动锁定主科室为默认选择
+   if (!isSuperAdmin.value && ownDeptId.value !== null) {
+     departmentId.value = ownDeptId.value
+   }
+   return
+ }
  try {
  const article = await wikiApi.getMyArticle(Number(route.params.id))
  title.value = article.title
@@ -346,9 +370,10 @@ onMounted(async () => {
  <select
  v-model="departmentId"
  class="ds-select"
+ :disabled="!isSuperAdmin"
  >
  <option :value="null" disabled>请选择科室</option>
- <option v-for="opt in departmentOptions" :key="opt.id" :value="opt.id">
+ <option v-for="opt in allowedDepartments" :key="opt.id" :value="opt.id">
  {{ opt.label }}
  </option>
  </select>
@@ -512,15 +537,6 @@ onMounted(async () => {
  v-if="!isAdmin"
  type="button"
  class="h-8 flex-1 rounded-[var(--ds-control-radius-md)] border border-transparent bg-[var(--bg-brand)] font-heading text-body-base font-medium text-white transition-colors hover:bg-[var(--bg-brand-hover)] disabled:opacity-50"
- :disabled="saving"
- @click="submitReview"
- >
- 提交审核
- </button>
- <button
- v-if="isAdmin"
- type="button"
- class="h-8 flex-1 rounded-[var(--ds-control-radius-md)] border border-[var(--border-neutral-l1)] bg-[var(--bg-overlay-l1)] font-heading text-body-base font-medium text-text transition-colors hover:bg-[var(--bg-overlay-l2)] disabled:opacity-50"
  :disabled="saving"
  @click="submitReview"
  >

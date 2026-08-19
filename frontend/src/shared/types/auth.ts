@@ -73,6 +73,8 @@ export interface StaffAccount {
   gender: string
   emergency_contact: string
   emergency_phone: string
+  primary_dept_id: number
+  primary_dept_name: string
   is_active: boolean
   is_deleted: boolean
   created_at: string
@@ -83,6 +85,7 @@ export interface StaffAccountCreateRequest {
   username: string
   password: string
   role: UserRole
+  dept_id: number
 }
 
 /** POST /api/staff/auth/accounts/{id}/reset-password — 管理员重置用户密码请求体 */

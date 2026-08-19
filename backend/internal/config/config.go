@@ -13,8 +13,8 @@ import (
 
 // 已知开发占位密钥（config.yaml dev 默认值）。生产环境必须用环境变量覆盖。
 const (
-	DevJWTSecret     = "dev-jwt-secret-change-in-production"
-	DevEncryptionKey = "dev-encryption-key-change-in-production"
+	DevJWTSecret     = "dev-jwt-secret-change-in-production"     // #nosec G101 -- 开发占位密钥，生产用 env 覆盖
+	DevEncryptionKey = "dev-encryption-key-change-in-production" // #nosec G101 -- 开发占位密钥，生产用 env 覆盖
 )
 
 // WarnIfDevSecrets 安全密钥仍为开发占位值或为空时输出 ERROR 级启动告警。
@@ -47,9 +47,9 @@ const (
 	defaultArgon2KeyLength   = 32
 
 	// 限流默认值（次/分钟），运行时可通过 Redis rl_cfg:{scope} 热更新覆盖
-	defaultAuthLoginRateLimit      = 10
-	defaultAuthRegisterRateLimit   = 10
-	defaultAuthRefreshRateLimit    = 10
+	defaultAuthLoginRateLimit        = 10
+	defaultAuthRegisterRateLimit     = 10
+	defaultAuthRefreshRateLimit      = 10
 	defaultChatStreamRateLimit       = 20
 	defaultChatStreamAnonRateLimit   = 5
 	defaultChatStreamAnonGlobalLimit = 300
@@ -159,11 +159,11 @@ type SecurityConfig struct {
 // RateLimitConfig 限流默认值（启动时从 config.yaml 读取，运行时可通过 Redis 热更新覆盖）。
 // 零值字段使用 setDefaults 的硬编码默认值。
 type RateLimitConfig struct {
-	AuthLogin          int `mapstructure:"auth_login"`
-	AuthRegister       int `mapstructure:"auth_register"`
-	AuthRefresh        int `mapstructure:"auth_refresh"`
-	ChatStream         int `mapstructure:"chat_stream"`
-	ChatStreamAnon     int `mapstructure:"chat_stream_anon"`
+	AuthLogin            int `mapstructure:"auth_login"`
+	AuthRegister         int `mapstructure:"auth_register"`
+	AuthRefresh          int `mapstructure:"auth_refresh"`
+	ChatStream           int `mapstructure:"chat_stream"`
+	ChatStreamAnon       int `mapstructure:"chat_stream_anon"`
 	ChatStreamAnonGlobal int `mapstructure:"chat_stream_anon_global"`
 }
 

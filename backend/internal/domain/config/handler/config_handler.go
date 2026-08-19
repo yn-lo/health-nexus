@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -59,11 +60,7 @@ func (h *ConfigHandler) ListAIProviders(w http.ResponseWriter, r *http.Request) 
 		response.WriteError(w, r, err)
 		return
 	}
-	out := make([]service.AIProviderResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, p)
-	}
-	response.WriteOK(w, out)
+	response.WriteOK(w, list)
 }
 
 // GetAIProvider GET /api/staff/config/ai-providers/{id}
@@ -98,22 +95,7 @@ func (h *ConfigHandler) CreateAIProvider(w http.ResponseWriter, r *http.Request)
 
 // UpdateAIProvider PUT /api/staff/config/ai-providers/{id}
 func (h *ConfigHandler) UpdateAIProvider(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req service.UpdateAIProviderRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	p, err := h.svc.UpdateAIProvider(r.Context(), id, req)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	response.WriteOK(w, p)
+	updateOne(w, r, h.svc.UpdateAIProvider)
 }
 
 // DeleteAIProvider DELETE /api/staff/config/ai-providers/{id}
@@ -150,22 +132,7 @@ func (h *ConfigHandler) TestAIProvider(w http.ResponseWriter, r *http.Request) {
 
 // ListSensitiveWords GET /api/staff/config/sensitive-words
 func (h *ConfigHandler) ListSensitiveWords(w http.ResponseWriter, r *http.Request) {
-	p, err := pagination.Parse(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	category := r.URL.Query().Get("category")
-	list, total, err := h.svc.ListSensitiveWords(r.Context(), category, p)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	out := make([]service.SensitiveWordResponse, 0, len(list))
-	for _, w := range list {
-		out = append(out, w)
-	}
-	response.WriteOK(w, pagination.NewResult(out, total, p))
+	listByCategory(w, r, h.svc.ListSensitiveWords)
 }
 
 // CreateSensitiveWord POST /api/staff/config/sensitive-words
@@ -199,44 +166,14 @@ func (h *ConfigHandler) DeleteSensitiveWord(w http.ResponseWriter, r *http.Reque
 
 // UpdateSensitiveWord PUT /api/staff/config/sensitive-words/{id}（契约 §6.2.3）
 func (h *ConfigHandler) UpdateSensitiveWord(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req service.UpdateSensitiveWordRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	w2, err := h.svc.UpdateSensitiveWord(r.Context(), id, req)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	response.WriteOK(w, w2)
+	updateOne(w, r, h.svc.UpdateSensitiveWord)
 }
 
 // ============ Safety Rule ============
 
 // ListSafetyRules GET /api/staff/config/safety-rules
 func (h *ConfigHandler) ListSafetyRules(w http.ResponseWriter, r *http.Request) {
-	p, err := pagination.Parse(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	category := r.URL.Query().Get("category")
-	list, total, err := h.svc.ListSafetyRules(r.Context(), category, p)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	out := make([]service.SafetyRuleResponse, 0, len(list))
-	for _, rule := range list {
-		out = append(out, rule)
-	}
-	response.WriteOK(w, pagination.NewResult(out, total, p))
+	listByCategory(w, r, h.svc.ListSafetyRules)
 }
 
 // CreateSafetyRule POST /api/staff/config/safety-rules
@@ -256,22 +193,7 @@ func (h *ConfigHandler) CreateSafetyRule(w http.ResponseWriter, r *http.Request)
 
 // UpdateSafetyRule PUT /api/staff/config/safety-rules/{id}
 func (h *ConfigHandler) UpdateSafetyRule(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req service.UpdateSafetyRuleRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	rule, err := h.svc.UpdateSafetyRule(r.Context(), id, req)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	response.WriteOK(w, rule)
+	updateOne(w, r, h.svc.UpdateSafetyRule)
 }
 
 // DeleteSafetyRule DELETE /api/staff/config/safety-rules/{id}
@@ -335,11 +257,7 @@ func (h *ConfigHandler) ListPromptTemplates(w http.ResponseWriter, r *http.Reque
 		response.WriteError(w, r, err)
 		return
 	}
-	out := make([]service.PromptTemplateResponse, 0, len(list))
-	for _, t := range list {
-		out = append(out, t)
-	}
-	response.WriteOK(w, pagination.NewResult(out, total, p))
+	response.WriteOK(w, pagination.NewResult(list, total, p))
 }
 
 // CreatePromptTemplate POST /api/staff/config/prompts
@@ -360,22 +278,7 @@ func (h *ConfigHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Requ
 // UpdatePromptTemplate PUT /api/staff/config/prompts/{id}（契约 §6.6.3）
 // 请求体 {content?, is_active?}；is_active 由 false→true 时同 type+department_id 下其他自动失活。
 func (h *ConfigHandler) UpdatePromptTemplate(w http.ResponseWriter, r *http.Request) {
-	id, err := parseID(r)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	var req service.UpdatePromptTemplateRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	t, err := h.svc.UpdatePromptTemplate(r.Context(), id, req)
-	if err != nil {
-		response.WriteError(w, r, err)
-		return
-	}
-	response.WriteOK(w, t)
+	updateOne(w, r, h.svc.UpdatePromptTemplate)
 }
 
 // DeletePromptTemplate DELETE /api/staff/config/prompts/{id}（契约 §6.6.4）
@@ -461,14 +364,54 @@ func (h *ConfigHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	out := make([]service.ConfigAuditLogResponse, 0, len(list))
-	for _, l := range list {
-		out = append(out, l)
-	}
-	response.WriteOK(w, pagination.NewResult(out, total, p))
+	response.WriteOK(w, pagination.NewResult(list, total, p))
 }
 
 // ============ helpers ============
+
+// updateOne 封装 "解析 id + 解码请求体 + 调用 service + 写 OK" 的标准 Update 端点流程，
+// 抽离 UpdateAIProvider/UpdateSensitiveWord/UpdateSafetyRule/UpdatePromptTemplate 的重复样板。
+func updateOne[Req any, Res any](
+	w http.ResponseWriter, r *http.Request,
+	update func(context.Context, int64, Req) (Res, error),
+) {
+	id, err := parseID(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	var req Req
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	res, err := update(r.Context(), id, req)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, res)
+}
+
+// listByCategory 封装 "解析分页 + 读 category + 调用 service + 写分页结果" 的列表端点流程，
+// 抽离 ListSensitiveWords/ListSafetyRules 的重复样板。
+func listByCategory[R any](
+	w http.ResponseWriter, r *http.Request,
+	list func(context.Context, string, pagination.Params) ([]R, int64, error),
+) {
+	p, err := pagination.Parse(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	category := r.URL.Query().Get("category")
+	items, total, err := list(r.Context(), category, p)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, pagination.NewResult(items, total, p))
+}
 
 // parseID 从 chi URL 路径参数 "id" 解析 int64。
 func parseID(r *http.Request) (int64, error) {
