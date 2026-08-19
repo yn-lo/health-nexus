@@ -14,6 +14,7 @@ import type {
   ResetPasswordRequest,
 } from '../types/auth';
 import type { Paginated } from '../types/base';
+import type { UserRole } from '../constants/roles';
 
 /** 用户登出 — 后端要求 body 传 refresh token 才能加黑名单 */
 export function logout() {
@@ -80,8 +81,8 @@ export function updateProfile(data: UpdateProfileRequest) {
 
 // ===== 管理员账户管理（GET/POST /api/staff/auth/accounts，POST .../lock|unlock） =====
 
-/** 分页查询全部账户 */
-export function listStaffAccounts(params?: { page?: number; page_size?: number }) {
+/** 分页查询全部账户（超管可传 include_deleted=true 以包含已删除用户） */
+export function listStaffAccounts(params?: { page?: number; page_size?: number; include_deleted?: boolean }) {
   return apiClient<Paginated<StaffAccount>>('/staff/auth/accounts', { params });
 }
 
@@ -119,4 +120,17 @@ export function updateStaffAccountDept(id: number, deptId: number) {
     method: 'PATCH',
     body: { dept_id: deptId },
   });
+}
+
+/** 修改账户角色（仅超管；后端禁止修改自己的角色） */
+export function updateStaffAccountRole(id: number, role: UserRole) {
+  return apiClient<StaffAccount>(`/staff/auth/accounts/${id}/role`, {
+    method: 'PATCH',
+    body: { role },
+  });
+}
+
+/** 恢复软删除账户（仅超管） */
+export function restoreStaffAccount(id: number) {
+  return apiClient<StaffAccount>(`/staff/auth/accounts/${id}/restore`, { method: 'POST' });
 }

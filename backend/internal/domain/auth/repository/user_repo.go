@@ -117,16 +117,44 @@ func (r *UserRepo) SoftDelete(ctx context.Context, userID int64) error {
 	return nil
 }
 
-// List 分页查询用户列表（含锁定用户，不含已删除用户），按 id 升序，LEFT JOIN 取主科室 ID。
-// 返回 (用户切片, 总数, error)。总数为未删除用户计数（不受分页影响），供前端分页展示。
-func (r *UserRepo) List(ctx context.Context, limit, offset int) ([]*entity.User, int64, error) {
-	const countQ = `SELECT COUNT(*) FROM users WHERE is_deleted = false`
+// Restore 恢复软删除用户：将 is_deleted 置 false，同时重新启用账户（is_active=true）。
+// 用户不存在或未删除时返回 nil error（由调用方校验 user 是否存在）。
+func (r *UserRepo) Restore(ctx context.Context, userID int64) error {
+	const q = `UPDATE users SET is_deleted = false, is_active = true, ` +
+		`updated_at = NOW() WHERE id = $1 AND is_deleted = true`
+	_, err := r.pool.Exec(ctx, q, userID)
+	if err != nil {
+		return fmt.Errorf("restore user: %w", err)
+	}
+	return nil
+}
+
+// UpdateRole 更新用户角色。
+// 用户不存在时返回 nil error（由调用方校验 user 是否存在）。
+func (r *UserRepo) UpdateRole(ctx context.Context, userID int64, role string) error {
+	const q = `UPDATE users SET role = $2, updated_at = NOW() WHERE id = $1 AND is_deleted = false`
+	_, err := r.pool.Exec(ctx, q, userID, role)
+	if err != nil {
+		return fmt.Errorf("update user role: %w", err)
+	}
+	return nil
+}
+
+// List 分页查询用户列表（含锁定用户），按 id 升序，LEFT JOIN 取主科室 ID。
+// includeDeleted=true 时包含已删除用户（仅超管使用，用于展示并恢复）；否则仅未删除用户。
+// 返回 (用户切片, 总数, error)。总数为对应过滤条件下的用户计数（不受分页影响），供前端分页展示。
+func (r *UserRepo) List(ctx context.Context, limit, offset int, includeDeleted bool) ([]*entity.User, int64, error) {
+	deletedPred := "is_deleted = false"
+	if includeDeleted {
+		deletedPred = "TRUE"
+	}
+	countQ := `SELECT COUNT(*) FROM users WHERE ` + deletedPred
 	var total int64
 	if err := r.pool.QueryRow(ctx, countQ).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count users: %w", err)
 	}
 
-	const listQ = `
+	listQ := `
 		SELECT u.id, u.username, u.role, u.password_hash,
 		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
 		       u.is_active, u.is_deleted,
@@ -136,7 +164,7 @@ func (r *UserRepo) List(ctx context.Context, limit, offset int) ([]*entity.User,
 		FROM users u
 		LEFT JOIN user_departments ud ON ud.user_id = u.id AND ud.is_primary = TRUE
 		LEFT JOIN departments d ON d.id = ud.department_id
-		WHERE u.is_deleted = false
+		WHERE ` + deletedPred + `
 		ORDER BY u.id ASC
 		LIMIT $1 OFFSET $2`
 	rows, err := r.pool.Query(ctx, listQ, limit, offset)

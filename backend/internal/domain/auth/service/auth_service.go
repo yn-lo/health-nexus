@@ -56,7 +56,9 @@ type UserRepo interface {
 		gender, emergencyContact, emergencyPhone string) error
 	SetActive(ctx context.Context, userID int64, active bool) error
 	SoftDelete(ctx context.Context, userID int64) error
-	List(ctx context.Context, limit, offset int) ([]*entity.User, int64, error)
+	Restore(ctx context.Context, userID int64) error
+	UpdateRole(ctx context.Context, userID int64, role string) error
+	List(ctx context.Context, limit, offset int, includeDeleted bool) ([]*entity.User, int64, error)
 	ListByDept(ctx context.Context, deptID, limit, offset int64) ([]*entity.User, int64, error)
 }
 
@@ -475,8 +477,9 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID int64, phone str
 
 // ListAccounts 管理员分页查询账户列表。
 // 数据隔离：非 SUPER_ADMIN 仅查看本科室账户（通过 user_departments JOIN 过滤）。
+// includeDeleted 仅对 SUPER_ADMIN 生效：为 true 时包含已删除用户（用于展示并恢复）；非超管忽略该参数。
 func (s *AuthService) ListAccounts(ctx context.Context, actorRole string,
-	actorDeptID, page, pageSize int64) ([]AccountDTO, int64, error) {
+	actorDeptID, page, pageSize int64, includeDeleted bool) ([]AccountDTO, int64, error) {
 	offset := (page - 1) * pageSize
 	var (
 		users []*entity.User
@@ -484,7 +487,7 @@ func (s *AuthService) ListAccounts(ctx context.Context, actorRole string,
 		err   error
 	)
 	if actorRole == constants.RoleSuperAdmin {
-		users, total, err = s.repo.List(ctx, int(pageSize), int(offset))
+		users, total, err = s.repo.List(ctx, int(pageSize), int(offset), includeDeleted)
 	} else {
 		users, total, err = s.repo.ListByDept(ctx, actorDeptID, pageSize, offset)
 	}
@@ -635,6 +638,69 @@ func (s *AuthService) SoftDeleteUser(ctx context.Context, actorID int64, actorRo
 	}
 	slog.InfoContext(ctx, "user soft deleted", "actor_id", actorID, "target_id", targetID)
 	return nil
+}
+
+// RestoreUser 超级管理员恢复软删除用户。
+// 安全约束：仅 SUPER_ADMIN 可执行；目标必须为已删除用户。
+// 恢复同时重新启用账户（is_active=true），用户可重新登录。
+func (s *AuthService) RestoreUser(ctx context.Context, actorID int64, actorRole string, targetID int64) (*AccountDTO, error) {
+	if actorRole != constants.RoleSuperAdmin {
+		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可恢复用户")
+	}
+	target, err := s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("get target user: %w", err)
+	}
+	if target == nil {
+		return nil, apperrors.NotFound("AUTH_USER_NOT_FOUND", "用户不存在")
+	}
+	if !target.IsDeleted {
+		return nil, apperrors.Conflict("AUTH_NOT_DELETED", "该账户未被删除")
+	}
+	if err := s.repo.Restore(ctx, targetID); err != nil {
+		return nil, fmt.Errorf("restore user: %w", err)
+	}
+	// 重新加载用户以返回最新状态（is_deleted/is_active）。
+	target, err = s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("reload user: %w", err)
+	}
+	slog.InfoContext(ctx, "user restored", "actor_id", actorID, "target_id", targetID)
+	dto := accountDTO(target)
+	return &dto, nil
+}
+
+// UpdateAccountRole 超级管理员修改用户角色。
+// 安全约束：仅 SUPER_ADMIN 可执行；不可修改自己的角色（防止自我降级导致失去管理权限）。
+// 角色变更属提权敏感操作，收口在超管。
+func (s *AuthService) UpdateAccountRole(ctx context.Context, actorID int64, actorRole string, targetID int64, newRole string) (*AccountDTO, error) {
+	if actorRole != constants.RoleSuperAdmin {
+		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可修改角色")
+	}
+	if !validRole(newRole) {
+		return nil, apperrors.BadRequest("AUTH_ROLE_INVALID", "角色无效")
+	}
+	if actorID == targetID {
+		return nil, apperrors.Conflict("AUTH_SELF_ROLE", "不能修改自己的角色")
+	}
+	target, err := s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("get target user: %w", err)
+	}
+	if target == nil {
+		return nil, apperrors.NotFound("AUTH_USER_NOT_FOUND", "用户不存在")
+	}
+	if err := s.repo.UpdateRole(ctx, targetID, newRole); err != nil {
+		return nil, fmt.Errorf("update role: %w", err)
+	}
+	// 重新加载用户以返回最新角色。
+	target, err = s.repo.GetByID(ctx, targetID)
+	if err != nil {
+		return nil, fmt.Errorf("reload user: %w", err)
+	}
+	slog.InfoContext(ctx, "account role updated", "actor_id", actorID, "target_id", targetID, "role", newRole)
+	dto := accountDTO(target)
+	return &dto, nil
 }
 
 // ResetUserPassword 超级管理员重置用户密码。

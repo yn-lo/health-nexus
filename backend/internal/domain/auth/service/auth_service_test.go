@@ -47,6 +47,13 @@ type mockUserRepo struct {
 	softDeleteErr error
 	gotDeleteID   int64
 
+	restoreErr   error
+	gotRestoreID int64
+
+	updateRoleErr error
+	gotRoleID     int64
+	gotRole       string
+
 	listUsers []*entity.User
 	listTotal int64
 	listErr   error
@@ -112,7 +119,18 @@ func (m *mockUserRepo) SoftDelete(_ context.Context, userID int64) error {
 	return m.softDeleteErr
 }
 
-func (m *mockUserRepo) List(_ context.Context, _, _ int) ([]*entity.User, int64, error) {
+func (m *mockUserRepo) Restore(_ context.Context, userID int64) error {
+	m.gotRestoreID = userID
+	return m.restoreErr
+}
+
+func (m *mockUserRepo) UpdateRole(_ context.Context, userID int64, role string) error {
+	m.gotRoleID = userID
+	m.gotRole = role
+	return m.updateRoleErr
+}
+
+func (m *mockUserRepo) List(_ context.Context, _, _ int, _ bool) ([]*entity.User, int64, error) {
 	return m.listUsers, m.listTotal, m.listErr
 }
 
@@ -437,7 +455,7 @@ func TestListAccounts_HappyPath_ReturnsDTOs(t *testing.T) {
 		listTotal: 2,
 	}
 	svc := newTestAuthService(repo, nil)
-	dtos, total, err := svc.ListAccounts(context.Background(), constants.RoleSuperAdmin, 0, 1, 20)
+	dtos, total, err := svc.ListAccounts(context.Background(), constants.RoleSuperAdmin, 0, 1, 20, false)
 	if err != nil {
 		t.Fatalf("期望 nil，实际 %v", err)
 	}
@@ -452,7 +470,7 @@ func TestListAccounts_HappyPath_ReturnsDTOs(t *testing.T) {
 func TestListAccounts_RepoDown_PropagatesError(t *testing.T) {
 	repo := &mockUserRepo{listErr: errors.New("db down")}
 	svc := newTestAuthService(repo, nil)
-	_, _, err := svc.ListAccounts(context.Background(), constants.RoleSuperAdmin, 0, 1, 20)
+	_, _, err := svc.ListAccounts(context.Background(), constants.RoleSuperAdmin, 0, 1, 20, false)
 	if err == nil {
 		t.Fatal("期望 error，实际 nil")
 	}
@@ -553,6 +571,113 @@ func TestSetAccountActive_RepoDown_PropagatesError(t *testing.T) {
 	repo := &mockUserRepo{user: &entity.User{ID: 5, Role: constants.RolePatient, IsActive: true}, setActiveErr: errors.New("db down")}
 	svc := newTestAuthService(repo, nil)
 	err := svc.SetAccountActive(context.Background(), 1, constants.RoleSuperAdmin, 0, 5, false)
+	if err == nil {
+		t.Fatal("期望 error，实际 nil")
+	}
+}
+
+// ============================================================================
+// RestoreUser 测试
+// ============================================================================
+
+func TestRestoreUser_NonSuperAdmin_Returns403(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.RestoreUser(context.Background(), 1, constants.RoleDeptAdmin, 2)
+	assertAppErr(t, err, 403, "AUTH_FORBIDDEN_ROLE")
+}
+
+func TestRestoreUser_TargetNotFound_Returns404(t *testing.T) {
+	repo := &mockUserRepo{user: nil}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.RestoreUser(context.Background(), 1, constants.RoleSuperAdmin, 99)
+	assertAppErr(t, err, 404, "AUTH_USER_NOT_FOUND")
+}
+
+func TestRestoreUser_NotDeleted_Returns409(t *testing.T) {
+	repo := &mockUserRepo{user: &entity.User{ID: 2, IsDeleted: false}}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.RestoreUser(context.Background(), 1, constants.RoleSuperAdmin, 2)
+	assertAppErr(t, err, 409, "AUTH_NOT_DELETED")
+}
+
+func TestRestoreUser_HappyPath_RestoresAndReturnsDTO(t *testing.T) {
+	now := time.Now()
+	repo := &mockUserRepo{user: &entity.User{ID: 2, Username: "deleted", Role: constants.RoleDoctor, IsDeleted: true, IsActive: false, CreatedAt: now}}
+	svc := newTestAuthService(repo, nil)
+	dto, err := svc.RestoreUser(context.Background(), 1, constants.RoleSuperAdmin, 2)
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
+	if repo.gotRestoreID != 2 {
+		t.Errorf("期望 Restore(2)，实际 %d", repo.gotRestoreID)
+	}
+	if dto.ID != 2 || dto.Username != "deleted" {
+		t.Errorf("DTO 字段不匹配: %+v", dto)
+	}
+}
+
+func TestRestoreUser_RepoDown_PropagatesError(t *testing.T) {
+	repo := &mockUserRepo{user: &entity.User{ID: 2, IsDeleted: true}, restoreErr: errors.New("db down")}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.RestoreUser(context.Background(), 1, constants.RoleSuperAdmin, 2)
+	if err == nil {
+		t.Fatal("期望 error，实际 nil")
+	}
+}
+
+// ============================================================================
+// UpdateAccountRole 测试
+// ============================================================================
+
+func TestUpdateAccountRole_NonSuperAdmin_Returns403(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleDeptAdmin, 2, constants.RoleDoctor)
+	assertAppErr(t, err, 403, "AUTH_FORBIDDEN_ROLE")
+}
+
+func TestUpdateAccountRole_InvalidRole_Returns400(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleSuperAdmin, 2, "INVALID")
+	assertAppErr(t, err, 400, "AUTH_ROLE_INVALID")
+}
+
+func TestUpdateAccountRole_SelfRole_Returns409(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleSuperAdmin, 1, constants.RoleDoctor)
+	assertAppErr(t, err, 409, "AUTH_SELF_ROLE")
+}
+
+func TestUpdateAccountRole_TargetNotFound_Returns404(t *testing.T) {
+	repo := &mockUserRepo{user: nil}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleSuperAdmin, 99, constants.RoleDoctor)
+	assertAppErr(t, err, 404, "AUTH_USER_NOT_FOUND")
+}
+
+func TestUpdateAccountRole_HappyPath_UpdatesRole(t *testing.T) {
+	now := time.Now()
+	repo := &mockUserRepo{user: &entity.User{ID: 2, Username: "doc", Role: constants.RoleDoctor, IsActive: true, CreatedAt: now}}
+	svc := newTestAuthService(repo, nil)
+	dto, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleSuperAdmin, 2, constants.RoleNurse)
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
+	if repo.gotRoleID != 2 || repo.gotRole != constants.RoleNurse {
+		t.Errorf("期望 UpdateRole(2, NURSE)，实际 (%d, %s)", repo.gotRoleID, repo.gotRole)
+	}
+	if dto.ID != 2 || dto.Username != "doc" {
+		t.Errorf("DTO 字段不匹配: %+v", dto)
+	}
+}
+
+func TestUpdateAccountRole_RepoDown_PropagatesError(t *testing.T) {
+	repo := &mockUserRepo{user: &entity.User{ID: 2, Role: constants.RoleDoctor}, updateRoleErr: errors.New("db down")}
+	svc := newTestAuthService(repo, nil)
+	_, err := svc.UpdateAccountRole(context.Background(), 1, constants.RoleSuperAdmin, 2, constants.RoleNurse)
 	if err == nil {
 		t.Fatal("期望 error，实际 nil")
 	}

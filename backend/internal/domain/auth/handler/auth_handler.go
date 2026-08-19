@@ -96,6 +96,11 @@ type updateDeptRequest struct {
 	DeptID int64 `json:"dept_id"`
 }
 
+// updateRoleRequest 修改账户角色请求体。
+type updateRoleRequest struct {
+	Role string `json:"role"`
+}
+
 // refreshResponse 刷新响应体。
 type refreshResponse struct {
 	Access  string `json:"access"`
@@ -298,7 +303,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 // ListAccounts GET /api/staff/auth/accounts — 管理员分页查询账户列表（JWT + RequireAdmin）。
 // 数据隔离：非超管仅查看本科室账户。
-// 查询参数：page、page_size（pagination 统一解析，page_size 上限 100）。
+// 查询参数：page、page_size（pagination 统一解析，page_size 上限 100）、include_deleted（仅超管生效，为 true 时包含已删除用户）。
 func (h *AuthHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	params, err := pagination.Parse(r)
 	if err != nil {
@@ -310,9 +315,10 @@ func (h *AuthHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
 		return
 	}
+	includeDeleted := r.URL.Query().Get("include_deleted") == "true"
 	accounts, total, err := h.svc.ListAccounts(
 		r.Context(), actorRole, actorDeptID,
-		int64(params.Page), int64(params.PageSize),
+		int64(params.Page), int64(params.PageSize), includeDeleted,
 	)
 	if err != nil {
 		response.WriteError(w, r, err)
@@ -453,6 +459,57 @@ func (h *AuthHandler) UpdateAccountDept(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	account, err := h.svc.UpdateAccountDept(r.Context(), actorRole, actorDeptID, targetID, req.DeptID)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, account)
+}
+
+// UpdateAccountRole PATCH /api/staff/auth/accounts/{id}/role — 超级管理员修改账户角色（JWT + RequireAdmin）。
+// 仅 SUPER_ADMIN 可执行，service 层二次校验角色并禁止修改自己。
+func (h *AuthHandler) UpdateAccountRole(w http.ResponseWriter, r *http.Request) {
+	actorID, actorRole, _, ok := currentIdentity(r)
+	if !ok {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
+		return
+	}
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || targetID <= 0 {
+		response.WriteError(w, r, apperrors.BadRequest("AUTH_INVALID_ID", "账户 ID 无效"))
+		return
+	}
+	var req updateRoleRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	if req.Role == "" {
+		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "role 字段必填"))
+		return
+	}
+	account, err := h.svc.UpdateAccountRole(r.Context(), actorID, actorRole, targetID, req.Role)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, account)
+}
+
+// RestoreAccount POST /api/staff/auth/accounts/{id}/restore — 超级管理员恢复软删除账户（JWT + RequireAdmin）。
+// 仅 SUPER_ADMIN 可执行，service 层二次校验角色。
+func (h *AuthHandler) RestoreAccount(w http.ResponseWriter, r *http.Request) {
+	actorID, actorRole, _, ok := currentIdentity(r)
+	if !ok {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
+		return
+	}
+	targetID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || targetID <= 0 {
+		response.WriteError(w, r, apperrors.BadRequest("AUTH_INVALID_ID", "账户 ID 无效"))
+		return
+	}
+	account, err := h.svc.RestoreUser(r.Context(), actorID, actorRole, targetID)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

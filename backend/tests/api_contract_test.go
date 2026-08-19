@@ -269,7 +269,10 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/auth/accounts/1/lock"},
 	{http.MethodPost, "/api/staff/auth/accounts/1/unlock"},
 	{http.MethodDelete, "/api/staff/auth/accounts/1"},
+	{http.MethodPost, "/api/staff/auth/accounts/1/restore"},
 	{http.MethodPost, "/api/staff/auth/accounts/1/reset-password"},
+	{http.MethodPatch, "/api/staff/auth/accounts/1/department"},
+	{http.MethodPatch, "/api/staff/auth/accounts/1/role"},
 	// base
 	{http.MethodGet, "/api/base/departments"},
 	// base 管理员（5）
@@ -414,14 +417,17 @@ var adminBaseEndpoints = []endpoint{
 	{http.MethodDelete, "/api/staff/base/departments/1"},
 }
 
-// adminAuthEndpoints 需 JWT + Admin 角色的 auth 域端点（6 个）。
+// adminAuthEndpoints 需 JWT + Admin 角色的 auth 域端点（8 个）。
 var adminAuthEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/auth/accounts"},
 	{http.MethodPost, "/api/staff/auth/accounts"},
 	{http.MethodPost, "/api/staff/auth/accounts/1/lock"},
 	{http.MethodPost, "/api/staff/auth/accounts/1/unlock"},
 	{http.MethodDelete, "/api/staff/auth/accounts/1"},
+	{http.MethodPost, "/api/staff/auth/accounts/1/restore"},
 	{http.MethodPost, "/api/staff/auth/accounts/1/reset-password"},
+	{http.MethodPatch, "/api/staff/auth/accounts/1/department"},
+	{http.MethodPatch, "/api/staff/auth/accounts/1/role"},
 }
 
 // ==================== P0: 路由完整性 ====================

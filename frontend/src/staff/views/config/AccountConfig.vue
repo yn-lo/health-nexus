@@ -27,10 +27,12 @@ const { options: deptOptions, load: loadDepts } = useDepartmentOptions()
 // ponytail: 后端支持分页，但单页 50 足以覆盖典型部署的账户规模；超量时再加翻页 UI
 const { items: accounts, loading, load } = usePagedList<StaffAccount>({
  pageSize: 50,
- fetcher: (params) => authApi.listStaffAccounts(params),
+ // 超管加载全部（含已删除用户，用于展示与恢复）；非超管仅本科室未删除用户
+ fetcher: (params) => authApi.listStaffAccounts(isSuperAdmin ? { ...params, include_deleted: true } : params),
 })
 const search = ref('')
 const filterRole = ref<UserRole | 'all'>('all')
+const filterDeleted = ref<'all' | 'active' | 'deleted'>('all')
 
 /** 全部角色（STAFF + PATIENT），顺序：管理员 → 医护 → 患者 */
 const ALL_ROLES: UserRole[] = [...STAFF_ROLES, ...PATIENT_ROLES]
@@ -54,17 +56,24 @@ const filtered = computed(() => {
  if (filterRole.value !== 'all') {
  list = list.filter((a) => a.role === filterRole.value)
  }
+ if (filterDeleted.value === 'deleted') {
+ list = list.filter((a) => a.is_deleted)
+ } else if (filterDeleted.value === 'active') {
+ list = list.filter((a) => !a.is_deleted)
+ }
  return list
 })
 
 const totalCount = computed(() => accounts.value.length)
-const activeCount = computed(() => accounts.value.filter(a => a.is_active).length)
-const lockedCount = computed(() => accounts.value.filter(a => !a.is_active).length)
+const activeCount = computed(() => accounts.value.filter(a => a.is_active && !a.is_deleted).length)
+const lockedCount = computed(() => accounts.value.filter(a => !a.is_active && !a.is_deleted).length)
+const deletedCount = computed(() => accounts.value.filter(a => a.is_deleted).length)
 
 const heroStats = computed(() => [
  { value: totalCount.value, label: '总计' },
  { value: activeCount.value, label: '正常' },
  { value: lockedCount.value, label: '已锁定' },
+ ...(isSuperAdmin ? [{ value: deletedCount.value, label: '已删除' }] : []),
 ])
 
 const roleCounts = computed<Record<string, number>>(() => {
@@ -74,6 +83,12 @@ const roleCounts = computed<Record<string, number>>(() => {
  }
  return counts
 })
+
+const deletedFilterOptions = computed(() => [
+ { value: 'all', label: '全部' },
+ { value: 'active', label: '正常' },
+ ...(isSuperAdmin ? [{ value: 'deleted', label: '已删除' }] : []),
+])
 
 const showEditor = ref(false)
 const showPassword = ref(false)
@@ -159,6 +174,7 @@ onMounted(() => {
  >
   <template #toolbar>
    <DsFilterTabs v-model="filterRole" :options="roleOptions" :counts="roleCounts" />
+   <DsFilterTabs v-model="filterDeleted" :options="deletedFilterOptions" />
   </template>
 
   <template #default>
@@ -178,12 +194,12 @@ onMounted(() => {
      <span class="ds-list-item__meta">
       <span class="ds-tag ds-tag--primary ds-tag--plain">{{ ROLE_LABEL[a.role] }}</span>
       <span v-if="a.primary_dept_name" class="text-body-xs text-text-tertiary">{{ a.primary_dept_name }}</span>
-      <span>· {{ a.is_active ? '正常' : '已锁定' }}</span>
+      <span>· {{ a.is_deleted ? '已删除' : (a.is_active ? '正常' : '已锁定') }}</span>
      </span>
     </div>
     <div class="ds-list-item__trailing" @click.stop>
-     <label class="ds-switch ds-switch--sm" :class="{ 'pointer-events-none opacity-50': a.id === currentUserId }">
-      <input type="checkbox" class="ds-switch__input" :checked="a.is_active" :disabled="a.id === currentUserId" @change="toggleLock(a)">
+     <label class="ds-switch ds-switch--sm" :class="{ 'pointer-events-none opacity-50': a.id === currentUserId || a.is_deleted }">
+      <input type="checkbox" class="ds-switch__input" :checked="a.is_active" :disabled="a.id === currentUserId || a.is_deleted" @change="toggleLock(a)">
       <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
      </label>
     </div>
