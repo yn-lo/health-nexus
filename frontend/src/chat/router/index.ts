@@ -21,8 +21,9 @@ const routes = [
         component: () => import('@/chat/views/ChatHome.vue'),
       },
       {
-        // 会话页必须带 id：「新建对话」应回到首页 /chat，不保留无 id 的空白会话页
-        path: 'conversation/:id',
+        // 会话页 id 可选：ChatHome 发消息 / ChatConversation 建会话时会先以「无 id」进入，
+        // 创建拿到 id 后再 replace 补上。抽屉「新对话」已改为跳 /chat 首页，不再停留空白会话。
+        path: 'conversation/:id?',
         name: 'chat-conversation',
         component: () => import('@/chat/views/ChatConversation.vue'),
       },

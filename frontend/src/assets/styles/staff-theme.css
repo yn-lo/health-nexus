@@ -27,9 +27,12 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --glass-blur: blur(16px) saturate(1.6);
   --glass-surface: rgba(255, 255, 255, 0.80);
+  /* 高亮浮卡底色：克制靛蓝 tint（承接历史 --ai-gradient-soft 用法） */
+  --ai-gradient-soft: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(129, 140, 248, 0.05));
 
-  /* ── 状态色收敛：success/warning/alert/primary 统一映射为品牌靛蓝，
-     仅保留 error(红) 作为危险/危机语义，使管理端保持单一强调色 ── */
+  /* ── 状态色收敛：warning/alert/primary 统一映射为品牌靛蓝；管理端
+     禁用 --status-success，已迁移到 --brand/* --brand-light（见组件改动），
+     仅保留 error(红) 作为危险/危机语义 ── */
   --status-primary-default: #6366F1;
   --status-primary-hover: #818CF8;
   --status-primary-active: #4F46E5;
@@ -37,14 +40,6 @@
   --status-primary-surface-l2: rgba(99, 102, 241, 0.16);
   --status-primary-surface-l3: rgba(99, 102, 241, 0.32);
   --status-primary-light: rgba(99, 102, 241, 0.10);
-
-  --status-success-default: #6366F1;
-  --status-success-hover: #818CF8;
-  --status-success-active: #4F46E5;
-  --status-success-surface-l1: rgba(99, 102, 241, 0.08);
-  --status-success-surface-l2: rgba(99, 102, 241, 0.16);
-  --status-success-surface-l3: rgba(99, 102, 241, 0.32);
-  --status-success-light: rgba(99, 102, 241, 0.10);
 
   --status-alert-default: #6366F1;
   --status-alert-hover: #818CF8;

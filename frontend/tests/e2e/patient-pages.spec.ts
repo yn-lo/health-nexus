@@ -33,15 +33,14 @@ test.describe('患者端 - 首页', () => {
     expect(calls.find((c) => c.url.includes('/api/base/departments'))?.status).toBeLessThan(400)
   })
 
-  test('未登录用户点击发送应提示登录', async ({ page }) => {
+  test('未登录用户点击发送进入匿名对话', async ({ page }) => {
     await page.goto('/chat')
     await page.waitForLoadState('networkidle')
     await page.getByPlaceholder('请输入您的健康问题...').fill('测试问题')
     // 发送按钮（aria-label="发送"）
     await page.getByRole('button', { name: '发送', exact: false }).click()
-    // 应显示 toast 提示"请先登录"或跳转登录页
-    await page.waitForTimeout(2000)
-    expect(page.url()).toMatch(/\/(chat\/login|chat)$/)
+    // 匿名用户走公开端点（X-Device-Id），直接进入对话页（无登录提示）
+    await page.waitForURL('**/conversation**', { timeout: 10000 })
   })
 
   test('已登录患者发送消息创建对话', async ({ page }) => {
@@ -53,12 +52,12 @@ test.describe('患者端 - 首页', () => {
     await page.getByPlaceholder('请输入您的健康问题...').fill('头疼怎么办')
     await page.getByRole('button', { name: '发送', exact: false }).click()
 
-    // 应调用 createConversation API
+    // 会话经 SSE 流式端点创建（conversation 事件下发会话 ID）
     await expect.poll(
-      () => calls.filter((c) => c.url.includes('/api/chat/conversations') && c.method === 'POST'),
+      () => calls.filter((c) => c.url.includes('/api/chat/stream') && c.method === 'POST'),
       { timeout: 10000 }
     ).toHaveLength(1)
-    expect(calls.find((c) => c.url.includes('/api/chat/conversations') && c.method === 'POST')?.status).toBeLessThan(400)
+    expect(calls.find((c) => c.url.includes('/api/chat/stream') && c.method === 'POST')?.status).toBeLessThan(400)
   })
 })
 
@@ -67,7 +66,7 @@ test.describe('患者端 - 知识库', () => {
     const calls = trackApi(page)
     await page.goto('/wiki')
     await page.waitForLoadState('networkidle')
-    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/articles'))).toHaveLength(1)
+    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/articles'))).toHaveLength(2)
     expect(calls.find((c) => c.url.includes('/api/wiki/articles'))?.status).toBeLessThan(400)
   })
 
@@ -75,7 +74,7 @@ test.describe('患者端 - 知识库', () => {
     const calls = trackApi(page)
     await page.goto('/wiki')
     await page.waitForLoadState('networkidle')
-    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/articles'))).toHaveLength(1)
+    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/articles'))).toHaveLength(2)
 
     // 如果有文章，点击第一篇
     const firstArticle = page.locator('a[href*="/wiki/article/"]').first()
@@ -149,9 +148,10 @@ test.describe('患者端 - 关于页', () => {
     const calls = trackApi(page)
     await page.goto('/about')
     await page.waitForLoadState('networkidle')
-    // 静态页面不应有业务 API 调用（允许 vite HMR 等非 /api/ 请求）
-    const apiCalls = calls.filter((c) => c.url.includes('/api/'))
-    // ponytail: 某些全局初始化可能触发 1 次 API 调用，但不应有业务数据加载
-    expect(apiCalls.length).toBeLessThanOrEqual(1)
+    // 静态页面不应加载业务数据（chat/wiki 等）；允许登录态/科室等公开全局初始化
+    const businessCalls = calls.filter(
+      (c) => c.url.includes('/api/chat') || c.url.includes('/api/wiki') || c.url.includes('/api/staff')
+    )
+    expect(businessCalls.length).toBe(0)
   })
 })

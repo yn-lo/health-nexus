@@ -296,7 +296,7 @@ func (r *UserRepo) UpdatePrimaryDept(ctx context.Context, userID, deptID int64) 
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// 旧主科室（若有）置 false
 	if _, err := tx.Exec(ctx,

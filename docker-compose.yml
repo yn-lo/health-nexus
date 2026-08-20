@@ -1,5 +1,6 @@
 # Health Nexus 全栈 Docker 部署
 # 一键启动: docker compose up -d
+# 说明：所有凭据（DB/Redis 密码、JWT、加密密钥）来自项目根 .env，本文件不再硬编码。
 
 name: health-nexus
 
@@ -8,9 +9,9 @@ services:
     image: pgvector/pgvector:pg16
     container_name: hn-postgres
     environment:
-      POSTGRES_USER: health
-      POSTGRES_PASSWORD: 4b605c71292e231391b2a40d63d9fe5b
-      POSTGRES_DB: health_nexus
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       TZ: Asia/Shanghai
     # 暴露 5432 供本地开发/测试直接连接；生产环境如需仅内网访问可删除 ports 段。
     ports:
@@ -18,7 +19,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U health -d health_nexus"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -30,7 +31,7 @@ services:
     container_name: hn-redis
     command: >
       redis-server
-      --requirepass 4d58f1021dfc47f2f701a5be6f249a91
+      --requirepass ${REDIS_PASSWORD}
       --appendonly yes
       --maxmemory 512mb
       --maxmemory-policy noeviction
@@ -40,7 +41,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "4d58f1021dfc47f2f701a5be6f249a91", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -58,11 +59,11 @@ services:
       redis:
         condition: service_healthy
     environment:
-      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:4b605c71292e231391b2a40d63d9fe5b@postgres:5432/health_nexus?sslmode=disable"
+      HEALTH_NEXUS_POSTGRES_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       HEALTH_NEXUS_REDIS_ADDR: "redis:6379"
-      HEALTH_NEXUS_REDIS_PASSWORD: "4d58f1021dfc47f2f701a5be6f249a91"
-      HEALTH_NEXUS_JWT_SECRET: "38c4d857fd37f230568a8b209ef5337175afc4ac0d3bf00972f572f62b0ada83"
-      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "32c93981934e2419a59ea4d1ec66c62a154ed1239dfa11cc27671ff2f3029ea3"
+      HEALTH_NEXUS_REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      HEALTH_NEXUS_JWT_SECRET: "${JWT_SECRET}"
+      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
     restart: unless-stopped
 
   worker:
@@ -77,11 +78,11 @@ services:
       server:
         condition: service_started
     environment:
-      HEALTH_NEXUS_POSTGRES_DSN: "postgres://health:4b605c71292e231391b2a40d63d9fe5b@postgres:5432/health_nexus?sslmode=disable"
+      HEALTH_NEXUS_POSTGRES_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
       HEALTH_NEXUS_REDIS_ADDR: "redis:6379"
-      HEALTH_NEXUS_REDIS_PASSWORD: "4d58f1021dfc47f2f701a5be6f249a91"
-      HEALTH_NEXUS_JWT_SECRET: "38c4d857fd37f230568a8b209ef5337175afc4ac0d3bf00972f572f62b0ada83"
-      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "32c93981934e2419a59ea4d1ec66c62a154ed1239dfa11cc27671ff2f3029ea3"
+      HEALTH_NEXUS_REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      HEALTH_NEXUS_JWT_SECRET: "${JWT_SECRET}"
+      HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
     restart: unless-stopped
 
 volumes:

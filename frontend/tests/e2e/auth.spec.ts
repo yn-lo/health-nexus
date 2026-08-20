@@ -14,7 +14,7 @@ test.describe('认证流程', () => {
     await page.goto('/login')
     await page.getByPlaceholder('请输入用户名或手机号').fill(ACCOUNTS.patient_li.username)
     await page.getByPlaceholder('请输入密码').fill(ACCOUNTS.patient_li.password)
-    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole('button', { name: '登 录', exact: true }).click()
 
     await expect.poll(() => calls.filter((c) => c.url.includes('/api/auth/login'))).toHaveLength(1)
     expect(calls.find((c) => c.url.includes('/api/auth/login'))?.status).toBe(200)
@@ -31,7 +31,7 @@ test.describe('认证流程', () => {
     await page.goto('/login')
     await page.getByPlaceholder('请输入用户名或手机号').fill(ACCOUNTS.doctor_zhang.username)
     await page.getByPlaceholder('请输入密码').fill(ACCOUNTS.doctor_zhang.password)
-    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole('button', { name: '登 录', exact: true }).click()
 
     await expect.poll(() => calls.filter((c) => c.url.includes('/api/auth/login'))).toHaveLength(1)
     expect(calls.find((c) => c.url.includes('/api/auth/login'))?.status).toBe(200)
@@ -43,7 +43,7 @@ test.describe('认证流程', () => {
     await page.goto('/login')
     await page.getByPlaceholder('请输入用户名或手机号').fill(ACCOUNTS.patient_li.username)
     await page.getByPlaceholder('请输入密码').fill('wrongpassword')
-    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole('button', { name: '登 录', exact: true }).click()
 
     // 应显示错误提示（role=alert 错误块 和/或 vant toast）
     await expect(page.locator('[role="alert"], .van-toast').first()).toBeVisible({ timeout: 5000 })
@@ -52,7 +52,7 @@ test.describe('认证流程', () => {
 
   test('空表单提交显示验证错误', async ({ page }) => {
     await page.goto('/login')
-    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole('button', { name: '登 录', exact: true }).click()
     await expect(page.locator('[role="alert"]')).toBeVisible()
     await expect(page.locator('[role="alert"]')).toContainText('请输入用户名和密码')
   })

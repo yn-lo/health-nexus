@@ -223,11 +223,11 @@ func (s *ArticleService) Create(ctx context.Context, in CreateInput) (*ArticleSt
 
 	summary := in.Summary
 	if summary == "" {
-		summary = truncateRunes(stripHTMLTags(in.Content), summaryMaxRunes)
+		summary = truncateRunes(stripHTMLTags(in.Content))
 	}
 	// 客户端提供的 summary 也统一规范化：剥离残留 HTML 标签并反转义实体（&quot;→"），
 	// 避免前端纯文本渲染时字面量残留 &quot;（与自动生成的摘要行为一致）。
-	summary = truncateRunes(stripHTMLTags(summary), summaryMaxRunes)
+	summary = truncateRunes(stripHTMLTags(summary))
 	deptID := in.DepartmentID
 	a := &entity.Article{
 		Title:          in.Title,
@@ -537,7 +537,7 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 	}
 	// 客户端提供的 summary 统一规范化：剥离 HTML 标签并反转义实体（&quot;→"）。
 	if in.Summary != nil {
-		normalized := truncateRunes(stripHTMLTags(*in.Summary), summaryMaxRunes)
+		normalized := truncateRunes(stripHTMLTags(*in.Summary))
 		fields.Summary = &normalized
 	}
 	// 乐观锁守卫：客户端未传 ExpectedVersion 时，自动使用读取时的 version 防并发丢失更新。
@@ -553,7 +553,7 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 		}
 	}
 	if fields.Content != nil && (in.Summary == nil || *in.Summary == "") {
-		summary := truncateRunes(stripHTMLTags(*fields.Content), summaryMaxRunes)
+		summary := truncateRunes(stripHTMLTags(*fields.Content))
 		fields.Summary = &summary
 	}
 	if article.Status == constants.ArticleStatusPublished {
@@ -1042,7 +1042,7 @@ func toStaffDTO(a *entity.Article) ArticleStaffDTO {
 // 仅记 Title 会丢失内容语义；用 "Title | Content" 拼接后按 rune 截取 100 字，
 // 既保留标题上下文，又包含正文摘要，避免 PII 外泄风险（审计日志仅记录摘要长度受限的字符串）。
 func auditSummary(a *entity.Article) string {
-	return truncateRunes(stripHTMLTags(a.Title+" | "+a.Content), summaryMaxRunes)
+	return truncateRunes(stripHTMLTags(a.Title + " | " + a.Content))
 }
 
 // stripHTMLTags 去除 HTML 标签，返回纯文本。
@@ -1055,13 +1055,13 @@ func stripHTMLTags(s string) string {
 	return html.UnescapeString(reHTMLTags.ReplaceAllString(s, ""))
 }
 
-// truncateRunes 按 rune 截断字符串，避免截断多字节字符。
-func truncateRunes(s string, maxRunes int) string {
+// truncateRunes 按 rune 截断字符串到 summaryMaxRunes，避免截断多字节字符。
+func truncateRunes(s string) string {
 	runes := []rune(s)
-	if len(runes) <= maxRunes {
+	if len(runes) <= summaryMaxRunes {
 		return s
 	}
-	return string(runes[:maxRunes])
+	return string(runes[:summaryMaxRunes])
 }
 
 // strPtrOrNil 空字符串返回 nil，否则返回指针。

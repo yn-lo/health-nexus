@@ -43,8 +43,8 @@ test.describe('医护端 - 文章管理', () => {
     await page.goto('/staff/articles')
     await page.waitForLoadState('networkidle')
 
-    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/staff/articles'))).toHaveLength(1)
-    expect(calls.find((c) => c.url.includes('/api/wiki/staff/articles'))?.status).toBeLessThan(400)
+    await expect.poll(() => calls.filter((c) => c.url.includes('/api/staff/wiki/articles'))).toHaveLength(1)
+    expect(calls.find((c) => c.url.includes('/api/staff/wiki/articles'))?.status).toBeLessThan(400)
   })
 
   test('新建文章页可访问', async ({ page }) => {
@@ -75,9 +75,9 @@ test.describe('医护端 - 文章管理', () => {
     const draftBtn = page.getByRole('button', { name: '存为草稿', exact: true })
     if (await draftBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       await draftBtn.click()
-      // 应调用 POST /wiki/staff/articles
+      // 应调用 POST /api/staff/wiki/articles
       await expect.poll(
-        () => calls.filter((c) => c.url.includes('/api/wiki/staff/articles') && c.method === 'POST'),
+        () => calls.filter((c) => c.url.includes('/api/staff/wiki/articles') && c.method === 'POST'),
         { timeout: 10000 }
       ).toHaveLength(1)
     }
@@ -90,7 +90,7 @@ test.describe('医护端 - 文章管理', () => {
     await page.waitForLoadState('networkidle')
 
     // ArticleReview 复用 listMyArticles API
-    await expect.poll(() => calls.filter((c) => c.url.includes('/api/wiki/staff/articles'))).toHaveLength(1)
+    await expect.poll(() => calls.filter((c) => c.url.includes('/api/staff/wiki/articles'))).toHaveLength(1)
   })
 })
 
@@ -172,7 +172,7 @@ test.describe('医护端 - 完整文章流程', () => {
       await submitBtn.click()
       // 应 POST 创建文章
       await expect.poll(
-        () => calls.filter((c) => c.url.includes('/api/wiki/staff/articles') && c.method === 'POST'),
+        () => calls.filter((c) => c.url.includes('/api/staff/wiki/articles') && c.method === 'POST'),
         { timeout: 15000 }
       ).toHaveLength(1)
     }

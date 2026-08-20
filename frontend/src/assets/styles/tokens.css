@@ -261,13 +261,13 @@
   --status-primary-surface-l2: rgba(47, 116, 255, 0.18);
   --status-primary-surface-l3: rgba(47, 116, 255, 0.36);
   --status-primary-light: rgba(75, 63, 227, 0.1);
-  --status-success-default: #15A877;
-  --status-success-hover: #2FB287;
-  --status-success-active: #1E8B56;
-  --status-success-surface-l1: rgba(64, 176, 139, 0.12);
-  --status-success-surface-l2: rgba(64, 176, 139, 0.18);
-  --status-success-surface-l3: rgba(64, 176, 139, 0.36);
-  --status-success-light: rgba(16, 185, 129, 0.1);
+  --status-success-default: #6366F1;
+  --status-success-hover: #818CF8;
+  --status-success-active: #4F46E5;
+  --status-success-surface-l1: rgba(99, 102, 241, 0.08);
+  --status-success-surface-l2: rgba(99, 102, 241, 0.16);
+  --status-success-surface-l3: rgba(99, 102, 241, 0.32);
+  --status-success-light: rgba(99, 102, 241, 0.10);
   --status-alert-default: #FEA900;
   --status-alert-hover: #FFB700;
   --status-alert-active: #E59100;
@@ -382,7 +382,7 @@
   --hover-scale: 1.02;
   --hover-scale-strong: 1.05;
   --press-scale: 0.97;
-  --state-feedback-success: #22C55E;
+  --state-feedback-success: #6366F1;
   --state-feedback-error: #EF4444;
   --state-feedback-warning: #F59E0B;
 
@@ -599,11 +599,11 @@
   --status-primary-surface-l1: rgba(108, 99, 255, 0.16);
   --status-primary-surface-l2: rgba(108, 99, 255, 0.24);
   --status-primary-surface-l3: rgba(108, 99, 255, 0.40);
-  --status-success-default: #34D399;
-  --status-success-hover: #6EE7B7;
-  --status-success-active: #10B981;
-  --status-success-surface-l1: rgba(52, 211, 153, 0.16);
-  --status-success-surface-l2: rgba(52, 211, 153, 0.24);
+  --status-success-default: #6C63FF;
+  --status-success-hover: #8B83FF;
+  --status-success-active: #5B52E6;
+  --status-success-surface-l1: rgba(108, 99, 255, 0.16);
+  --status-success-surface-l2: rgba(108, 99, 255, 0.24);
   --status-alert-default: #FBBF24;
   --status-alert-hover: #FCD34D;
   --status-alert-active: #F59E0B;

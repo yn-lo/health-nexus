@@ -67,7 +67,7 @@ const techStack = [
  <!-- Core Features — 编号特性列表 -->
  <section aria-labelledby="sec-features" class="pb-[var(--spacer-32)]">
  <div class="about-section-head">
- <span class="about-section-index">01</span>
+ <span class="about-section-index">Ⅰ</span>
  <h2 id="sec-features" class="about-section-title font-heading text-heading-lg font-semibold tracking-[-0.02em] text-text">
   核心特性
  </h2>
@@ -97,7 +97,7 @@ const techStack = [
  <!-- System Positioning — 精致引言块 -->
  <section class="pb-[var(--spacer-32)]">
  <div class="about-section-head">
- <span class="about-section-index">02</span>
+ <span class="about-section-index">Ⅱ</span>
  <h2 class="about-section-title font-heading text-heading-lg font-semibold tracking-[-0.02em] text-text">
   系统定位
  </h2>
@@ -113,7 +113,7 @@ const techStack = [
  <!-- Tech Stack — 大数字技术栈 -->
  <section aria-labelledby="sec-tech" class="pb-[var(--spacer-32)]">
  <div class="about-section-head">
- <span class="about-section-index">03</span>
+ <span class="about-section-index">Ⅲ</span>
  <h2 id="sec-tech" class="about-section-title font-heading text-heading-lg font-semibold tracking-[-0.02em] text-text">
   技术栈
  </h2>
@@ -132,14 +132,7 @@ const techStack = [
  </section>
 
  <!-- License & Author -->
- <section class="text-center pb-[var(--spacer-32)]">
- <p class="text-body-xs text-text-tertiary">
-  AGPL-3.0
- </p>
- <p class="text-body-xs text-text-tertiary mt-[var(--spacer-4)]">
-  让健康知识触手可及
- </p>
-
+<section class="text-center pb-[var(--spacer-32)]">
  <div class="about-author mt-[var(--spacer-24)]">
  <p class="about-author-line text-body-sm text-text-tertiary">
   2026 © YNLO

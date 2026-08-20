@@ -2,7 +2,7 @@ module health-nexus
 
 go 1.25.7
 
-toolchain go1.26.5
+toolchain go1.26.6
 
 require (
 	github.com/go-chi/chi/v5 v5.3.1

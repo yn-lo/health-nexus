@@ -4,7 +4,8 @@ __pycache__/
 *$py.class
 
 # Environments
-.env
+# 根 .env（docker compose 凭据），及各种分环境 .env
+/.env
 .env.local
 .env.dev
 .env.prod
@@ -66,3 +67,4 @@ graphify-out/
 .edge-tmp/
 
 docs/
+tmp/

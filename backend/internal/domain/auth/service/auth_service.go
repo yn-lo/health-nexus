@@ -644,7 +644,9 @@ func (s *AuthService) SoftDeleteUser(ctx context.Context, actorID int64, actorRo
 // RestoreUser 超级管理员恢复软删除用户。
 // 安全约束：仅 SUPER_ADMIN 可执行；目标必须为已删除用户。
 // 恢复同时重新启用账户（is_active=true），用户可重新登录。
-func (s *AuthService) RestoreUser(ctx context.Context, actorID int64, actorRole string, targetID int64) (*AccountDTO, error) {
+func (s *AuthService) RestoreUser(
+	ctx context.Context, actorID int64, actorRole string, targetID int64,
+) (*AccountDTO, error) {
 	if actorRole != constants.RoleSuperAdmin {
 		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可恢复用户")
 	}
@@ -674,7 +676,9 @@ func (s *AuthService) RestoreUser(ctx context.Context, actorID int64, actorRole 
 // UpdateAccountRole 超级管理员修改用户角色。
 // 安全约束：仅 SUPER_ADMIN 可执行；不可修改自己的角色（防止自我降级导致失去管理权限）。
 // 角色变更属提权敏感操作，收口在超管。
-func (s *AuthService) UpdateAccountRole(ctx context.Context, actorID int64, actorRole string, targetID int64, newRole string) (*AccountDTO, error) {
+func (s *AuthService) UpdateAccountRole(
+	ctx context.Context, actorID int64, actorRole string, targetID int64, newRole string,
+) (*AccountDTO, error) {
 	if actorRole != constants.RoleSuperAdmin {
 		return nil, apperrors.Forbidden("AUTH_FORBIDDEN_ROLE", "仅超级管理员可修改角色")
 	}
