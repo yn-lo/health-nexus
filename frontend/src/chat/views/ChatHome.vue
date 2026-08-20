@@ -67,7 +67,8 @@ function onHistorySelect(conversationId: string) {
 }
 
 function onHistoryNewChat() {
- // 已在首页，无需操作
+  // 已在首页即处于全新对话；仅关闭抽屉，避免「新对话」按钮后抽屉残留打开
+  showHistory.value = false
 }
 
 function openDeptPicker() {

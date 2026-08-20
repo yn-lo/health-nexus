@@ -1,12 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
-   staff-theme.css — 医护端专属「高科技精品」主题覆写层
-   参考 ui-ux-pro-max styles.csv #2 SaaS Mobile（High-Tech Boutique）
+   staff-theme.css — 医护端主题层（浅色克制版）
+   已深度中和为与项目一致的「靛蓝 #6366F1 + 中性浅色」配色：
+   - 品牌：直接复用项目 --bg-brand 靛蓝，移除此前的电光蓝 #0052FF
+   - 表面/墨色/边框/阴影：不再覆盖，回落到项目默认中性浅色 token
+   - 移除深空暗底、径向渐变、强光晕，配色克制、少杂色
+   仅保留字体(可选)与少量玻璃态/激活态/语义动效增强。
 
-   仅由 src/staff/main.ts 在 main.css 之后引入，chat 端不加载、零影响。
+   仅由 src/staff/main.ts 在 main.css 之后引入，chat 端不加载。
    机制：
      1. :root 令牌覆写 —— 与 tokens.css 同选择器，后加载按级联顺序胜出
      2. 组件增强 —— 非 layer、最后加载，优先于 @layer components 与 Vant
-        同级别选择器；#staff-app 前缀保证对组件 scoped 样式的优先级
      3. popup/overlay/dialog/toast 会 teleport 到 body，
         使用裸类选择器（不带 #staff-app 前缀）
    豁免：scripts/style-guard.mjs ALLOWED_HEX_FILES 白名单
@@ -19,109 +22,60 @@
   --font-family-heading: 'Space Grotesk Variable', 'MiSans', 'SF Pro', 'PingFang SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-family-metric: 'Space Grotesk Variable', 'Inter', 'MiSans', 'SF Pro Text', 'PingFang SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  /* ── 品牌：电光蓝 #0052FF → #4D7CFF ────────────────────── */
-  --ai-accent: #0052FF;
-  --bg-brand: #0052FF;
-  --bg-brand-hover: #2E6BFF;
-  --bg-brand-active: #0044D6;
-  --bg-brand-pressed: #0038B8;
-  --bg-brand-disabled: rgba(0, 82, 255, 0.22);
-  --bg-brand-popup: rgba(77, 124, 255, 0.36);
-  --bg-brand-light: #E9F0FF;
-  --text-brand: #0052FF;
-  --text-brand-hover: #2E6BFF;
-  --icon-brand: #0052FF;
-  --icon-brand-hover: #2E6BFF;
-  --border-brand: #0052FF;
-
-  /* ── 状态：primary 信息蓝对齐品牌（success/warning/error 医疗语义色不变） ── */
-  --status-primary-default: #0052FF;
-  --status-primary-hover: #2E6BFF;
-  --status-primary-active: #0044D6;
-  --status-primary-surface-l1: rgba(0, 82, 255, 0.10);
-  --status-primary-surface-l2: rgba(0, 82, 255, 0.16);
-  --status-primary-surface-l3: rgba(0, 82, 255, 0.32);
-  --status-primary-light: rgba(0, 82, 255, 0.08);
-
-  /* ── 墨色：slate 冷调墨阶 ─────────────────────────────── */
-  --text-default: #0F172A;
-  --text-default-hover: #1E293B;
-  --text-default-active: #1E293B;
-  --text-secondary: #334155;
-  --text-secondary-hover: #0F172A;
-  --text-secondary-active: #0F172A;
-  --text-tertiary: #64748B;
-  --text-disabled: #94A3B8;
-  --icon-default: #1E293B;
-  --icon-default-hover: #0F172A;
-  --icon-default-active: #0F172A;
-  --icon-secondary: #475569;
-  --icon-secondary-hover: #1E293B;
-  --icon-secondary-active: #1E293B;
-  --icon-tertiary: #64748B;
-  --icon-disabled: #94A3B8;
-
-  /* ── 表面：冷调画布 + 纯白浮卡 ────────────────────────── */
-  --bg-base-default: #F4F7FC;
-  --bg-base-secondary: #EBF0F8;
-  --bg-base-tertiary: #E0E8F3;
-  --bg-overlay-l1: rgba(15, 23, 42, 0.05);
-  --bg-overlay-l2: rgba(15, 23, 42, 0.09);
-  --bg-overlay-l3: rgba(15, 23, 42, 0.14);
-  --bg-overlay-l4: rgba(15, 23, 42, 0.20);
-  --bg-invert: #0F172A;
-  --bg-invert-hover: #1E293B;
-  --bg-invert-active: #020617;
-  --bg-invert-disabled: rgba(15, 23, 42, 0.20);
-
-  /* ── 边框：slate 冷调 ─────────────────────────────────── */
-  --border-neutral-l1: #E2E8F0;
-  --border-neutral-l2: #CBD5E1;
-  --border-neutral-l3: #94A3B8;
-
-  /* ── 阴影：冷调双层阴影 + 电光品牌光晕 ────────────────── */
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 8px rgba(15, 23, 42, 0.07), 0 12px 24px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 8px 16px rgba(15, 23, 42, 0.09), 0 20px 40px rgba(15, 23, 42, 0.11);
-  --shadow-xl: 0 16px 32px rgba(15, 23, 42, 0.12), 0 32px 64px rgba(15, 23, 42, 0.14);
-  --shadow-brand: 0 4px 14px rgba(0, 82, 255, 0.25);
-  --brand-glow-xs: rgba(0, 82, 255, 0.06);
-  --brand-glow-sm: rgba(0, 82, 255, 0.12);
-  --brand-glow-md: rgba(0, 82, 255, 0.20);
-  --brand-glow-lg: rgba(0, 82, 255, 0.32);
-  --brand-glow-border: rgba(0, 82, 255, 0.30);
-  --brand-glow-border-strong: rgba(0, 82, 255, 0.55);
-
-  /* ── 微交互：250ms 弹簧手感（mass1/damping15/stiffness120 近似） ── */
-  --micro-duration: 250ms;
-  --micro-ease: var(--ease-spring);
-  --press-scale: 0.96;
-
-  /* ── 主题专属令牌 ─────────────────────────────────────── */
+  /* ── 主题专属令牌：主强调 = 项目品牌靛蓝，无额外颜色 ── */
+  --ai-accent: #6366F1;
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ai-gradient: linear-gradient(135deg, #0052FF 0%, #4D7CFF 100%);
-  --ai-gradient-soft: linear-gradient(135deg, rgba(0, 82, 255, 0.10) 0%, rgba(77, 124, 255, 0.08) 100%);
   --glass-blur: blur(16px) saturate(1.6);
-  --glass-surface: rgba(255, 255, 255, 0.78);
+  --glass-surface: rgba(255, 255, 255, 0.80);
+
+  /* ── 状态色收敛：success/warning/alert/primary 统一映射为品牌靛蓝，
+     仅保留 error(红) 作为危险/危机语义，使管理端保持单一强调色 ── */
+  --status-primary-default: #6366F1;
+  --status-primary-hover: #818CF8;
+  --status-primary-active: #4F46E5;
+  --status-primary-surface-l1: rgba(99, 102, 241, 0.08);
+  --status-primary-surface-l2: rgba(99, 102, 241, 0.16);
+  --status-primary-surface-l3: rgba(99, 102, 241, 0.32);
+  --status-primary-light: rgba(99, 102, 241, 0.10);
+
+  --status-success-default: #6366F1;
+  --status-success-hover: #818CF8;
+  --status-success-active: #4F46E5;
+  --status-success-surface-l1: rgba(99, 102, 241, 0.08);
+  --status-success-surface-l2: rgba(99, 102, 241, 0.16);
+  --status-success-surface-l3: rgba(99, 102, 241, 0.32);
+  --status-success-light: rgba(99, 102, 241, 0.10);
+
+  --status-alert-default: #6366F1;
+  --status-alert-hover: #818CF8;
+  --status-alert-active: #4F46E5;
+  --status-alert-surface-l1: rgba(99, 102, 241, 0.08);
+  --status-alert-surface-l2: rgba(99, 102, 241, 0.16);
+  --status-alert-surface-l3: rgba(99, 102, 241, 0.32);
+  --status-alert-light: rgba(99, 102, 241, 0.10);
+
+  --status-warning-default: #6366F1;
+  --status-warning-hover: #818CF8;
+  --status-warning-active: #4F46E5;
+  --status-warning-surface-l1: rgba(99, 102, 241, 0.08);
+  --status-warning-surface-l2: rgba(99, 102, 241, 0.16);
+  --status-warning-surface-l3: rgba(99, 102, 241, 0.32);
+  --status-warning-light: rgba(99, 102, 241, 0.10);
 }
 
 /* ═══════════════════════════════════════════════════════════════
    组件增强（非 layer，#staff-app 前缀压制 scoped / Tailwind 工具类）
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── 应用外壳：深空冷光环境（宽屏留白处可见，窄屏被应用列覆盖） ── */
+/* ── 应用外壳：项目默认浅色画布（去深空渐变与暗底） ── */
 #staff-app {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
-  background:
-    radial-gradient(42rem 30rem at calc(100% + 6rem) -6rem, rgba(0, 82, 255, 0.18), transparent 65%),
-    radial-gradient(30rem 24rem at -8rem 24rem, rgba(77, 124, 255, 0.12), transparent 62%),
-    #0B1220;
+  background: var(--bg-base-secondary);
 }
 
 #staff-app ::selection {
-  background: rgba(0, 82, 255, 0.22);
+  background: var(--bg-brand-popup);
 }
 
 /* ── 顶栏磨玻璃：内容滚动到下方时产生冷雾效果 ────────────── */
@@ -131,12 +85,12 @@
   backdrop-filter: var(--glass-blur);
 }
 
-/* ── 底部标签栏磨玻璃 + 激活态电光晕 ─────────────────────── */
+/* ── 底部标签栏磨玻璃 + 激活态靛蓝 ─────────────────────────── */
 #staff-app .van-tabbar {
   background: var(--glass-surface);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  box-shadow: 0 -6px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 -1px 0 var(--border-neutral-l1);
 }
 
 #staff-app .van-tabbar-item--active {
@@ -144,10 +98,10 @@
 }
 
 #staff-app .van-tabbar-item--active .tab-icon-active {
-  filter: drop-shadow(0 0 6px rgba(0, 82, 255, 0.45));
+  filter: none;
 }
 
-/* ── 纯白浮卡：冷调画布上悬浮，hover 抬升 + 弹簧按压 ──────── */
+/* ── 纯白浮卡：hover 轻微抬升 + 弹簧按压（阴影走项目默认） ── */
 #staff-app .ds-card {
   background: var(--bg-white);
 }
@@ -188,49 +142,45 @@
 }
 
 @keyframes staff-badge-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 70, 58, 0.45); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--status-error-surface-l3); }
   50% { box-shadow: 0 0 0 6px rgba(232, 70, 58, 0); }
 }
 
-/* ── CTA：电光渐变 + 光晕 + 弹簧按压（排除 plain 变体） ───── */
+/* ── 主按钮：实心靛蓝（非渐变，去光晕） ─────────────────── */
 #staff-app .ds-btn--primary,
 .van-button--primary:not(.van-button--plain) {
-  background: var(--ai-gradient);
+  background: var(--bg-brand);
   border-color: transparent;
-  box-shadow: var(--shadow-glow-btn);
 }
 
 #staff-app .ds-btn--primary:hover:not(:disabled),
 .van-button--primary:not(.van-button--plain):hover {
-  background: var(--ai-gradient);
-  filter: brightness(1.08);
+  background: var(--bg-brand-hover);
 }
 
 #staff-app .ds-btn--primary:active:not(:disabled),
 .van-button--primary:not(.van-button--plain):active {
-  background: var(--ai-gradient);
-  filter: brightness(0.92);
+  background: var(--bg-brand-active);
 }
 
 .van-button:active {
   transform: scale(var(--press-scale));
 }
 
-/* ── Tabs 下划线电光化 ───────────────────────────────────── */
+/* ── Tabs 下划线靛蓝（去光晕） ───────────────────────────── */
 .van-tabs__line {
-  background: var(--ai-gradient);
-  box-shadow: 0 0 8px rgba(0, 82, 255, 0.40);
+  background: var(--bg-brand);
 }
 
-/* ── 浮层玻璃化（teleport 到 body，裸选择器） ─────────────── */
+/* ── 浮层玻璃化（teleport 到 body，裸选择器，中性浅色） ──── */
 .van-overlay {
-  background: rgba(15, 23, 42, 0.55);
+  background: rgba(115, 115, 115, 0.40);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
 .van-popup {
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--glass-surface);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
 }
@@ -243,7 +193,7 @@
 }
 
 .van-toast {
-  background: rgba(15, 23, 42, 0.88);
+  background: rgba(38, 38, 38, 0.9);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-radius: var(--radius-12);

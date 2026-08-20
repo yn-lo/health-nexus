@@ -70,9 +70,23 @@ defineExpose({ setText, inputText })
 <template>
  <div class="chat-input-bar px-[var(--spacer-20)] pb-[calc(var(--spacer-16)+env(safe-area-inset-bottom,0px))]">
  <div class="ai-input-card bg-[var(--bg-base-default)] rounded-[var(--radius-20)] p-[var(--spacer-12)]">
- <!-- 科室选择 pill -->
+ <!-- 输入区（置于工具行上方） -->
+ <textarea
+ ref="textareaRef"
+ v-model="inputText"
+ rows="1"
+ class="ai-textarea w-full min-w-0 resize-none bg-transparent border-none outline-none text-body-base text-text placeholder:text-text-tertiary"
+ :placeholder="placeholder"
+ aria-label="输入健康问题"
+ :maxlength="2000"
+ @input="autoResize"
+ @keydown="onInputKeydown"
+ />
+
+ <!-- 工具行：科室选择（左）/ 发送或停止（右） -->
+ <div class="flex items-center justify-between gap-[var(--spacer-8)] mt-[var(--spacer-10)]">
  <button
- class="inline-flex items-center gap-[var(--spacer-4)] h-[26px] px-[var(--spacer-10)] mb-[var(--spacer-10)] rounded-[var(--radius-full)] bg-[var(--bg-brand-light)] text-text-brand text-body-xs-strong font-medium whitespace-nowrap transition-colors"
+ class="inline-flex items-center gap-[var(--spacer-4)] h-[26px] px-[var(--spacer-10)] rounded-[var(--radius-full)] bg-[var(--bg-brand-light)] text-text-brand text-body-xs-strong font-medium whitespace-nowrap transition-colors"
  :style="{ transitionDuration: 'var(--micro-duration)' }"
  aria-label="选择科室"
  @click="emit('openDeptPicker')"
@@ -81,19 +95,6 @@ defineExpose({ setText, inputText })
  <span class="text-text-brand">{{ departmentName }}</span>
  </button>
 
- <!-- 输入栏 - 内嵌发送按钮 -->
- <div class="flex items-end gap-[var(--spacer-8)]">
- <textarea
- ref="textareaRef"
- v-model="inputText"
- rows="1"
- class="ai-textarea flex-1 min-w-0 resize-none bg-transparent border-none outline-none text-body-base text-text placeholder:text-text-tertiary"
- :placeholder="placeholder"
- aria-label="输入健康问题"
- :maxlength="2000"
- @input="autoResize"
- @keydown="onInputKeydown"
- />
  <button
  class="ai-send-btn shrink-0 flex items-center justify-center rounded-[var(--radius-full)]"
  :class="canSend ? 'bg-brand text-onbrand shadow-[var(--shadow-glow-btn)]' : 'bg-brand-light text-icon-brand disabled:bg-brand-disabled disabled:text-tertiary'"

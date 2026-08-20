@@ -113,9 +113,18 @@ function onHistorySelect(id: string) {
   showHistory.value = false
 }
 
-function onHistoryNewChat() {
-  router.push({ name: 'chat-home' })
+/** 新建对话：回到 /chat 首页（真正的全新对话入口）；流式中先中止并复位当前会话 */
+function startNewChat() {
+  if (isStreaming.value) {
+    abort()
+    currentContent.value = ''
+  }
   showHistory.value = false
+  sseConversationId.value = ''
+  sseOptions.conversationId = ''
+  sseOptions.selectedDeptId = selectedDepartmentId.value
+  chatStore.messages = []
+  router.replace({ name: 'chat-home' })
 }
 
 function openDeptPicker() {
@@ -603,7 +612,7 @@ onUnmounted(() => {
     <ChatHistoryDrawer
       v-model:visible="showHistory"
       @select="onHistorySelect"
-      @new-chat="onHistoryNewChat"
+      @new-chat="startNewChat"
     />
 
     <!-- 科室选择弹窗 -->
