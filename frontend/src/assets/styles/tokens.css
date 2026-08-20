@@ -487,6 +487,9 @@
   --shadow-glow-btn: 0 4px 12px var(--brand-glow-lg);
   --shadow-glow-avatar: 0 2px 8px var(--brand-glow-md);
 
+  /* ── 认证页卡片悬浮阴影（login/register/auth 卡片专用） ── */
+  --shadow-auth-card: 0 20px 48px rgba(99, 102, 241, 0.14), 0 4px 16px rgba(99, 102, 241, 0.08);
+
   /* ── 辅助色 surface（图标底色等） ─────────────────────── */
   --accent-teal-surface: rgba(0, 185, 131, 0.10);
   --accent-violet-surface: rgba(149, 112, 255, 0.10);
@@ -620,6 +623,9 @@
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.60);
   --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.70);
   --shadow-brand: 0 4px 12px rgba(108, 99, 255, 0.30);
+
+  /* 认证页卡片悬浮阴影 */
+  --shadow-auth-card: 0 20px 48px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.30);
 
   /* 焦点环 */
   --focus-ring-color: var(--bg-brand);

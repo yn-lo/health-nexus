@@ -15,7 +15,7 @@
  * - 触摸目标 ≥44px / focus-visible 焦点环 / aria-label
  */
 import { ref, computed } from 'vue'
-import { User, KeyRound, Lock, Eye, EyeOff, CircleAlert, CheckCircle2, ShieldCheck } from '@lucide/vue'
+import { Eye, EyeOff, CircleAlert, CheckCircle2, ShieldCheck } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
 import { PageShell, BrandLogo, PasswordStrength } from '@/shared/components'
 import { requestPasswordReset, confirmPasswordReset } from '@/shared/api/auth'
@@ -101,171 +101,175 @@ async function handleConfirm() {
 
 <template>
  <PageShell
- :bottom-nav="false"
- :padded="true"
- background="linear-gradient(180deg, var(--bg-base-secondary) 0%, var(--bg-brand-popup) 100%)"
- class="flex items-center justify-center py-[var(--spacer-32)]"
+  :bottom-nav="false"
+  :padded="false"
+  background="var(--auth-bg)"
+  class="auth-page relative overflow-hidden"
  >
- <div class="flex w-full max-w-[400px] flex-col items-center gap-[var(--spacer-24)]">
- <!-- 品牌区 -->
- <BrandLogo size="md" />
+  <div class="auth-aura auth-aura--top" aria-hidden="true" />
 
- <!-- 步骤指示器 -->
- <div class="flex items-center gap-[var(--spacer-8)]" aria-hidden="true">
- <div
- v-for="s in [1, 2, 3]"
- :key="s"
- class="h-1 rounded-[var(--radius-full)] transition-colors duration-[var(--duration-normal)] ease-[var(--ease-out)]"
- :class="step >= (s as 1 | 2 | 3)
- ? 'w-8 bg-[var(--bg-brand)]'
- : 'w-4 bg-[var(--bg-overlay-l3)]'"
- />
- </div>
+  <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
+   <!-- 上半屏：品牌叙事区（视觉重心） -->
+   <header class="auth-hero flex flex-col justify-end pb-[var(--spacer-24)]">
+    <div class="auth-brand-row flex items-center gap-[var(--spacer-10)]">
+     <BrandLogo size="sm" hide-name />
+     <span class="auth-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
+      HEALTH NEXUS
+     </span>
+    </div>
 
- <!-- 内容卡片 -->
- <div class="flex w-full flex-col gap-[var(--spacer-20)] rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] p-[var(--spacer-24)] border border-[var(--border-neutral-l1)] shadow-[var(--shadow-sm)]">
- <!-- 图标 + 标题 -->
- <div class="flex flex-col items-center gap-[var(--spacer-12)] text-center">
- <div class="flex items-center justify-center w-16 h-16 rounded-full bg-[var(--bg-brand-popup)]">
- <ShieldCheck :size="32" class="text-text-brand" />
- </div>
- <div>
- <h2 class="font-heading text-heading-md font-semibold text-text">
- {{ step === 1 ? '找回密码' : step === 2 ? '设置新密码' : '重置完成' }}
- </h2>
- <p class="mt-[var(--spacer-8)] text-body-base text-text-secondary">
- <template v-if="step === 1">输入用户名，我们将为您生成重置令牌</template>
- <template v-else-if="step === 2">输入收到的重置令牌与新密码</template>
- <template v-else>请使用新密码登录</template>
- </p>
- </div>
- </div>
+    <div class="mt-[var(--spacer-28)] flex flex-col gap-[var(--spacer-12)]">
+     <h1 class="auth-title font-heading font-semibold leading-[1.15] tracking-[-0.02em] text-text">
+      {{ step === 1 ? '找回密码' : step === 2 ? '设置新密码' : '重置完成' }}
+     </h1>
+     <p class="auth-subtitle text-body-base leading-relaxed text-text-secondary">
+      <template v-if="step === 1">输入用户名，我们将为您生成重置令牌</template>
+      <template v-else-if="step === 2">输入收到的重置令牌与新密码</template>
+      <template v-else>请使用新密码登录</template>
+     </p>
+    </div>
 
- <!-- Step 1：请求重置 -->
- <form v-if="step === 1" class="flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleRequest">
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <User class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="username" type="text" placeholder="请输入用户名" autocomplete="username" aria-label="用户名">
- </div>
+    <!-- 步骤指示器（极简） -->
+    <div class="mt-[var(--spacer-16)] flex items-center gap-[var(--spacer-8)]" aria-hidden="true">
+     <div
+      v-for="s in [1, 2, 3]"
+      :key="s"
+      class="h-1 rounded-[var(--radius-full)] transition-colors duration-[var(--duration-normal)] ease-[var(--ease-out)]"
+      :class="step >= (s as 1 | 2 | 3)
+       ? 'w-8 bg-[var(--bg-brand)]'
+       : 'w-4 bg-[var(--bg-overlay-l3)]'"
+     />
+    </div>
+   </header>
 
- <div
- v-if="requestError"
- class="ds-alert ds-alert--error"
- role="alert"
- >
- <CircleAlert class="icon" />
- <span>{{ requestError }}</span>
- </div>
+   <!-- 下半屏：表单区（功能） -->
+   <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">
+    <!-- Step 1：请求重置 -->
+    <form v-if="step === 1" class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleRequest">
+     <div class="auth-field">
+      <label class="auth-label" for="fp-username">用户名</label>
+      <div class="ds-field-wrap ds-field-wrap--underline">
+       <input id="fp-username" v-model="username" type="text" placeholder="请输入用户名" autocomplete="username" aria-label="用户名">
+      </div>
+     </div>
 
- <button
- type="submit"
- class="ds-btn ds-btn--primary ds-btn--block"
- :class="{ 'ds-btn--loading': requesting }"
- :disabled="requesting"
- >
- <span v-if="requesting" class="ds-btn__spinner" />
- 获取重置令牌
- </button>
- </form>
+     <div
+      v-if="requestError"
+      class="ds-alert ds-alert--error"
+      role="alert"
+     >
+      <CircleAlert class="icon" />
+      <span>{{ requestError }}</span>
+     </div>
 
- <!-- Step 2：确认重置 -->
- <form v-else-if="step === 2" class="flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleConfirm">
- <!-- 重置令牌 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <KeyRound class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="token" type="text" placeholder="重置令牌" autocomplete="off" aria-label="重置令牌">
- </div>
- <p class="text-body-sm text-text-tertiary">
- 令牌已发送至您的注册联系方式，15 分钟内有效
- </p>
- </div>
+     <button
+      type="submit"
+      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
+      :class="{ 'ds-btn--loading': requesting }"
+      :disabled="requesting"
+     >
+      <span v-if="requesting" class="ds-btn__spinner" />
+      获取重置令牌
+     </button>
+    </form>
 
- <!-- 新密码 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showNewPassword ? '隐藏密码' : '显示密码'" @click="showNewPassword = !showNewPassword">
- <Eye v-if="!showNewPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <PasswordStrength :password="newPassword" :segments="4" />
- </div>
+    <!-- Step 2：确认重置 -->
+    <form v-else-if="step === 2" class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleConfirm">
+     <!-- 重置令牌 -->
+     <div class="auth-field">
+      <label class="auth-label" for="fp-token">重置令牌</label>
+      <div class="ds-field-wrap ds-field-wrap--underline">
+       <input id="fp-token" v-model="token" type="text" placeholder="重置令牌" autocomplete="off" aria-label="重置令牌">
+      </div>
+      <p class="text-body-sm text-text-tertiary">
+       令牌已发送至您的注册联系方式，15 分钟内有效
+      </p>
+     </div>
 
- <!-- 确认新密码 -->
- <div class="ds-field-wrap ds-field-wrap--secondary" :class="{ 'ds-field-wrap--error': passwordMismatch }">
- <Lock class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" placeholder="确认新密码" autocomplete="new-password" aria-label="确认新密码">
- <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'" @click="showConfirmPassword = !showConfirmPassword">
- <Eye v-if="!showConfirmPassword" class="h-4 w-4" />
- <EyeOff v-else class="h-4 w-4" />
- </button>
- </div>
- <p
- v-if="passwordMismatch"
- class="-mt-[var(--spacer-8)] text-body-sm text-[var(--status-error-default)]"
- >
- 两次输入的密码不一致
- </p>
+     <!-- 新密码 -->
+     <div class="auth-field">
+      <label class="auth-label" for="fp-new">新密码</label>
+      <div class="ds-field-wrap ds-field-wrap--underline">
+       <input id="fp-new" v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
+       <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showNewPassword ? '隐藏密码' : '显示密码'" @click="showNewPassword = !showNewPassword">
+        <Eye v-if="!showNewPassword" class="h-4 w-4" />
+        <EyeOff v-else class="h-4 w-4" />
+       </button>
+      </div>
+      <PasswordStrength :password="newPassword" :segments="4" />
+     </div>
 
- <!-- 错误提示 -->
- <div
- v-if="confirmError"
- class="ds-alert ds-alert--error"
- role="alert"
- >
- <CircleAlert class="icon" />
- <span>{{ confirmError }}</span>
- </div>
+     <!-- 确认新密码 -->
+     <div class="auth-field">
+      <label class="auth-label" for="fp-confirm">确认新密码</label>
+      <div class="ds-field-wrap ds-field-wrap--underline" :class="{ 'ds-field-wrap--error': passwordMismatch }">
+       <input id="fp-confirm" v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" placeholder="确认新密码" autocomplete="new-password" aria-label="确认新密码">
+       <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'" @click="showConfirmPassword = !showConfirmPassword">
+        <Eye v-if="!showConfirmPassword" class="h-4 w-4" />
+        <EyeOff v-else class="h-4 w-4" />
+       </button>
+      </div>
+      <p
+       v-if="passwordMismatch"
+       class="text-body-sm text-[var(--status-error-default)]"
+      >
+       两次输入的密码不一致
+      </p>
+     </div>
 
- <button
- type="submit"
- class="ds-btn ds-btn--primary ds-btn--block"
- :class="{ 'ds-btn--loading': confirming }"
- :disabled="confirming"
- >
- <span v-if="confirming" class="ds-btn__spinner" />
- 重置密码
- </button>
- </form>
+     <!-- 错误提示 -->
+     <div
+      v-if="confirmError"
+      class="ds-alert ds-alert--error"
+      role="alert"
+     >
+      <CircleAlert class="icon" />
+      <span>{{ confirmError }}</span>
+     </div>
 
- <!-- Step 3：完成 -->
- <div v-else class="flex flex-col items-center gap-[var(--spacer-20)]">
- <div class="flex items-center justify-center w-16 h-16 rounded-full bg-[var(--status-success-surface-l1)]">
- <CheckCircle2 :size="32" class="text-[var(--status-success-default)]" />
- </div>
- <p class="text-center text-body-base text-text-secondary">
- 您的密码已重置成功，请使用新密码登录
- </p>
- <button
- class="ds-btn ds-btn--primary ds-btn--block"
- @click="goLogin"
- >
- 前往登录
- </button>
- </div>
+     <button
+      type="submit"
+      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
+      :class="{ 'ds-btn--loading': confirming }"
+      :disabled="confirming"
+     >
+      <span v-if="confirming" class="ds-btn__spinner" />
+      重置密码
+     </button>
+    </form>
 
- <!-- 兜底提示：医疗场景下令牌可能需管理员协助 -->
- <div v-if="step !== 3" class="ds-alert ds-alert--warning">
- <ShieldCheck class="icon" />
- <p class="text-body-sm ">
- 未收到令牌？请联系医院信息科或携带有效证件前往服务窗口办理
- </p>
- </div>
- </div>
+    <!-- Step 3：完成 -->
+    <div v-else class="flex flex-col items-center gap-[var(--spacer-20)]">
+     <div class="flex items-center justify-center w-16 h-16 rounded-full bg-[var(--status-success-surface-l1)]">
+      <CheckCircle2 :size="32" class="text-[var(--status-success-default)]" />
+     </div>
+     <p class="text-center text-body-base text-text-secondary">
+      您的密码已重置成功，请使用新密码登录
+     </p>
+     <button
+      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
+      @click="goLogin"
+     >
+      前往登录
+     </button>
+    </div>
 
- <!-- 底部登录链接 -->
- <footer v-if="step !== 3" class="flex flex-col items-center gap-[var(--spacer-8)] text-center">
- <p class="text-body-md text-text-tertiary">
- 想起密码了？
- <button
- class="ds-link-btn font-medium"
- @click="goLogin"
->立即登录</button>
- </p>
- </footer>
- </div>
+    <!-- 兜底提示：医疗场景下令牌可能需管理员协助 -->
+    <div v-if="step !== 3" class="ds-alert ds-alert--warning mt-[var(--spacer-16)]">
+     <ShieldCheck class="icon" />
+     <p class="text-body-sm ">
+      未收到令牌？请联系医院信息科或携带有效证件前往服务窗口办理
+     </p>
+    </div>
+
+    <!-- 底部登录链接 -->
+    <footer v-if="step !== 3" class="auth-footer mt-[var(--spacer-24)] flex flex-col items-center gap-[var(--spacer-12)] text-center">
+     <p class="text-body-base text-text-secondary">
+      想起密码了？
+      <button class="ds-link-btn font-medium" @click="goLogin">立即登录</button>
+     </p>
+    </footer>
+   </section>
+  </div>
  </PageShell>
 </template>

@@ -1754,3 +1754,164 @@
 .ds-dialog-leave-to .ds-dialog {
   transform: scale(0.95);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   auth-* 认证页（Login/Register 等）「极简编辑风」上下分屏设计
+   设计方向：大量留白 + 大字号 + 克制配色 + 下划线输入框
+   上半屏品牌叙事（视觉重心），下半屏登录表单（功能）
+   全部基于 tokens.css 令牌，浅色/暗色主题自动适配
+   ═══════════════════════════════════════════════════════════════ */
+
+/* auth-page — 页面根容器：极简留白背景 */
+.auth-page {
+  --auth-bg: var(--bg-base-default);
+}
+
+/* auth-aura — 背景装饰光晕（极简，仅顶部一抹品牌淡光） */
+.auth-aura {
+  position: absolute;
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  filter: blur(80px);
+}
+.auth-aura--top {
+  top: -140px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, var(--hero-glow-color-soft) 0%, transparent 70%);
+}
+
+/* auth-scroll — 内容滚动容器（安全区感知） */
+.auth-scroll {
+  position: relative;
+  z-index: 1;
+}
+
+/* auth-hero — 上半屏品牌叙事区（视觉重心，靠下对齐） */
+.auth-hero {
+  padding-top: var(--spacer-16);
+}
+
+/* auth-brand-row — 顶部品牌行（小 Logo + 品牌名） */
+.auth-brand-row {
+  align-self: flex-start;
+}
+
+/* auth-brand-name — 品牌名（小号字距大写，编辑风） */
+.auth-brand-name {
+  letter-spacing: 0.14em;
+}
+
+/* auth-title — 品牌大标题（编辑风大字号） */
+.auth-title {
+  font-size: clamp(2.25rem, 9vw, 3rem);
+  line-height: 1.15;
+}
+
+/* auth-subtitle — 品牌副标题 */
+.auth-subtitle {
+  max-width: 30ch;
+}
+
+/* auth-form-area — 下半屏登录表单区（垂直居中） */
+.auth-form-area {
+  padding-top: var(--spacer-16);
+}
+
+/* auth-field — 单个字段块 */
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-8);
+}
+
+/* auth-label — 字段标签（小号灰色字距，编辑风） */
+.auth-label {
+  font-size: var(--body-sm-font-size);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+/* auth-form — 下划线式输入框（无边框，底部细线，聚焦品牌色） */
+.auth-form .ds-field-wrap {
+  min-height: var(--ds-control-height-lg);
+  border: none;
+  border-bottom: 1px solid var(--border-neutral-l2);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--spacer-6) 0;
+  box-shadow: none;
+}
+.auth-form .ds-field-wrap:focus-within {
+  border-bottom-color: var(--bg-brand);
+  box-shadow: none;
+}
+.auth-form .ds-field-wrap input {
+  font-size: var(--reading-font-size-a11y);
+}
+.auth-form .ds-field-wrap > svg,
+.auth-form .ds-field-wrap button > svg {
+  width: var(--ds-control-icon-size);
+  height: var(--ds-control-icon-size);
+}
+
+/* auth-submit-btn — 大号主按钮（编辑风：圆角胶囊 + 品牌实底） */
+.auth-submit-btn {
+  height: var(--ds-control-height-lg) !important;
+  border-radius: var(--radius-full) !important;
+  background: var(--bg-brand) !important;
+  border-color: var(--bg-brand) !important;
+  box-shadow: none !important;
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.08em;
+}
+.auth-submit-btn:hover:not(:disabled) {
+  background: var(--bg-brand-hover) !important;
+  border-color: var(--bg-brand-hover) !important;
+}
+.auth-submit-btn:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+/* auth-guest-btn — 「暂不登录」次按钮（极简文字按钮） */
+.auth-guest-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacer-6);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--spacer-16);
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: color var(--micro-duration) var(--micro-ease),
+              background var(--micro-duration) var(--micro-ease),
+              transform var(--micro-duration) var(--micro-ease);
+}
+.auth-guest-btn:hover {
+  color: var(--text-default);
+  background: var(--bg-overlay-l1);
+}
+.auth-guest-btn:active {
+  transform: scale(var(--press-scale));
+}
+
+/* 认证页底部链接字号对齐正文 */
+.auth-footer .ds-link-btn {
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-aura {
+    animation: none;
+  }
+}

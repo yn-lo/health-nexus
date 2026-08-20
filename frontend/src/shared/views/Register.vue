@@ -1,16 +1,17 @@
 <script setup lang="ts">
 /**
- * Register 注册页 — 对齐 Login/ForgotPassword/ChangePassword 统一规范
+ * Register 注册页 — 「极简编辑风」上下分屏设计（对齐 Login）
  *
  * 后端契约：POST /api/auth/register { username, password }（DisallowUnknownFields）
- * 渐变背景 + 品牌区(BrandLogo md) + 注册卡片（用户名/密码/确认密码/协议）
- * 不写组件级 scoped 样式（遵循 styling.md 规则 1），字段高度/圆角由全局 @layer components 统一
+ * 上半屏品牌叙事（视觉重心），下半屏注册表单（功能）
+ * 无卡片容器 + 下划线输入框 + 胶囊按钮，与 Login 统一设计语言
+ * 不写组件级 scoped 样式（遵循 styling.md 规则 1）
  *
  * UI/UX（ui-ux-pro-max §Forms）：aria-label / 密码显隐 / 实时强度 / 内联不一致提示 / loading+toast
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, CircleAlert } from '@lucide/vue'
+import { CircleAlert } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
 import { PageShell, BrandLogo, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
@@ -78,95 +79,101 @@ function goLogin() {
 
 <template>
  <PageShell
- :bottom-nav="false"
- :padded="true"
- background="linear-gradient(180deg, var(--bg-base-secondary) 0%, var(--bg-brand-popup) 100%)"
- class="flex items-center justify-center py-[var(--spacer-32)]"
+  :bottom-nav="false"
+  :padded="false"
+  background="var(--auth-bg)"
+  class="auth-page relative overflow-hidden"
  >
- <div class="flex w-full max-w-[400px] flex-col items-center gap-[var(--spacer-24)]">
- <!-- 品牌区 -->
- <div class="flex flex-col items-center gap-[var(--spacer-8)] text-center">
- <BrandLogo size="md" />
- <p class="text-body-base text-text-secondary max-w-[280px]">
- 创建您的健康助手账户
- </p>
- </div>
+  <div class="auth-aura auth-aura--top" aria-hidden="true" />
 
- <!-- 注册卡片 -->
- <div class="flex w-full flex-col gap-[var(--spacer-20)] rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] p-[var(--spacer-24)] border border-[var(--border-neutral-l1)] shadow-[var(--shadow-sm)]">
- <!-- 标题 -->
- <div>
- <h2 class="font-heading text-heading-lg font-semibold text-text">
- 注册
- </h2>
- <p class="mt-[var(--spacer-4)] text-body-sm text-text-secondary">
- 设置用户名与密码即可开始使用
- </p>
- </div>
+  <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
+   <!-- 上半屏：品牌叙事区（视觉重心） -->
+   <header class="auth-hero flex flex-col justify-end pb-[var(--spacer-24)]">
+    <div class="auth-brand-row flex items-center gap-[var(--spacer-10)]">
+     <BrandLogo size="sm" hide-name />
+     <span class="auth-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
+      HEALTH NEXUS
+     </span>
+    </div>
 
- <!-- 表单 -->
- <form class="flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleRegister">
- <!-- 用户名 -->
- <div class="ds-field-wrap ds-field-wrap--secondary">
- <User class="h-4 w-4 shrink-0 text-icon-tertiary" />
- <input v-model="username" type="text" placeholder="设置用户名" autocomplete="username" aria-label="用户名">
- </div>
+    <div class="mt-[var(--spacer-28)] flex flex-col gap-[var(--spacer-12)]">
+     <h1 class="auth-title font-heading font-semibold leading-[1.15] tracking-[-0.02em] text-text">
+      创建您的<br>健康助手账户
+     </h1>
+     <p class="auth-subtitle text-body-base leading-relaxed text-text-secondary">
+      设置用户名与密码，<br>即可开始使用
+     </p>
+    </div>
+   </header>
 
- <!-- 密码 -->
- <DsPasswordField v-model="password" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码">
-  <!-- 密码强度指示器 -->
-  <PasswordStrength :password="password" :segments="4" />
- </DsPasswordField>
+   <!-- 下半屏：注册表单区（功能） -->
+   <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">
+    <form class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleRegister">
+     <!-- 用户名 -->
+     <div class="auth-field">
+      <label class="auth-label" for="reg-username">用户名</label>
+      <div class="ds-field-wrap ds-field-wrap--underline">
+       <input id="reg-username" v-model="username" type="text" placeholder="设置用户名" autocomplete="username" aria-label="用户名">
+      </div>
+     </div>
 
- <!-- 确认密码 -->
- <DsPasswordField v-model="confirmPassword" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码" :error="passwordMismatch">
-  <p
-   v-if="passwordMismatch"
-   class="text-body-sm text-[var(--status-error-default)]"
-  >
-   两次输入的密码不一致
-  </p>
- </DsPasswordField>
+     <!-- 密码 -->
+     <div class="auth-field">
+      <label class="auth-label">密码</label>
+      <DsPasswordField v-model="password" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码">
+       <PasswordStrength :password="password" :segments="4" />
+      </DsPasswordField>
+     </div>
 
- <!-- 错误提示 -->
- <div
- v-if="errorMsg"
- class="ds-alert ds-alert--error"
- role="alert"
- >
- <CircleAlert class="icon" />
- <span>{{ errorMsg }}</span>
- </div>
+     <!-- 确认密码 -->
+     <div class="auth-field">
+      <label class="auth-label">确认密码</label>
+      <DsPasswordField v-model="confirmPassword" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码" :error="passwordMismatch">
+       <p
+        v-if="passwordMismatch"
+        class="text-body-sm text-[var(--status-error-default)]"
+       >
+        两次输入的密码不一致
+       </p>
+      </DsPasswordField>
+     </div>
 
- <!-- 协议 -->
- <label class="flex cursor-pointer items-center gap-[var(--spacer-8)]">
- <span class="ds-checkbox">
- <input v-model="agreed" type="checkbox" class="ds-checkbox__input">
- <span class="ds-checkbox__box" />
- </span>
- <span class="text-body-md text-text-secondary">
-      我已阅读并同意
-      <a href="/terms" class="text-text-brand hover:text-text-brand-hover">《用户协议》</a>
-      和
-      <a href="/privacy" class="text-text-brand hover:text-text-brand-hover">《隐私政策》</a>
+     <!-- 错误提示 -->
+     <div
+      v-if="errorMsg"
+      class="ds-alert ds-alert--error"
+      role="alert"
+     >
+      <CircleAlert class="icon" />
+      <span>{{ errorMsg }}</span>
+     </div>
+
+     <!-- 协议 -->
+     <label class="flex cursor-pointer items-center gap-[var(--spacer-8)]">
+      <span class="ds-checkbox">
+       <input v-model="agreed" type="checkbox" class="ds-checkbox__input">
+       <span class="ds-checkbox__box" />
       </span>
- </label>
+      <span class="text-body-md text-text-secondary">
+       我已阅读并同意
+       <a href="/terms" class="text-text-brand hover:text-text-brand-hover">《用户协议》</a>
+       和
+       <a href="/privacy" class="text-text-brand hover:text-text-brand-hover">《隐私政策》</a>
+      </span>
+     </label>
 
- <!-- 注册按钮 -->
- <DsSubmitButton :loading="loading" text="注册" />
- </form>
- </div>
+     <!-- 注册按钮 -->
+     <DsSubmitButton :loading="loading" text="注 册" class="auth-submit-btn" />
+    </form>
 
- <!-- 底部登录链接 -->
- <footer class="flex flex-col items-center gap-[var(--spacer-8)] text-center">
- <p class="text-body-md text-text-tertiary">
- 已有账号？
- <button
- class="ds-link-btn font-medium"
- @click="goLogin"
->立即登录</button>
- </p>
- </footer>
- </div>
+    <!-- 底部登录链接 -->
+    <footer class="auth-footer mt-[var(--spacer-24)] flex flex-col items-center gap-[var(--spacer-12)] text-center">
+     <p class="text-body-base text-text-secondary">
+      已有账号？
+      <button class="ds-link-btn font-medium" @click="goLogin">立即登录</button>
+     </p>
+    </footer>
+   </section>
+  </div>
  </PageShell>
 </template>
