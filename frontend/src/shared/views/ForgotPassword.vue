@@ -17,7 +17,7 @@
 import { ref, computed } from 'vue'
 import { Eye, EyeOff, CircleAlert, CheckCircle2, ShieldCheck } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, BrandLogo, PasswordStrength } from '@/shared/components'
+import { PageShell, AuthHero, PasswordStrength } from '@/shared/components'
 import { requestPasswordReset, confirmPasswordReset } from '@/shared/api/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -110,37 +110,26 @@ async function handleConfirm() {
 
   <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
    <!-- 上半屏：品牌叙事区（视觉重心） -->
-   <header class="auth-hero flex flex-col justify-end pb-[var(--spacer-24)]">
-    <div class="auth-brand-row flex items-center gap-[var(--spacer-10)]">
-     <BrandLogo size="sm" hide-name />
-     <span class="auth-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
-      HEALTH NEXUS
-     </span>
-    </div>
+   <AuthHero>
+    <template #title>{{ step === 1 ? '找回密码' : step === 2 ? '设置新密码' : '重置完成' }}</template>
+    <template #subtitle>
+     <template v-if="step === 1">输入用户名，我们将为您生成重置令牌</template>
+     <template v-else-if="step === 2">输入收到的重置令牌与新密码</template>
+     <template v-else>请使用新密码登录</template>
+    </template>
+   </AuthHero>
 
-    <div class="mt-[var(--spacer-28)] flex flex-col gap-[var(--spacer-12)]">
-     <h1 class="auth-title font-heading font-semibold leading-[1.15] tracking-[-0.02em] text-text">
-      {{ step === 1 ? '找回密码' : step === 2 ? '设置新密码' : '重置完成' }}
-     </h1>
-     <p class="auth-subtitle text-body-base leading-relaxed text-text-secondary">
-      <template v-if="step === 1">输入用户名，我们将为您生成重置令牌</template>
-      <template v-else-if="step === 2">输入收到的重置令牌与新密码</template>
-      <template v-else>请使用新密码登录</template>
-     </p>
-    </div>
-
-    <!-- 步骤指示器（极简） -->
-    <div class="mt-[var(--spacer-16)] flex items-center gap-[var(--spacer-8)]" aria-hidden="true">
-     <div
-      v-for="s in [1, 2, 3]"
-      :key="s"
-      class="h-1 rounded-[var(--radius-full)] transition-colors duration-[var(--duration-normal)] ease-[var(--ease-out)]"
-      :class="step >= (s as 1 | 2 | 3)
-       ? 'w-8 bg-[var(--bg-brand)]'
-       : 'w-4 bg-[var(--bg-overlay-l3)]'"
-     />
-    </div>
-   </header>
+   <!-- 步骤指示器（极简） -->
+   <div class="mt-[var(--spacer-16)] flex items-center gap-[var(--spacer-8)]" aria-hidden="true">
+    <div
+     v-for="s in [1, 2, 3]"
+     :key="s"
+     class="h-1 rounded-[var(--radius-full)] transition-colors duration-[var(--duration-normal)] ease-[var(--ease-out)]"
+     :class="step >= (s as 1 | 2 | 3)
+      ? 'w-8 bg-[var(--bg-brand)]'
+      : 'w-4 bg-[var(--bg-overlay-l3)]'"
+    />
+   </div>
 
    <!-- 下半屏：表单区（功能） -->
    <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">

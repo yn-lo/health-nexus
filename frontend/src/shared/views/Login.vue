@@ -18,9 +18,9 @@
  */
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { CircleAlert, MessageCircle } from '@lucide/vue'
+import { CircleAlert, MessageCircle, User } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, BrandLogo, DsPasswordField, DsSubmitButton } from '@/shared/components'
+import { PageShell, AuthHero, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 import { STAFF_ROLES, type UserRole } from '@/shared/constants/roles'
@@ -91,23 +91,10 @@ function goForgotPassword() {
 
     <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
       <!-- 上半屏：品牌叙事区（视觉重心） -->
-      <header class="auth-hero flex flex-col justify-end pb-[var(--spacer-24)]">
-        <div class="auth-brand-row flex items-center gap-[var(--spacer-10)]">
-          <BrandLogo size="sm" hide-name />
-          <span class="auth-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
-            HEALTH NEXUS
-          </span>
-        </div>
-
-        <div class="mt-[var(--spacer-28)] flex flex-col gap-[var(--spacer-12)]">
-          <h1 class="auth-title font-heading font-semibold leading-[1.15] tracking-[-0.02em] text-text">
-            智能健康<br>宣教平台
-          </h1>
-          <p class="auth-subtitle text-body-base leading-relaxed text-text-secondary">
-            7×24 小时 AI 健康问答，<br>为患者提供可溯源的健康指导
-          </p>
-        </div>
-      </header>
+      <AuthHero>
+        <template #title>智能健康<br>宣教平台</template>
+        <template #subtitle>7×24 小时 AI 健康问答，<br>为患者提供可溯源的健康指导</template>
+      </AuthHero>
 
       <!-- 下半屏：登录表单区（功能） -->
       <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">
@@ -115,6 +102,7 @@ function goForgotPassword() {
           <div class="auth-field">
             <label class="auth-label" for="auth-username">用户名</label>
             <div class="ds-field-wrap ds-field-wrap--underline">
+              <User class="h-4 w-4 shrink-0 text-icon-brand" />
               <input
                 id="auth-username"
                 v-model="username"

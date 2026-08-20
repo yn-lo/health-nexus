@@ -39,9 +39,15 @@ type mockArticleRepo struct {
 	softDeleteID  int64
 	featuredRank  int
 	featuredID    int64
+	// 落库捕获：Create 的实体 / UpdateFields 的待更新字段，便于断言写入前已被规范化。
+	created      *entity.Article
+	updateFields repository.UpdateFields
 }
 
-func (m *mockArticleRepo) Create(_ context.Context, _ *entity.Article) error { return nil }
+func (m *mockArticleRepo) Create(_ context.Context, a *entity.Article) error {
+	m.created = a
+	return nil
+}
 func (m *mockArticleRepo) GetByID(_ context.Context, _ int64) (*entity.Article, error) {
 	if m.getErr != nil {
 		return nil, m.getErr
@@ -65,7 +71,8 @@ func (m *mockArticleRepo) SetFeaturedRank(_ context.Context, id int64, rank int)
 func (m *mockArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaffFilter, _, _ int) ([]*entity.Article, int64, error) {
 	return nil, 0, nil
 }
-func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, _ repository.UpdateFields) (*entity.Article, error) {
+func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.UpdateFields) (*entity.Article, error) {
+	m.updateFields = f
 	return m.article, nil
 }
 func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, _ repository.StatusUpdateOpts) error {
@@ -390,6 +397,38 @@ func TestArticleService_Update_MetadataOnly_NoOutbox(t *testing.T) {
 	}
 }
 
+// RED→GREEN：更新接口提供的 summary 含 HTML 实体时，写入前应规范化为纯文本。
+func TestArticleService_Update_ProvidedSummary_NormalizesHTMLEntities(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusPublished,
+		AuthorID:     1,
+		DepartmentID: &deptID,
+		Content:      "same content",
+		ContentHash:  "same_hash",
+	}
+	d := buildSvcWithOutbox(article)
+	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
+
+	raw := "规则：&quot;安全第一&quot;"
+	_, err := d.svc.Update(context.Background(), UpdateInput{
+		Summary:   &raw,
+		ArticleID: 42,
+		Actor:     actor,
+	})
+	if err != nil {
+		t.Fatalf("Update 返回错误: %v", err)
+	}
+	if d.repo.updateFields.Summary == nil {
+		t.Fatal("期望 UpdateFields 携带被规范化的 Summary")
+	}
+	want := `规则："安全第一"`
+	if got := *d.repo.updateFields.Summary; got != want {
+		t.Errorf("期望 summary 写入前被反转义为 %q，实际 %q", want, got)
+	}
+}
+
 // ============================================================================
 // Unarchive：归档恢复应入队向量化重建 chunks
 // ============================================================================
@@ -700,4 +739,26 @@ func TestArticleService_Create_TitleTooLong_Rejected(t *testing.T) {
 		Actor:        Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 4},
 	})
 	assertValidationCode(t, err, "WIKI_TITLE_TOO_LONG")
+}
+
+// RED→GREEN：客户端提供的 summary 含 HTML 实体时，写入前应规范化为纯文本（反转义 &quot; 等）。
+func TestArticleService_Create_ProvidedSummary_NormalizesHTMLEntities(t *testing.T) {
+	svc, repo, _, _, _ := buildSvc(nil)
+	_, err := svc.Create(context.Background(), CreateInput{
+		Title:        "标题",
+		Content:      "<p>正文</p>",
+		Summary:      "结论是 &quot;最优语言&quot; 没有唯一答案",
+		DepartmentID: 4,
+		Actor:        Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 4},
+	})
+	if err != nil {
+		t.Fatalf("Create 返回错误: %v", err)
+	}
+	if repo.created == nil {
+		t.Fatal("期望 Create 落库被捕获")
+	}
+	want := `结论是 "最优语言" 没有唯一答案`
+	if repo.created.Summary != want {
+		t.Errorf("期望 summary 写入前被反转义为 %q，实际 %q", want, repo.created.Summary)
+	}
 }

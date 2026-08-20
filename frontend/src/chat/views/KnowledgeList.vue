@@ -14,8 +14,8 @@
  */
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, BookOpen, Clock, Eye, ChevronDown, Calendar } from '@lucide/vue'
-import { List as VanList, PullRefresh as VanPullRefresh, Swipe as VanSwipe, SwipeItem as VanSwipeItem, showFailToast } from 'vant'
+import { Search, BookOpen, Clock, Eye, ChevronDown, Calendar, Flame } from '@lucide/vue'
+import { List as VanList, PullRefresh as VanPullRefresh, showFailToast } from 'vant'
 import MarkdownIt from 'markdown-it'
 import { wikiApi, fmtCompact, fmtShortDate } from '@/shared'
 import { useDepartments } from '@/chat/composables/useDepartments'
@@ -203,17 +203,14 @@ onBeforeUnmount(() => {
       </h1>
     </header>
 
-    <!-- 科室筛选 - 共享组件 DepartmentTabs -->
-    <DepartmentTabs
-      v-model="activeDepartmentId"
-      :options="tabOptions"
-      :sticky-top="embedded ? '' : '56px'"
-      @update:model-value="onDepartmentChange"
-    />
-
-    <!-- 搜索栏 - ds-search-box 品牌光晕（常驻，贴近结果区） -->
-    <div class="px-[var(--spacer-16)] py-[var(--spacer-8)] bg-[var(--bg-base-default)] border-b border-[var(--border-neutral-l1)]">
-      <div class="ds-search-box ds-search-box--md">
+    <!-- 科室筛选（下拉）+ 搜索栏 - 同一行，科室在左，搜索框占满剩余 -->
+    <div class="flex items-center gap-[var(--spacer-8)] px-[var(--spacer-16)] py-[var(--spacer-8)] bg-[var(--bg-base-default)] border-b border-[var(--border-neutral-l1)]">
+      <DepartmentTabs
+        v-model="activeDepartmentId"
+        :options="tabOptions"
+        @update:model-value="onDepartmentChange"
+      />
+      <div class="ds-search-box ds-search-box--md flex-1 min-w-0">
         <Search class="ds-search-box__icon h-4 w-4" />
         <input
           v-model="searchQuery"
@@ -254,58 +251,73 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 精选文章 - 按浏览量 Top3 轮播（视觉锤头像 + hover 上浮） -->
+      <!-- 热门置顶 - 按浏览量 Top3 竖向可折叠列表（复用 ds-list-item 样式，与文章列表一致） -->
       <section v-if="visibleFeaturedArticles.length" class="mb-[var(--spacer-24)]">
-        <VanSwipe
-          :autoplay="4000"
-          :show-indicators="visibleFeaturedArticles.length > 1"
-          indicator-color="var(--bg-brand)"
-        >
-          <!-- SwipeItem 内边距：为卡片阴影与 hover 上浮预留空间，避免被 overflow:hidden 裁剪 -->
-          <VanSwipeItem
+        <!-- 区块标题 -->
+        <div class="flex items-center justify-between mb-[var(--spacer-12)]">
+          <h2 class="truncate font-heading text-heading-sm font-semibold text-text">
+            热门置顶
+          </h2>
+          <span class="shrink-0 text-body-sm text-text-tertiary">
+            按浏览热度精选
+          </span>
+        </div>
+
+        <!-- 卡片列表：与下方文章列表一致的横排 ds-list-item -->
+        <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
+          <div
             v-for="article in visibleFeaturedArticles"
             :key="article.id"
-            class="px-[var(--spacer-4)] pt-[var(--spacer-4)] pb-[var(--spacer-12)]"
+            class="ds-list-item--divider"
           >
-            <a
-              class="block rounded-[var(--radius-card-soft)] overflow-hidden bg-[var(--bg-base-default)] shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] hover:-translate-y-0.5 transition-[box-shadow,transform_var(--micro-duration)_var(--micro-ease)] cursor-pointer"
-              @click="goArticle(article.id)"
-            >
-              <div class="p-[var(--spacer-20)]">
-                <!-- 科室标签 - 品牌配色 -->
-                <span class="inline-flex items-center h-7 px-[var(--spacer-12)] rounded-[var(--radius-full)] mb-[var(--spacer-12)] bg-[var(--bg-brand-light)] text-text-brand text-body-sm font-medium ">
-                  {{ article.department_name }}
+            <div class="ds-list-item min-h-[var(--touch-target-min)]">
+              <span class="ds-list-item__icon ds-list-item__icon--brand">
+                <Flame :size="20" />
+              </span>
+              <div class="ds-list-item__content" @click="goArticle(article.id)">
+                <span class="ds-list-item__title">{{ article.title }}</span>
+                <span class="ds-list-item__meta">
+                  <span class="truncate">{{ article.department_name }}</span>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Calendar :size="11" />
+                    {{ article.published_at ? fmtShortDate(article.published_at) : '-' }}
+                  </span>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Clock :size="11" />
+                    {{ estimateReadTime(article.summary) }}分
+                  </span>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Eye :size="11" />
+                    {{ fmtCompact(article.view_count) }}
+                  </span>
                 </span>
-                <h2 class="line-clamp-2 mb-[var(--spacer-10)] font-heading text-heading-md leading-[1.3] font-semibold text-text [text-wrap:balance]">
-                  {{ article.title }}
-                </h2>
-                <p class="line-clamp-2 mb-[var(--spacer-16)] text-body-base leading-[1.6] text-text-secondary">
-                  {{ renderPlainText(article.summary) }}
-                </p>
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-[var(--spacer-10)] min-w-0">
-                    <span class="inline-flex items-center justify-center shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-[var(--bg-brand)] to-[var(--accent-violet)] text-onbrand text-body-sm font-semibold shadow-[var(--shadow-sm)]">
-                      {{ (article.author_name || '医').charAt(0) }}
-                    </span>
-                    <span class="truncate text-body-sm text-text-secondary">
-                      {{ article.author_name }}
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-[var(--spacer-12)] shrink-0 ml-[var(--spacer-12)] text-text-tertiary">
-                    <span class="inline-flex items-center gap-[var(--spacer-4)] text-body-sm">
-                      <Clock :size="12" />
-                      {{ estimateReadTime(article.summary) }} 分钟
-                    </span>
-                    <span class="inline-flex items-center gap-[var(--spacer-4)] text-body-sm">
-                      <Eye :size="12" />
-                      {{ fmtCompact(article.view_count) }}
-                    </span>
-                  </div>
-                </div>
               </div>
-            </a>
-          </VanSwipeItem>
-        </VanSwipe>
+              <button
+                type="button"
+                class="ds-list-item__trailing justify-center w-9 h-9 rounded-[var(--radius-8)] text-icon-tertiary hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)] transition-[background-color_var(--micro-duration)_var(--micro-ease)]"
+                :aria-label="expandedIds.has(article.id) ? '收起摘要' : '展开摘要'"
+                :aria-expanded="expandedIds.has(article.id)"
+                @click.stop="toggleExpand(article.id)"
+              >
+                <ChevronDown
+                  :size="18"
+                  class="transition-transform duration-200"
+                  :class="expandedIds.has(article.id) ? 'rotate-180' : ''"
+                />
+              </button>
+            </div>
+            <!-- 展开体：纯摘要，与下方文章列表一致 -->
+            <div
+              v-if="expandedIds.has(article.id)"
+              class="px-[var(--spacer-16)] pb-[var(--spacer-12)] text-body-sm leading-[1.6] text-text-secondary"
+            >
+              {{ renderPlainText(article.summary) }}
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 分隔标题 -->

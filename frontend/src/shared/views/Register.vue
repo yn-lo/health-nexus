@@ -13,7 +13,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { CircleAlert } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, BrandLogo, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
+import { PageShell, AuthHero, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -88,23 +88,10 @@ function goLogin() {
 
   <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
    <!-- 上半屏：品牌叙事区（视觉重心） -->
-   <header class="auth-hero flex flex-col justify-end pb-[var(--spacer-24)]">
-    <div class="auth-brand-row flex items-center gap-[var(--spacer-10)]">
-     <BrandLogo size="sm" hide-name />
-     <span class="auth-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
-      HEALTH NEXUS
-     </span>
-    </div>
-
-    <div class="mt-[var(--spacer-28)] flex flex-col gap-[var(--spacer-12)]">
-     <h1 class="auth-title font-heading font-semibold leading-[1.15] tracking-[-0.02em] text-text">
-      创建您的<br>健康助手账户
-     </h1>
-     <p class="auth-subtitle text-body-base leading-relaxed text-text-secondary">
-      设置用户名与密码，<br>即可开始使用
-     </p>
-    </div>
-   </header>
+   <AuthHero>
+    <template #title>创建您的<br>健康助手账户</template>
+    <template #subtitle>设置用户名与密码，<br>即可开始使用</template>
+   </AuthHero>
 
    <!-- 下半屏：注册表单区（功能） -->
    <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">

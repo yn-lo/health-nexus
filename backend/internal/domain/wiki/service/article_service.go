@@ -225,6 +225,9 @@ func (s *ArticleService) Create(ctx context.Context, in CreateInput) (*ArticleSt
 	if summary == "" {
 		summary = truncateRunes(stripHTMLTags(in.Content), summaryMaxRunes)
 	}
+	// 客户端提供的 summary 也统一规范化：剥离残留 HTML 标签并反转义实体（&quot;→"），
+	// 避免前端纯文本渲染时字面量残留 &quot;（与自动生成的摘要行为一致）。
+	summary = truncateRunes(stripHTMLTags(summary), summaryMaxRunes)
 	deptID := in.DepartmentID
 	a := &entity.Article{
 		Title:          in.Title,
@@ -531,6 +534,11 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 		CoverImageURL:   in.CoverImageURL,
 		AllowReference:  in.AllowReference,
 		ExpectedVersion: in.ExpectedVersion,
+	}
+	// 客户端提供的 summary 统一规范化：剥离 HTML 标签并反转义实体（&quot;→"）。
+	if in.Summary != nil {
+		normalized := truncateRunes(stripHTMLTags(*in.Summary), summaryMaxRunes)
+		fields.Summary = &normalized
 	}
 	// 乐观锁守卫：客户端未传 ExpectedVersion 时，自动使用读取时的 version 防并发丢失更新。
 	if fields.ExpectedVersion == nil {

@@ -344,7 +344,7 @@
    *   --ai-bubble-bg: #F9FAFB
    *   --input-height: 48px
    *   --typing-dot-size: 8px
-   *   --message-gap: 16px
+   *   --message-gap: 20px
    * ─────────────────────────────────────────────────────── */
   --ai-accent: #6366F1;
   --user-bubble-bg: #E0E7FF;
@@ -355,7 +355,7 @@
   --ai-input-height: 48px;
   --ai-input-radius: var(--radius-full);
   --typing-dot-size: 8px;
-  --message-gap: 16px;
+  --message-gap: 20px;
   --ai-avatar-gradient: linear-gradient(135deg, #6366F1 0%, #818CF8 100%);
 
   /* ── 综合风格扩展令牌（AI Healthcare Native） ────────────
@@ -371,7 +371,7 @@
   --hero-orb-inner-size: 80px;
   --hero-orb-pulse-duration: 3s;
   --hero-orb-pulse-inner-duration: 2s;
-  --hero-headline-size: clamp(1.5rem, 4vw, 2rem);
+  --hero-headline-size: clamp(1.75rem, 5vw, 2.5rem);
   --hero-glow-color: rgba(99, 102, 241, 0.24);
   --hero-glow-color-soft: rgba(99, 102, 241, 0.12);
 

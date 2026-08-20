@@ -119,39 +119,38 @@ function onPromptClick(item: QuickAction) {
 
  <!-- 聊天模式 -->
  <div v-if="activeMode === 'chat'" class="chat-home-body px-[var(--spacer-20)]">
- <!-- Hero — Hero-Centric：96px orb + 双层 pulse 光晕 -->
- <section class="flex flex-col items-center text-center pt-[var(--spacer-32)] pb-[var(--spacer-24)]">
+ <!-- Hero — 现代化欢迎区：留白 + 轻法式问候 + 呼吸感 orb -->
+ <section class="flex flex-col items-center text-center pt-[var(--spacer-32)] pb-[var(--spacer-32)]">
  <div class="ai-orb-wrapper" aria-hidden="true">
  <div class="ai-orb-pulse-outer" />
  <div class="ai-orb-pulse-inner" />
  <div class="ai-orb flex items-center justify-center">
- <Sparkles class="w-10 h-10 text-onbrand" />
+ <Sparkles class="w-9 h-9 text-onbrand" />
  </div>
  </div>
 
- <h2 class="font-heading text-center font-semibold leading-[1.25] text-text mt-[var(--spacer-24)] mb-[var(--spacer-8)] break-keep text-[var(--hero-headline-size)]">
- 您好，我是智能健康助手
+ <h2 class="hero-headline text-center font-semibold leading-[1.3] text-text break-keep text-[var(--hero-headline-size)] mt-[var(--spacer-24)]">
+ 您好，我是您的<span class="hero-headline-accent">智能健康助手</span>
  </h2>
- <p class="text-center text-body-base text-text-secondary max-w-[320px]">
- 我可以帮您了解健康知识、解答医学问题
+ <p class="text-center text-body-base text-text-secondary max-w-[300px] leading-[1.6] mt-[var(--spacer-12)]">
+ 随时解答健康疑问，提供可信医学参考
  </p>
  </section>
 
- <!-- 试试这样问 — AI-Native context cards + Micro hover -->
- <section class="pb-[var(--spacer-16)]">
-
- <div class="flex flex-col gap-[var(--spacer-8)]">
+ <!-- 向我提问 - 现代化推荐卡片 -->
+ <section class="pb-[var(--spacer-20)]">
+ <div class="flex flex-col gap-[var(--spacer-10)]">
  <button
  v-for="q in recommendedQuestions"
  :key="q.label"
- class="ai-context-card group flex items-center w-full text-left bg-[var(--bg-base-default)] rounded-[var(--radius-12)] p-[14px_16px] gap-[var(--spacer-12)]"
+ class="ai-context-card group flex items-center w-full text-left bg-[var(--bg-base-default)] rounded-[var(--radius-16)] px-[var(--spacer-16)] py-[var(--spacer-14,14px)] gap-[var(--spacer-12)] shadow-[var(--shadow-xs)] ring-1 ring-[var(--border-neutral-l1)]"
  @click="onPromptClick(q)"
  >
- <span class="ai-context-icon shrink-0 flex items-center justify-center w-10 h-10 rounded-[var(--radius-10)] bg-[var(--bg-brand-light)] text-icon-brand">
- <component :is="q.icon" :size="20" />
+ <span class="ai-context-icon shrink-0 flex items-center justify-center w-11 h-11 rounded-[var(--radius-12)] bg-[var(--bg-brand-light)] text-icon-brand">
+ <component :is="q.icon" :size="22" />
  </span>
- <span class="flex-1 min-w-0 truncate text-body-base text-text font-medium">{{ q.label }}</span>
- <ChevronRight :size="18" class="shrink-0 text-icon-tertiary" />
+ <span class="flex-1 min-w-0 text-body-base text-text font-medium leading-snug">{{ q.label }}</span>
+ <ChevronRight :size="18" class="shrink-0 text-icon-tertiary transition-transform duration-200 group-hover:translate-x-0.5" />
  </button>
  </div>
  </section>
@@ -264,11 +263,25 @@ function onPromptClick(item: QuickAction) {
  100% { transform: scale(1.25); opacity: 0; }
 }
 
-/* ── A11y：减弱动效偏好（Context card 规则已移至全局 components.css） ── */
+/* ── Hero 标题：品牌色点睛词（克制，仅一处强调） ──────────── */
+.hero-headline-accent {
+ color: var(--text-brand);
+ font-weight: 600;
+}
+
+/* ── 推荐卡片：更显著的按压反馈 ───────────────────────────── */
+.ai-context-card {
+ box-shadow: var(--shadow-xs);
+}
+
+/* ── A11y：减弱动效偏好 ─────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
  .ai-orb-pulse-outer,
  .ai-orb-pulse-inner {
  animation: none;
+ }
+ .ai-context-card:hover {
+ transform: none;
  }
 }
 </style>

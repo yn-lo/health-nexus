@@ -23,7 +23,7 @@ Health Nexus Frontend 是一个双 MPA（多页应用）健康平台，包含患
 完整门禁：
 
 ```bash
-npm run lint && npm run type-check && npm run test:arch && npm run lint:style
+npm run lint && npm run type-check && npm run test:arch && npm run lint:style && npm run dead-code && npm run dup-check
 ```
 
 快速预检：

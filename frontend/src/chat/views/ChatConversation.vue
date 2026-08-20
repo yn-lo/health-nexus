@@ -1,16 +1,14 @@
 <script setup lang="ts">
 /**
- * ChatConversation 对话页 - AI-Native UI 风格
+ * ChatConversation 对话页 - AI-Native UI 风格（重构后）
  *
- * 风格升级（参考 ui-ux-pro-max styles.csv #43 AI-Native UI）：
- *   - 顶部使用统一 ChatHeader（frosted variant + 返回 + 标题 + 历史）
- *   - 用户气泡：#E0E7FF indigo-100 + #1E1B4B 文本（右对齐）
- *   - AI 气泡：#F9FAFB 灰 + indigo accent 头像（左对齐）
- *   - 消息间距 16px（var(--message-gap)）
- *   - 底部输入栏使用统一 ChatInputBar（fixed bottom + 胶囊圆角）
- *   - 3 点输入指示器（pulse 动画）
- *   - 流式光标（光标闪烁）
- *   - 移除 van-nav-bar，避免 Vant 默认蓝色干扰
+ * 视觉重塑：
+ *   - 顶部统一 ChatHeader（frosted variant + 返回 + 标题 + 历史）
+ *   - 用户消息：品牌色实心气泡 + 白色文本（右对齐，更强的对话对比）
+ *   - AI 消息：灰底气泡 + 名称/时间层级 + 编号引用卡 + 反馈栏（左对齐）
+ *   - 消息按角色分组：连续同角色收拢间距，跨角色留白更大
+ *   - 15px/24px 阅读字号 + 分组呼吸感（message gap 提升至 20px）
+ *   - 3 点输入指示器（pulse）+ 流式光标
  * 保留功能：useSSEChat、useDepartments、ChatHistoryDrawer、点踩原因
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -21,7 +19,6 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
-  User,
 } from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
@@ -47,6 +44,26 @@ const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 /** 渲染 markdown 为 HTML（经白名单消毒，防 XSS） */
 function renderMd(text: string): string {
   return sanitizeHtml(md.render(text))
+}
+
+/** 消息时间：今天显示 HH:mm，否则显示 MM-DD HH:mm */
+function formatTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const now = new Date()
+  const sameDay = d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (sameDay) return hm
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hm}`
+}
+
+/** 与下一条消息同角色 → 收拢间距（分组呼吸感） */
+function isGroupedWithNext(idx: number): boolean {
+  const next = chatStore.messages[idx + 1]
+  const cur = chatStore.messages[idx]
+  if (!cur || !next) return false
+  return cur.role === next.role
 }
 
 const inputBarRef = ref<InstanceType<typeof ChatInputBar> | null>(null)
@@ -411,42 +428,54 @@ onUnmounted(() => {
       </template>
     </ChatHeader>
 
-    <!-- 消息列表 - AI-Native：16px 间距 -->
-    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-12)] py-[var(--spacer-16)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }">
-      <div class="flex flex-col gap-[var(--message-gap)]">
-        <template v-for="msg in chatStore.messages" :key="msg.id">
-          <!-- 用户消息 - AI-Native: indigo-100 气泡 + indigo-950 文本 -->
-          <div v-if="msg.role === 'user'" class="ai-message flex justify-end gap-[var(--spacer-8)] items-start">
-            <div class="ds-bubble ds-bubble--user">
-              <div class="m-0 break-words text-[14px] leading-[20px] markdown-content" v-html="renderMd(msg.content)"></div>
-            </div>
-            <div class="ds-avatar ds-avatar--xs mt-[var(--spacer-4)]">
-              <User :size="14" />
+    <!-- 消息列表 - AI-Native：分组留白 + 15px 阅读字号 -->
+    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }">
+      <div class="flex flex-col">
+        <template v-for="(msg, idx) in chatStore.messages" :key="msg.id">
+          <!-- 用户消息 - 品牌浅色气泡 + 时间（右对齐） -->
+          <div
+            v-if="msg.role === 'user'"
+            class="chat-row chat-row--user"
+            :class="{ 'chat-row--grouped': isGroupedWithNext(idx) }"
+          >
+            <div class="chat-row__content chat-row__content--user">
+              <div class="ds-bubble ds-bubble--user">
+                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content)"></div>
+              </div>
+              <span class="chat-time">{{ formatTime(msg.created_at) }}</span>
             </div>
           </div>
 
-          <!-- AI 消息 - AI-Native: 灰气泡 + indigo 渐变头像 -->
-          <div v-else-if="msg.role === 'assistant'" class="ai-message flex items-start gap-[var(--spacer-8)]">
-            <div class="ds-avatar ds-avatar--xs ds-avatar--brand mt-[var(--spacer-4)]">
+          <!-- AI 消息 - 灰底气泡 + 名称层级 + 引用 + 反馈 -->
+          <div
+            v-else-if="msg.role === 'assistant'"
+            class="chat-row chat-row--ai"
+            :class="{ 'chat-row--grouped': isGroupedWithNext(idx) }"
+          >
+            <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
               <Sparkles :size="14" />
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="ds-bubble ds-bubble--ai ds-bubble--ai-lg">
-                <div class="m-0 break-words text-[14px] leading-[20px] markdown-content" v-html="renderMd(msg.content)"></div>
+            <div class="flex-1 min-w-0 chat-row__content">
+              <div class="chat-assistant-name">
+                <span class="font-medium text-text">健康助手</span>
+                <span class="chat-time">{{ formatTime(msg.created_at) }}</span>
+              </div>
+              <div class="ds-bubble ds-bubble--ai">
+                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content)"></div>
               </div>
 
               <!-- 引用来源 -->
-              <div v-if="msg.references?.length" class="mt-[var(--spacer-8)]">
-                <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-4)]">参考来源</p>
-                <div class="flex flex-col gap-[var(--spacer-4)]">
+              <div v-if="msg.references?.length" class="mt-[var(--spacer-12)]">
+                <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
+                <div class="flex flex-col gap-[var(--spacer-6)]">
                   <div
-                    v-for="ref in dedupeRefs(msg.references)"
+                    v-for="(ref, refIdx) in dedupeRefs(msg.references)"
                     :key="ref.article_id"
-                    class="ref-card flex items-center gap-[var(--spacer-6)] rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-10)] py-[var(--spacer-6)] transition-transform active:scale-[0.98]"
+                    class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
                     @click="goToArticle(ref.article_id)"
                   >
-                    <span class="ref-card__dot" />
-                    <p class="flex-1 min-w-0 text-body-xs text-text-secondary m-0 leading-snug line-clamp-2">
+                    <span class="ref-card__idx">{{ refIdx + 1 }}</span>
+                    <p class="flex-1 min-w-0 text-body-sm text-text-secondary m-0 leading-snug line-clamp-2">
                       {{ ref.article_title }}
                     </p>
                   </div>
@@ -454,7 +483,7 @@ onUnmounted(() => {
               </div>
 
               <!-- 反馈栏 -->
-              <div class="feedback-bar flex items-center mt-[var(--spacer-12)]">
+              <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
                 <button
                   class="feedback-btn flex items-center justify-center"
                   :class="feedbackMap[msg.id] === 'up' ? 'text-icon-brand' : 'text-icon-tertiary'"
@@ -485,49 +514,59 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- 思考中指示器 - AI-Native 3-dot pulse -->
-        <div v-if="isThinking" class="flex items-start gap-[var(--spacer-8)]">
-          <div class="ds-avatar ds-avatar--xs ds-avatar--brand mt-[var(--spacer-4)]">
+        <!-- 思考中指示器 - 3-dot pulse + 名称 -->
+        <div v-if="isThinking" class="chat-row chat-row--ai">
+          <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
             <Sparkles :size="14" />
           </div>
-          <div class="ds-bubble ds-bubble--ai">
-            <div class="flex items-center gap-[var(--spacer-6)]">
-              <span class="thinking-dot" />
-              <span class="thinking-dot" />
-              <span class="thinking-dot" />
-              <span class="ml-[var(--spacer-4)] text-body-xs text-text-tertiary">正在思考...</span>
+          <div class="flex-1 min-w-0">
+            <div class="chat-assistant-name">
+              <span class="font-medium text-text">健康助手</span>
+              <span class="chat-time">正在思考</span>
+            </div>
+            <div class="ds-bubble ds-bubble--ai">
+              <div class="flex items-center gap-[var(--spacer-6)]">
+                <span class="thinking-dot" />
+                <span class="thinking-dot" />
+                <span class="thinking-dot" />
+                <span class="ml-[var(--spacer-4)] text-body-xs text-text-tertiary">正在思考...</span>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 流式输出中的 AI 消息 -->
-        <div v-if="isStreaming && currentContent" class="flex items-start gap-[var(--spacer-8)]">
-          <div class="ds-avatar ds-avatar--xs ds-avatar--brand mt-[var(--spacer-4)]">
+        <div v-if="isStreaming && currentContent" class="chat-row chat-row--ai">
+          <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
             <Sparkles :size="14" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="ds-bubble ds-bubble--ai ds-bubble--ai-lg">
-              <div class="m-0 break-words text-[14px] leading-[20px] markdown-content" v-html="renderMd(currentContent) + '<span class=\'streaming-cursor\'></span>'"></div>
+            <div class="chat-assistant-name">
+              <span class="font-medium text-text">健康助手</span>
+              <span class="chat-time">正在生成</span>
+            </div>
+            <div class="ds-bubble ds-bubble--ai">
+              <div class="m-0 break-words markdown-content" v-html="renderMd(currentContent) + '<span class=\'streaming-cursor\'></span>'"></div>
             </div>
             <!-- 流式中的引用来源 -->
-            <div v-if="references.length" class="mt-[var(--spacer-8)]">
-              <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-4)]">参考来源</p>
-              <div class="flex flex-col gap-[var(--spacer-4)]">
+            <div v-if="references.length" class="mt-[var(--spacer-12)]">
+              <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
+              <div class="flex flex-col gap-[var(--spacer-6)]">
                 <div
-                  v-for="ref in dedupeRefs(references)"
+                  v-for="(ref, refIdx) in dedupeRefs(references)"
                   :key="ref.article_id"
-                  class="ref-card flex items-center gap-[var(--spacer-6)] rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-10)] py-[var(--spacer-6)] transition-transform active:scale-[0.98]"
+                  class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
                   @click="goToArticle(ref.article_id)"
                 >
-                  <span class="ref-card__dot" />
-                  <p class="flex-1 min-w-0 text-body-xs text-text-secondary m-0 leading-snug line-clamp-2">
+                  <span class="ref-card__idx">{{ refIdx + 1 }}</span>
+                  <p class="flex-1 min-w-0 text-body-sm text-text-secondary m-0 leading-snug line-clamp-2">
                     {{ ref.article_title }}
                   </p>
                 </div>
               </div>
             </div>
             <!-- 流式中仅保留复制按钮 -->
-            <div class="feedback-bar flex items-center mt-[var(--spacer-12)]">
+            <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
               <button
                 class="feedback-btn flex items-center justify-center text-icon-tertiary"
                 aria-label="复制内容"
@@ -629,9 +668,53 @@ onUnmounted(() => {
   51%, 100% { opacity: 0; }
 }
 
-/* ── Micro-interactions：消息 fade-in ──────────────────── */
-.ai-message {
+/* ── 消息行：跨角色分组留白 + 同角色收拢 ───────────────── */
+.ai-message,
+.chat-row {
   animation: message-fade-in 200ms var(--micro-ease) both;
+}
+
+.chat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-10);
+  margin-bottom: var(--message-gap);
+}
+.chat-row:last-child {
+  margin-bottom: 0;
+}
+/* 与下一条同角色 → 收拢间距（分组呼吸感） */
+.chat-row--grouped {
+  margin-bottom: var(--spacer-10);
+}
+
+/* 用户消息：右对齐，气泡后跟时间 */
+.chat-row--user {
+  justify-content: flex-end;
+}
+.chat-row__content--user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacer-4);
+}
+
+/* AI 消息名称 + 时间层级 */
+.chat-assistant-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacer-6);
+  margin-bottom: var(--spacer-4);
+}
+.chat-assistant-name .chat-time {
+  font-size: var(--body-xs-font-size);
+  color: var(--text-tertiary);
+}
+
+.chat-time {
+  font-size: var(--body-xs-font-size);
+  color: var(--text-tertiary);
+  line-height: 1.2;
 }
 
 @keyframes message-fade-in {
@@ -666,13 +749,19 @@ onUnmounted(() => {
   transform: scale(var(--press-scale));
 }
 
-/* ── 引用来源卡片：品牌色圆点 + 触感按压 ───────────────── */
-.ref-card__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--ai-accent);
+/* ── 引用来源卡片：编号徽章 + 触感按压 ─────────────────── */
+.ref-card__idx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-8);
+  background: var(--bg-brand-light);
+  color: var(--text-brand);
+  font-size: var(--body-xs-font-size);
+  font-weight: 600;
 }
 
 /* ── 胶囊输入栏 focus 光晕 ─────────────────────────────── */
@@ -698,7 +787,8 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .thinking-dot,
   .streaming-cursor,
-  .ai-message {
+  .ai-message,
+  .chat-row {
     animation: none;
   }
   .feedback-btn {
@@ -713,6 +803,15 @@ onUnmounted(() => {
  * markdown-it 输出的 HTML 在块级标签间存在源码换行，pre-wrap 会
  * 把这些换行渲染成可见空行，导致嵌套列表出现过大间距。
  * ─────────────────────────────────────────────────────────── */
+/* 阅读字号：用户/AI 气泡统一 15px/24px（比默认 body-sm 更舒适） */
+.chat-row .ds-bubble {
+  font-size: 15px;
+  line-height: 24px;
+}
+.chat-row .markdown-content {
+  font-size: 15px;
+  line-height: 24px;
+}
 .markdown-content {
   white-space: normal;
 }

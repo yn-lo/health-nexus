@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ShieldBan, Pencil, Trash2 } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage } from '@/shared/components'
+import { ConfigCrudPage, DsSwitchRow } from '@/shared/components'
 import { configApi, usePagedList, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { SafetyRule, SafetyRuleCategory, SafetyRuleAction, SafetyRuleCreateRequest } from '@/shared'
@@ -239,13 +239,7 @@ onMounted(load)
      <span class="text-body-sm text-text-secondary">描述（可选）</span>
      <textarea v-model="form.description" class="ds-textarea" rows="2" placeholder="规则说明"></textarea>
     </div>
-    <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
-     <span class="text-body-base text-text">启用</span>
-     <label class="ds-switch">
-      <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
-      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
-     </label>
-    </div>
+    <DsSwitchRow v-model="form.is_active" />
    </div>
   </template>
  </ConfigCrudPage>

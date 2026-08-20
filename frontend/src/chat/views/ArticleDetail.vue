@@ -145,27 +145,18 @@ onBeforeUnmount(() => {
 
  <!-- 顶部导航 — v3 风格：扩大触摸目标至 44pt -->
  <header
- class="sticky top-0 z-30 flex h-14 items-center border-b border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]/95 backdrop-blur px-[var(--spacer-12)]"
+ class="sticky top-0 z-30 flex h-14 items-center border-b border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]/85 backdrop-blur-md px-[var(--spacer-12)]"
  >
  <button
- class="-ml-[var(--spacer-4)] flex h-11 w-11 items-center justify-center rounded-[var(--radius-12)] hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)] transition-colors"
+ class="-ml-[var(--spacer-4)] flex h-11 w-11 items-center justify-center rounded-full hover:bg-[var(--bg-overlay-l1)] active:scale-95 transition-[background,transform_var(--micro-duration)_var(--micro-ease)]"
  aria-label="返回"
  @click="goBack"
  >
  <ChevronLeft :size="22" class="text-text" />
  </button>
- <h1 class="flex-1 truncate text-center text-body-base font-semibold text-text">
+ <h1 class="flex-1 truncate text-center font-heading text-body-base-strong font-semibold text-text">
  健康宣教
  </h1>
- <button
- class="flex h-11 w-11 items-center justify-center rounded-[var(--radius-12)] hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)] transition-colors"
- :class="bookmarked ? 'text-text-brand' : 'text-icon'"
- :aria-pressed="bookmarked"
- aria-label="收藏"
- @click="toggleBookmark"
- >
- <Bookmark :size="18" :fill="bookmarked ? 'currentColor' : 'none'" />
- </button>
  </header>
 
  <!-- 骨架屏 — loading 期间显示 -->
@@ -193,72 +184,81 @@ onBeforeUnmount(() => {
  </div>
 
  <!-- 文章内容 -->
- <article v-else-if="article" ref="contentRef" class="px-[var(--spacer-20)] pt-[var(--spacer-24)] pb-[calc(var(--spacer-32)+4rem)]">
- <!-- 文章头部 — v3 风格：医疗权威感 -->
- <header class="mb-[var(--spacer-24)]">
+ <article v-else-if="article" ref="contentRef" class="px-[var(--spacer-20)] pt-[var(--spacer-20)] pb-[calc(var(--spacer-40)+4.5rem)]">
+ <!-- 封面图 — 现代编辑排版：圆角大图 + 柔和描边，无 scrim 保证可读性 -->
+ <div
+ v-if="article.cover_url"
+ class="relative mb-[var(--spacer-24)] overflow-hidden rounded-[var(--radius-card-large)] bg-surface shadow-[var(--shadow-md)] ring-1 ring-[var(--border-neutral-l1)]"
+ >
+ <img
+ :src="article.cover_url"
+ :alt="article.title"
+ loading="lazy"
+ class="aspect-[16/9] w-full object-cover"
+ />
+ </div>
+
+ <!-- 文章头部 — 现代编辑排版：大标题 + 摘要 + 整合 byline -->
+ <header class="mb-[var(--spacer-20)]">
  <!-- 科室标签 — 品牌配色 -->
- <span class="inline-flex items-center h-7 px-[var(--spacer-12)] rounded-[var(--radius-full)] mb-[var(--spacer-16)] bg-[var(--bg-brand-light)] text-text-brand text-body-sm font-medium ">
+ <span class="inline-flex items-center h-7 px-[var(--spacer-12)] rounded-[var(--radius-full)] mb-[var(--spacer-16)] bg-brand-light text-text-brand text-body-sm-strong font-medium">
  {{ article.department_name }}
  </span>
 
- <!-- 标题 — 加大字号、紧凑行高 -->
+ <!-- 标题 — 提升到 heading-2xl，紧凑行高、平衡换行 -->
  <h2
- class="font-heading text-heading-xl leading-[1.25] font-semibold text-text mb-[var(--spacer-20)] [text-wrap:balance] [word-break:keep-all]"
+ class="font-heading text-heading-2xl leading-[1.22] font-semibold text-text [text-wrap:balance] [overflow-wrap:anywhere]"
  >
  {{ article.title }}
  </h2>
 
- <!-- 作者信息卡 — v3 风格：渐变头像 + 名字 + 阅读时长 -->
- <div class="flex items-center justify-between mb-[var(--spacer-12)]">
- <div class="flex items-center gap-[var(--spacer-10)] min-w-0">
- <span class="inline-flex items-center justify-center shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-[var(--bg-brand)] to-[var(--accent-violet)] text-onbrand text-body-base font-semibold shadow-[var(--shadow-sm)]">
+ <!-- 摘要 — 编辑式导语，留白充足 -->
+ <p v-if="article.summary" class="mt-[var(--spacer-12)] text-body-base leading-[1.7] text-text-secondary">
+ {{ article.summary }}
+ </p>
+
+ <!-- 整合 byline：作者 + 阅读时长 / 日期 + 阅读量 -->
+ <div class="mt-[var(--spacer-24)] flex items-center gap-[var(--spacer-12)]">
+ <span aria-hidden="true" class="inline-flex items-center justify-center shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-[var(--bg-brand)] to-[var(--accent-violet)] text-onbrand text-body-base-strong font-semibold shadow-[var(--shadow-glow-avatar)]">
  {{ authorInitial }}
  </span>
- <div class="flex flex-col min-w-0">
- <span class="truncate text-body-base font-medium text-text">
+ <div class="flex-1 min-w-0">
+ <div class="flex items-center gap-[var(--spacer-8)]">
+ <span class="truncate text-body-base-strong font-medium text-text">
  {{ article.author_name }}
  </span>
- <span class="text-body-xs text-text-tertiary">
- 健康宣教员
- </span>
- </div>
- </div>
- </div>
-
- <!-- 元数据 — v3 风格：flex-wrap 防小屏溢出 -->
- <div class="flex flex-wrap items-center gap-x-[var(--spacer-12)] gap-y-[var(--spacer-4)] px-[var(--spacer-12)] py-[var(--spacer-8)] rounded-[var(--radius-8)] bg-[var(--bg-base-secondary)] text-text-tertiary">
- <span class="inline-flex items-center gap-[var(--spacer-4)] text-body-sm">
- <Clock :size="12" />
- {{ fmtDate(article.published_at) }}
- </span>
- <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
- <span class="inline-flex items-center gap-[var(--spacer-4)] text-body-sm">
- <Eye :size="12" />
- {{ fmtCompact(article.view_count) }} 阅读
- </span>
- <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
- <span class="inline-flex items-center gap-[var(--spacer-4)] text-body-sm">
- <Clock :size="12" />
+ <span class="h-1 w-1 shrink-0 rounded-full bg-icon-tertiary" aria-hidden="true" />
+ <span class="shrink-0 text-body-sm text-text-tertiary">
  {{ readTimeMinutes }} 分钟阅读
  </span>
  </div>
+ <div class="mt-[var(--spacer-6)] flex items-center gap-[var(--spacer-8)] text-body-sm text-text-tertiary">
+ <span class="inline-flex items-center gap-[var(--spacer-4)]">
+ <Clock :size="12" />
+ {{ fmtDate(article.published_at) }}
+ </span>
+ <span class="h-1 w-1 shrink-0 rounded-full bg-icon-tertiary" aria-hidden="true" />
+ <span class="inline-flex items-center gap-[var(--spacer-4)]">
+ <Eye :size="12" />
+ {{ fmtCompact(article.view_count) }} 阅读
+ </span>
+ </div>
+ </div>
+ </div>
  </header>
 
- <!-- 分隔线 — v3 风格：渐变品牌光晕细线 -->
+ <!-- 分隔线 — 渐变品牌光晕细线 -->
  <div class="h-px bg-gradient-to-r from-transparent via-[var(--brand-glow-border-strong)] to-transparent mb-[var(--spacer-24)]" />
 
  <!-- 正文 — v3 风格：15px 字号 / 24px 行高 -->
  <div class="markdown-body" v-html="renderedContent" />
 
  <!-- 警告提示 — v3 风格：品牌色信息框 -->
- <div class="flex items-start gap-[var(--spacer-12)] p-[var(--spacer-16)] rounded-[var(--radius-card-medium)] mt-[var(--spacer-32)] mb-[var(--spacer-20)] bg-[var(--bg-brand-light)] border border-[var(--brand-glow-border-strong)]">
- <AlertTriangle :size="18" class="shrink-0 mt-[1px] text-text-brand" />
+ <div class="flex items-center gap-[var(--spacer-10)] p-[var(--spacer-12)] rounded-[var(--radius-8)] mt-[var(--spacer-32)] mb-[var(--spacer-16)] bg-[var(--bg-brand-light)] border border-[var(--brand-glow-border)]">
+ <AlertTriangle :size="20" class="shrink-0 text-text-brand" />
  <div class="flex-1">
- <p class="text-body-sm font-medium text-text-brand mb-[var(--spacer-4)]">
- 温馨提示
- </p>
  <p class="text-body-sm leading-[1.6] text-text-secondary">
- 以上内容仅供健康参考，不能替代专业医疗建议。如有疑问，请咨询您的主治医生。
+ <span class="font-medium text-text-brand">温馨提示：</span>以上内容仅供参考，不作为医疗建议，如有疑问，请咨询你的医护。
  </p>
  </div>
  </div>
@@ -283,9 +283,9 @@ onBeforeUnmount(() => {
  </Transition>
 
  <!-- 底部操作栏 — v3 风格：3 按钮，每按钮 min-w + 触摸目标达标 -->
- <div class="fixed bottom-0 inset-x-0 z-[var(--z-fixed)] flex items-stretch justify-around h-16 bg-[var(--bg-base-default)]/95 backdrop-blur border-t border-[var(--border-neutral-l1)] px-[var(--spacer-16)]">
+ <div class="fixed bottom-0 inset-x-0 z-[var(--z-fixed)] flex items-stretch justify-around h-16 bg-[var(--bg-base-default)]/90 backdrop-blur-md border-t border-[var(--border-neutral-l1)] px-[var(--spacer-16)] shadow-[0_-8px_24px_var(--brand-glow-xs)]">
  <button
- class="flex flex-col items-center justify-center gap-[2px] flex-1 min-w-[var(--touch-target-min)] h-full transition-colors hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)]"
+ class="flex flex-col items-center justify-center gap-[var(--spacer-2)] flex-1 min-w-[var(--touch-target-min)] h-full rounded-[var(--radius-12)] transition-[background,transform_var(--micro-duration)_var(--micro-ease)] hover:bg-[var(--bg-overlay-l1)] active:scale-95"
  :aria-pressed="liked"
  aria-label="点赞"
  @click="toggleLike"
@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
  </span>
  </button>
  <button
- class="flex flex-col items-center justify-center gap-[2px] flex-1 min-w-[var(--touch-target-min)] h-full transition-colors hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)]"
+ class="flex flex-col items-center justify-center gap-[var(--spacer-2)] flex-1 min-w-[var(--touch-target-min)] h-full rounded-[var(--radius-12)] transition-[background,transform_var(--micro-duration)_var(--micro-ease)] hover:bg-[var(--bg-overlay-l1)] active:scale-95"
  :aria-pressed="bookmarked"
  aria-label="收藏"
  @click="toggleBookmark"
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
  </span>
  </button>
  <button
- class="flex flex-col items-center justify-center gap-[2px] flex-1 min-w-[var(--touch-target-min)] h-full transition-colors hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)]"
+ class="flex flex-col items-center justify-center gap-[var(--spacer-2)] flex-1 min-w-[var(--touch-target-min)] h-full rounded-[var(--radius-12)] transition-[background,transform_var(--micro-duration)_var(--micro-ease)] hover:bg-[var(--bg-overlay-l1)] active:scale-95"
  aria-label="分享"
  @click="onShare"
  >
@@ -319,14 +319,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped ponytail:allow-scoped-css 长文排版，装饰性>
-/* markdown 正文样式 — v3 风格：15px/24px 长文阅读 */
+/* markdown 正文样式 — 现代编辑排版：15px/24px 长文阅读 */
+.markdown-body :deep(h1),
 .markdown-body :deep(h2) {
  font-family: var(--font-family-heading);
+ color: var(--text-default);
+ margin: var(--spacer-32) 0 var(--spacer-12);
+}
+.markdown-body :deep(h1) {
+ font-size: var(--heading-lg-font-size);
+ line-height: var(--heading-lg-line-height);
+ font-weight: var(--heading-lg-font-weight);
+}
+.markdown-body :deep(h2) {
  font-size: var(--heading-md-font-size);
  line-height: var(--heading-md-line-height);
  font-weight: var(--heading-md-font-weight);
- color: var(--text-default);
- margin: var(--spacer-32) 0 var(--spacer-12);
 }
 .markdown-body :deep(h3) {
  font-family: var(--font-family-heading);
@@ -394,6 +402,7 @@ onBeforeUnmount(() => {
  margin: var(--reading-block-margin) 0;
  padding: var(--spacer-12) var(--spacer-16);
  background: var(--bg-brand-light);
+ border-left: 3px solid var(--brand-glow-border-strong);
  border-radius: var(--radius-8);
 }
 .markdown-body :deep(blockquote p) {
@@ -412,7 +421,37 @@ onBeforeUnmount(() => {
 .markdown-body :deep(img) {
  max-width: 100%;
  height: auto;
- border-radius: var(--radius-8);
+ border-radius: var(--radius-12);
  margin: var(--spacer-12) 0;
+ box-shadow: var(--shadow-sm);
+}
+.markdown-body :deep(hr) {
+ border: none;
+ height: 1px;
+ margin: var(--spacer-24) 0;
+ background: linear-gradient(to right,
+ transparent,
+ var(--border-neutral-l2),
+ transparent);
+}
+.markdown-body :deep(table) {
+ width: 100%;
+ margin: var(--reading-block-margin) 0;
+ border-collapse: collapse;
+ font-size: var(--body-base-font-size);
+ line-height: var(--body-base-line-height);
+}
+.markdown-body :deep(th) {
+ text-align: left;
+ padding: var(--spacer-8) var(--spacer-10);
+ font-weight: var(--font-weight-strong);
+ color: var(--text-default);
+ background: var(--bg-base-secondary);
+ border-bottom: 1px solid var(--border-neutral-l2);
+}
+.markdown-body :deep(td) {
+ padding: var(--spacer-8) var(--spacer-10);
+ color: var(--text-secondary);
+ border-bottom: 1px solid var(--border-neutral-l1);
 }
 </style>

@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Pencil, Trash2, Building2, ChevronDown } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage } from '@/shared/components'
+import { ConfigCrudPage, DsSwitchRow } from '@/shared/components'
 import { baseApi, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { DepartmentTreeNode, DepartmentCreateRequest, DepartmentUpdateRequest } from '@/shared'
@@ -277,20 +277,8 @@ onMounted(load)
      <textarea v-model="form.description" class="ds-textarea" rows="2" placeholder="可选，如 心血管内科"></textarea>
     </div>
 
-    <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
-     <span class="text-body-base text-text">对患者公开</span>
-     <label class="ds-switch">
-      <input type="checkbox" class="ds-switch__input" v-model="form.is_public">
-      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
-     </label>
-    </div>
-    <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
-     <span class="text-body-base text-text">启用</span>
-     <label class="ds-switch">
-      <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
-      <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
-     </label>
-    </div>
+    <DsSwitchRow v-model="form.is_public" label="对患者公开" />
+    <DsSwitchRow v-model="form.is_active" />
    </div>
   </template>
  </ConfigCrudPage>

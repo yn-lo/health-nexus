@@ -28,7 +28,6 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isLoggedIn = computed(() => !!authStore.user)
-const userInitial = computed(() => (authStore.user?.username ?? '?').charAt(0).toUpperCase())
 
 function goProfileOrLogin() {
   if (isLoggedIn.value) {
@@ -59,20 +58,12 @@ function onLogoClick() {
       <slot name="center" />
     </template>
     <template #right>
-      <!-- 历史记录 -->
+      <!-- 历史记录 / 登录：统一品牌色图标按钮，登录后点击打开历史抽屉 -->
       <button
-        v-if="isLoggedIn"
-        class="header-action-btn ds-avatar ds-avatar--brand text-body-sm-strong font-semibold"
-        aria-label="历史记录"
-        @click="emit('openHistory')"
-      >
-        <span>{{ userInitial }}</span>
-      </button>
-      <button
-        v-else
         class="ds-icon-btn--brand"
-        aria-label="登录"
-        @click="goProfileOrLogin"
+        :class="isLoggedIn ? 'header-user-btn--logged' : ''"
+        :aria-label="isLoggedIn ? '历史记录' : '登录'"
+        @click="isLoggedIn ? emit('openHistory') : goProfileOrLogin()"
       >
         <User :size="18" />
       </button>
@@ -81,22 +72,9 @@ function onLogoClick() {
 </template>
 
 <style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* ── Header 操作按钮：统一 44px 圆形 + 阴影悬浮（WCAG 最小触摸目标） ──── */
-.header-action-btn {
-  width: var(--ds-control-height-md);
-  height: var(--ds-control-height-md);
-  flex-shrink: 0;
-  border: none;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--micro-duration) var(--micro-ease),
-              box-shadow var(--micro-duration) var(--micro-ease);
-}
-.header-action-btn:hover {
-  transform: scale(var(--hover-scale));
-  box-shadow: var(--shadow-md);
-}
-.header-action-btn:active {
-  transform: scale(var(--press-scale));
+/* 登录后：浅品牌底 + 黄色图标前景，与未登录的品牌实底区分 */
+.header-user-btn--logged {
+  background: var(--bg-brand-light);
+  color: var(--text-brand);
 }
 </style>

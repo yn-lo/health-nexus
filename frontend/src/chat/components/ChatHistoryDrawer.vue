@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import { Popup as VanPopup, SwipeCell as VanSwipeCell, Dialog, Loading as VanLoading } from 'vant'
-import { MessageSquare, Plus, Settings, Trash2 } from '@lucide/vue'
+import { MessageSquare, Plus, ChevronRight, Trash2 } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { getAccessToken, getUserStored, timeAgo } from '@/shared'
@@ -22,6 +22,9 @@ const emit = defineEmits<{
 
 const chatStore = useChatStore()
 const router = useRouter()
+
+const user = computed(() => getUserStored())
+const userInitial = computed(() => (user.value?.username ?? '?').charAt(0).toUpperCase())
 
 // 仅在抽屉打开且用户已登录时拉取会话列表
 watch(() => props.visible, (visible) => {
@@ -72,17 +75,23 @@ async function onDelete(id: string) {
     @update:show="onClose"
   >
     <div class="history-drawer">
+      <!-- 用户信息区：头像 + 用户名 + 个人中心（整卡可点击） -->
+      <button type="button" class="history-drawer__user" aria-label="个人中心" @click="goProfile">
+        <span class="ds-avatar ds-avatar--brand text-body-sm-strong font-semibold">{{ userInitial }}</span>
+        <span class="history-drawer__user-info">
+          <span class="history-drawer__user-name">{{ user?.username }}</span>
+          <span class="history-drawer__user-sub">欢迎回来</span>
+        </span>
+        <ChevronRight :size="18" class="history-drawer__profile" />
+      </button>
+
+      <!-- 对话历史标题 + 新对话 -->
       <header class="history-drawer__header">
         <h2 class="history-drawer__title">对话历史</h2>
-        <div class="history-drawer__actions">
-          <button class="history-drawer__new" @click="onNewChat">
-            <Plus :size="16" />
-            <span>新对话</span>
-          </button>
-          <button class="history-drawer__profile" aria-label="个人中心" @click="goProfile">
-            <Settings :size="18" />
-          </button>
-        </div>
+        <button class="history-drawer__new" @click="onNewChat">
+          <Plus :size="16" />
+          <span>新对话</span>
+        </button>
       </header>
 
       <VanLoading v-if="chatStore.loading" type="spinner" class="py-4" />
@@ -131,11 +140,54 @@ async function onDelete(id: string) {
   padding-bottom: calc(var(--spacer-16) + env(safe-area-inset-bottom, 0px));
 }
 
+/* ── 用户信息区：头像 + 用户名 + 个人中心（整卡可点击） ─── */
+.history-drawer__user {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  width: 100%;
+  padding: var(--spacer-20) 0 var(--spacer-16);
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-drawer__user:active {
+  opacity: 0.8;
+}
+
+.history-drawer__user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.history-drawer__user-name {
+  font-size: var(--heading-sm-font-size);
+  font-weight: var(--font-weight-strong);
+  color: var(--text-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-drawer__user-sub {
+  font-size: var(--body-xs-font-size);
+  color: var(--text-tertiary);
+}
+
+.history-drawer__profile {
+  flex-shrink: 0;
+  color: var(--icon-tertiary);
+}
+
 .history-drawer__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacer-16) 0 var(--spacer-12);
+  padding: var(--spacer-12) 0 var(--spacer-12);
   border-bottom: 1px solid var(--border-neutral-l1);
 }
 
@@ -165,29 +217,6 @@ async function onDelete(id: string) {
   opacity: 0.8;
 }
 
-.history-drawer__actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacer-8);
-}
-
-.history-drawer__profile {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--ds-control-height-sm);
-  height: var(--ds-control-height-sm);
-  border: none;
-  border-radius: var(--radius-full);
-  background: var(--bg-base-default);
-  color: var(--icon-default);
-  transition: all var(--transition-fast);
-}
-
-.history-drawer__profile:active {
-  opacity: 0.8;
-}
-
 .history-drawer__list {
   flex: 1;
   overflow-y: auto;
@@ -199,7 +228,7 @@ async function onDelete(id: string) {
 
 /* ponytail: ds-list-item 全局类覆盖默认 padding，适配抽屉紧凑布局，折中 */
 .history-drawer__list .ds-list-item {
-  padding: var(--spacer-12) var(--spacer-8);
+  padding: var(--spacer-14) var(--spacer-8);
   border-radius: var(--radius-8);
   border-bottom: 1px solid var(--border-neutral-l1);
 }

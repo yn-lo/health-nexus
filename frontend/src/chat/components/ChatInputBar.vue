@@ -95,13 +95,14 @@ defineExpose({ setText, inputText })
  @keydown="onInputKeydown"
  />
  <button
- class="ai-send-btn shrink-0 flex items-center justify-center rounded-[var(--radius-full)] bg-brand-light text-icon-brand disabled:bg-brand-disabled disabled:text-tertiary"
+ class="ai-send-btn shrink-0 flex items-center justify-center rounded-[var(--radius-full)]"
+ :class="canSend ? 'bg-brand text-onbrand shadow-[var(--shadow-glow-btn)]' : 'bg-brand-light text-icon-brand disabled:bg-brand-disabled disabled:text-tertiary'"
  :aria-label="loading ? '停止生成' : '发送'"
  :disabled="!canSend && !loading"
  @click="loading ? emit('stop') : doSend()"
  >
  <Square v-if="loading" :size="12" fill="currentColor" />
- <Send v-else :size="20" class="text-icon-brand" />
+ <Send v-else :size="20" class="text-current" />
  </button>
  </div>
  </div>
@@ -120,10 +121,9 @@ defineExpose({ setText, inputText })
 .ai-send-btn {
   width: var(--ds-control-height-md);
   height: var(--ds-control-height-md);
-  box-shadow: var(--shadow-glow-btn);
- transition: transform var(--micro-duration) var(--micro-ease),
- background-color var(--micro-duration) var(--micro-ease),
- box-shadow var(--micro-duration) var(--micro-ease);
+  transition: transform var(--micro-duration) var(--micro-ease),
+  background-color var(--micro-duration) var(--micro-ease),
+  box-shadow var(--micro-duration) var(--micro-ease);
 }
 .ai-send-btn:hover:not(:disabled) {
  transform: scale(var(--hover-scale-strong));

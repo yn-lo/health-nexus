@@ -18,7 +18,7 @@ const isAdmin = computed(() => {
 const allNavItems = [
   {
     key: 'chat',
-    label: '对话测试',
+    label: '对话',
     iconComponent: MessageCircle,
     routeNames: [],
     routeName: '',
