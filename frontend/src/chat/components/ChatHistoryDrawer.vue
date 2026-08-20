@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { Popup as VanPopup, SwipeCell as VanSwipeCell, Dialog, Loading as VanLoading } from 'vant'
-import { MessageSquare, Plus, ChevronRight, Trash2 } from '@lucide/vue'
+import { MessageSquare, ChevronRight, Trash2 } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { getAccessToken, getUserStored, timeAgo } from '@/shared'
-import { STAFF_ROLES, type UserRole } from '@/shared/constants/roles'
+import { STAFF_ROLES, ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
 import { EmptyState } from '@/shared/components'
 
 const props = withDefaults(defineProps<{
@@ -25,6 +25,10 @@ const router = useRouter()
 
 const user = computed(() => getUserStored())
 const userInitial = computed(() => (user.value?.username ?? '?').charAt(0).toUpperCase())
+const userRoleLabel = computed(() => {
+  const role = user.value?.role as UserRole | undefined
+  return (role && ROLE_LABEL[role]) || DEFAULT_STAFF_LABEL
+})
 
 // 仅在抽屉打开且用户已登录时拉取会话列表
 watch(() => props.visible, (visible) => {
@@ -39,11 +43,6 @@ function onClose() {
 
 function onSelect(id: string) {
   emit('select', id)
-  onClose()
-}
-
-function onNewChat() {
-  emit('newChat')
   onClose()
 }
 
@@ -80,19 +79,13 @@ async function onDelete(id: string) {
         <span class="ds-avatar ds-avatar--brand text-body-sm-strong font-semibold">{{ userInitial }}</span>
         <span class="history-drawer__user-info">
           <span class="history-drawer__user-name">{{ user?.username }}</span>
-          <span class="history-drawer__user-sub">欢迎回来</span>
+          <span class="history-drawer__user-sub">{{ userRoleLabel }}</span>
         </span>
         <ChevronRight :size="18" class="history-drawer__profile" />
       </button>
 
-      <!-- 对话历史标题 + 新对话 -->
-      <header class="history-drawer__header">
-        <h2 class="history-drawer__title">对话历史</h2>
-        <button class="history-drawer__new" @click="onNewChat">
-          <Plus :size="16" />
-          <span>新对话</span>
-        </button>
-      </header>
+      <!-- 分隔线：用户区与对话列表之间 -->
+      <div class="history-drawer__divider" />
 
       <VanLoading v-if="chatStore.loading" type="spinner" class="py-4" />
 
@@ -144,6 +137,7 @@ async function onDelete(id: string) {
 .history-drawer__user {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--spacer-12);
   width: 100%;
   padding: var(--spacer-20) 0 var(--spacer-16);
@@ -161,7 +155,7 @@ async function onDelete(id: string) {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .history-drawer__user-name {
@@ -183,38 +177,9 @@ async function onDelete(id: string) {
   color: var(--icon-tertiary);
 }
 
-.history-drawer__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacer-12) 0 var(--spacer-12);
-  border-bottom: 1px solid var(--border-neutral-l1);
-}
-
-.history-drawer__title {
-  margin: 0;
-  font-size: var(--heading-sm-font-size);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-default);
-}
-
-.history-drawer__new {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacer-4);
-  padding: var(--spacer-4) var(--spacer-12);
-  border: none;
-  border-radius: var(--radius-full);
-  background: var(--bg-brand-light);
-  color: var(--text-brand);
-  font-size: var(--body-xs-font-size);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-  transition: all var(--transition-fast);
-}
-
-.history-drawer__new:active {
-  opacity: 0.8;
+.history-drawer__divider {
+  border-top: 1px solid var(--border-neutral-l2);
+  margin-bottom: var(--spacer-12);
 }
 
 .history-drawer__list {

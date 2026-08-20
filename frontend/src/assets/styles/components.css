@@ -1261,7 +1261,7 @@
    user：brand-100 底 + 右下 4px 收口；ai：灰底 + 品牌 10% 描边
    ═══════════════════════════════════════════════════════════════ */
 .ds-bubble {
-  max-width: 78%;
+  max-width: 88%;
   padding: var(--bubble-padding-y) var(--bubble-padding-x);
   font-size: var(--body-sm-font-size);
   line-height: var(--body-sm-line-height);

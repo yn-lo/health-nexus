@@ -61,20 +61,12 @@ function onLogoClick() {
       <!-- 历史记录 / 登录：统一品牌色图标按钮，登录后点击打开历史抽屉 -->
       <button
         class="ds-icon-btn--brand"
-        :class="isLoggedIn ? 'header-user-btn--logged' : ''"
         :aria-label="isLoggedIn ? '历史记录' : '登录'"
         @click="isLoggedIn ? emit('openHistory') : goProfileOrLogin()"
       >
-        <User :size="18" />
+        <!-- 未登录：空心用户；登录：实心用户剪影（fill 受控） -->
+        <User :size="18" :fill="isLoggedIn ? 'currentColor' : 'none'" />
       </button>
     </template>
   </AppHeader>
 </template>
-
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* 登录后：浅品牌底 + 黄色图标前景，与未登录的品牌实底区分 */
-.header-user-btn--logged {
-  background: var(--bg-brand-light);
-  color: var(--text-brand);
-}
-</style>

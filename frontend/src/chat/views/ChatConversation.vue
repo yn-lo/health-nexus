@@ -697,6 +697,15 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--spacer-4);
+  /* 用户气泡宽度预算：落在整行上而非随内容塌缩的列上，使 88% 真正生效 */
+  width: auto;
+  flex: 0 1 auto;
+  max-width: 88%;
+}
+
+/* 气泡填满内容列，让 88% 的限宽由列承接 */
+.chat-row__content--user .ds-bubble {
+  max-width: 100%;
 }
 
 /* AI 消息名称 + 时间层级 */
