@@ -9,9 +9,7 @@
    仅由 src/staff/main.ts 在 main.css 之后引入，chat 端不加载。
    机制：
      1. :root 令牌覆写 —— 与 tokens.css 同选择器，后加载按级联顺序胜出
-     2. 组件增强 —— 非 layer、最后加载，优先于 @layer components 与 Vant
-     3. popup/overlay/dialog/toast 会 teleport 到 body，
-        使用裸类选择器（不带 #staff-app 前缀）
+     2. 组件增强 —— 非 layer、最后加载，优先于 @layer components
    豁免：scripts/style-guard.mjs ALLOWED_HEX_FILES 白名单
    ═══════════════════════════════════════════════════════════════ */
 
@@ -80,22 +78,6 @@
   backdrop-filter: var(--glass-blur);
 }
 
-/* ── 底部标签栏磨玻璃 + 激活态靛蓝 ─────────────────────────── */
-#staff-app .van-tabbar {
-  background: var(--glass-surface);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: 0 -1px 0 var(--border-neutral-l1);
-}
-
-#staff-app .van-tabbar-item--active {
-  color: var(--ai-accent);
-}
-
-#staff-app .van-tabbar-item--active .tab-icon-active {
-  filter: none;
-}
-
 /* ── 纯白浮卡：hover 轻微抬升 + 弹簧按压（阴影走项目默认） ── */
 #staff-app .ds-card {
   background: var(--bg-white);
@@ -142,55 +124,15 @@
 }
 
 /* ── 主按钮：实心靛蓝（非渐变，去光晕） ─────────────────── */
-#staff-app .ds-btn--primary,
-.van-button--primary:not(.van-button--plain) {
+#staff-app .ds-btn--primary {
   background: var(--bg-brand);
   border-color: transparent;
 }
 
-#staff-app .ds-btn--primary:hover:not(:disabled),
-.van-button--primary:not(.van-button--plain):hover {
+#staff-app .ds-btn--primary:hover:not(:disabled) {
   background: var(--bg-brand-hover);
 }
 
-#staff-app .ds-btn--primary:active:not(:disabled),
-.van-button--primary:not(.van-button--plain):active {
+#staff-app .ds-btn--primary:active:not(:disabled) {
   background: var(--bg-brand-active);
-}
-
-.van-button:active {
-  transform: scale(var(--press-scale));
-}
-
-/* ── Tabs 下划线靛蓝（去光晕） ───────────────────────────── */
-.van-tabs__line {
-  background: var(--bg-brand);
-}
-
-/* ── 浮层玻璃化（teleport 到 body，裸选择器，中性浅色） ──── */
-.van-overlay {
-  background: rgba(115, 115, 115, 0.40);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-
-.van-popup {
-  background: var(--glass-surface);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-}
-
-.van-dialog {
-  background: var(--bg-white);
-  border-radius: var(--radius-card-large);
-  box-shadow: var(--shadow-xl);
-  overflow: hidden;
-}
-
-.van-toast {
-  background: rgba(38, 38, 38, 0.9);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border-radius: var(--radius-12);
-  box-shadow: var(--shadow-lg);
 }

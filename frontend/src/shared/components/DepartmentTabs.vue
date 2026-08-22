@@ -5,8 +5,8 @@
  * 触摸目标 ≥44pt（WCAG AAA）
  */
 import { computed, ref } from 'vue'
-import { Popup as VanPopup } from 'vant'
 import { ChevronDown } from '@lucide/vue'
+import { DsPopup } from '@/shared/components'
 
 interface TabOption {
   id: number | string
@@ -47,11 +47,10 @@ function onSelect(id: number | string) {
       <ChevronDown :size="16" class="shrink-0 text-icon-tertiary" />
     </button>
 
-    <VanPopup
+    <DsPopup
       :show="show"
       position="bottom"
-      round
-      :style="{ height: '60vh' }"
+      height="60vh"
       @update:show="show = $event"
     >
       <div class="flex flex-col h-full px-[var(--spacer-16)] pb-[calc(var(--spacer-16)+env(safe-area-inset-bottom,0px))]">
@@ -71,6 +70,6 @@ function onSelect(id: number | string) {
           </li>
         </ul>
       </div>
-    </VanPopup>
+    </DsPopup>
   </div>
 </template>

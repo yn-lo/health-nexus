@@ -7,7 +7,7 @@
  *   primitive（原始值）→ semantic（语义别名）→ component（组件别名）
  *   - primitive：--bg-brand / --text-default / --spacer-16 等原子值
  *   - semantic：--color-primary / --color-foreground / --spacing-page 等业务语义
- *   - component：通过 @theme inline 暴露给 Tailwind，通过 :root 暴露给 Vant
+ *   - component：通过 @theme inline 暴露给 Tailwind，通过 :root 暴露全局
  */
 
 :root {
@@ -393,7 +393,7 @@
   --contrast-ratio-target: 7:1;
 
   /* ── 控件级令牌（design system control tokens） ─────────
-   * 统一全局 Vant / 自定义控件的高度/圆角/内距
+   * 统一全局控件的高度/圆角/内距
    * 页面 scoped css 只写装饰（背景/阴影/渐变），不重复这些
    * ─────────────────────────────────────────────────────── */
   --ds-control-height-sm: 32px;

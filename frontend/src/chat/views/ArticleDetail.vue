@@ -16,13 +16,14 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ChevronLeft, Share2, Bookmark, Heart, AlertTriangle, Clock, Eye, ArrowUp } from '@lucide/vue'
 import MarkdownIt from 'markdown-it'
-import { showFailToast } from 'vant'
 import { wikiApi, fmtDate, fmtCompact } from '@/shared'
 import type { ArticleDetail as ArticleDetailType } from '@/shared'
 import { sanitizeHtml } from '@/shared/utils/sanitize-html'
+import { useDsToast } from '@/shared/composables'
 
 const router = useRouter()
 const route = useRoute()
+const { showFailToast } = useDsToast()
 
 const article = ref<ArticleDetailType | null>(null)
 const loading = ref(true)

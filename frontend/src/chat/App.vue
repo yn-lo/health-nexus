@@ -1,13 +1,10 @@
 <template>
-  <van-config-provider :theme-vars="vantThemeVars" theme-vars-scope="global">
-    <router-view />
-    <DsFeedbackLayer />
-  </van-config-provider>
+  <router-view />
+  <DsFeedbackLayer />
 </template>
 
 <script setup lang="ts">
 // 患者端根组件
-// 主题变量统一从 shared/constants/vant-theme 引入，避免与 staff/App.vue 重复（75 行 → 1 行）
-import { vantThemeVars } from '@/shared/constants/vant-theme'
+// 主题令牌统一由 tokens.css 定义，无需第三方主题注入
 import { DsFeedbackLayer } from '@/shared/components'
 </script>

@@ -12,14 +12,14 @@
  * - 列表项可展开摘要（右侧 chevron，点击 @click.stop 仅展开/收起，不跳转）
  * 保留功能: wikiApi.listArticles, 分类筛选, 搜索, goArticle 跳转
  */
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, BookOpen, Clock, Eye, ChevronDown, Calendar, Flame } from '@lucide/vue'
-import { List as VanList, PullRefresh as VanPullRefresh, showFailToast } from 'vant'
 import MarkdownIt from 'markdown-it'
 import { wikiApi, fmtCompact, fmtShortDate } from '@/shared'
 import { useDepartments } from '@/chat/composables/useDepartments'
-import { EmptyState, DepartmentTabs } from '@/shared/components'
+import { EmptyState, DepartmentTabs, DsPullRefresh } from '@/shared/components'
+import { useDsToast } from '@/shared/composables'
 import type { ArticlePublic } from '@/shared'
 
 withDefaults(defineProps<{
@@ -30,6 +30,7 @@ withDefaults(defineProps<{
 })
 
 const router = useRouter()
+const { showFailToast } = useDsToast()
 
 const { departments, fetchDepartments } = useDepartments({ autoFetch: false, filter: 'active' })
 
@@ -129,9 +130,28 @@ async function onRefresh() {
   }
 }
 
-/** van-list 加载：拉下一页拼接 */
+/** 触底加载：哨兵进入视口（提前 120px）时拉下一页 */
+const loadSentinel = ref<HTMLDivElement | null>(null)
+const containerRef = ref<HTMLElement | null>(null)
+let loadObserver: IntersectionObserver | null = null
+
+function observeSentinel() {
+  loadObserver?.disconnect()
+  if (loadSentinel.value) {
+    loadObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void onLoad()
+      },
+      { root: containerRef.value, rootMargin: '120px' },
+    )
+    loadObserver.observe(loadSentinel.value)
+  }
+}
+
+/** 加载下一页拼接 */
 async function onLoad() {
-  if (listFinished.value) return
+  if (listLoading.value || listFinished.value || refreshing.value) return
+  listLoading.value = true
   try {
     await fetchPage(page.value + 1, false)
   } catch {
@@ -140,6 +160,15 @@ async function onLoad() {
     listLoading.value = false
   }
 }
+
+// 首次/科室切换/搜索加载完成后再挂载哨兵观察；重新加载时先断开
+watch(loading, (val) => {
+  if (val) {
+    loadObserver?.disconnect()
+  } else {
+    nextTick(observeSentinel)
+  }
+})
 
 /** 切换科室：重置分页并拉取第 1 页 */
 async function onDepartmentChange() {
@@ -191,11 +220,12 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer)
+  loadObserver?.disconnect()
 })
 </script>
 
 <template>
-  <div class="knowledge-list flex flex-col bg-[var(--bg-base-secondary)] overflow-y-auto no-scrollbar" :class="embedded ? 'flex-1 min-h-0' : 'min-h-[calc(100dvh-var(--layout-tabbar-height))]'">
+  <div ref="containerRef" class="knowledge-list flex flex-col bg-[var(--bg-base-secondary)] overflow-y-auto no-scrollbar" :class="embedded ? 'flex-1 min-h-0' : 'min-h-[calc(100dvh-var(--layout-tabbar-height))]'">
     <!-- 顶部栏（白色背景，与下方内容区分）- 嵌入模式由父组件提供 -->
     <header v-if="!embedded" class="sticky top-0 z-30 flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-12)] border-b border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]">
       <h1 class="truncate font-heading text-heading-md font-semibold text-text">
@@ -331,70 +361,73 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 文章列表 - v3 风格：卡片化容器 + 图标化 meta + chevron 展开摘要 -->
-      <VanPullRefresh v-if="!loading" v-model="refreshing" @refresh="onRefresh">
-        <VanList
-          v-model:loading="listLoading"
-          :finished="listFinished"
-          finished-text=""
-          @load="onLoad"
-        >
-          <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
-            <div
-              v-for="article in articles"
-              :key="article.id"
-              class="ds-list-item--divider"
-            >
-              <!-- 主行：图标 + 内容 + chevron（flex 横排） -->
-              <div class="ds-list-item min-h-[var(--touch-target-min)]">
-                <span class="ds-list-item__icon ds-list-item__icon--brand">
-                  <BookOpen :size="20" />
-                </span>
-                <div class="ds-list-item__content" @click="goArticle(article.id)">
-                  <span class="ds-list-item__title">{{ article.title }}</span>
-                  <span class="ds-list-item__meta">
-                    <span class="truncate">{{ article.department_name }}</span>
-                    <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
-                    <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
-                      <Calendar :size="11" />
-                      {{ article.published_at ? fmtShortDate(article.published_at) : '-' }}
-                    </span>
-                    <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
-                    <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
-                      <Clock :size="11" />
-                      {{ estimateReadTime(article.summary) }}分
-                    </span>
-                    <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
-                    <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
-                      <Eye :size="11" />
-                      {{ fmtCompact(article.view_count) }}
-                    </span>
+      <DsPullRefresh v-if="!loading" :loading="refreshing" @refresh="onRefresh">
+        <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
+          <div
+            v-for="article in articles"
+            :key="article.id"
+            class="ds-list-item--divider"
+          >
+            <!-- 主行：图标 + 内容 + chevron（flex 横排） -->
+            <div class="ds-list-item min-h-[var(--touch-target-min)]">
+              <span class="ds-list-item__icon ds-list-item__icon--brand">
+                <BookOpen :size="20" />
+              </span>
+              <div class="ds-list-item__content" @click="goArticle(article.id)">
+                <span class="ds-list-item__title">{{ article.title }}</span>
+                <span class="ds-list-item__meta">
+                  <span class="truncate">{{ article.department_name }}</span>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Calendar :size="11" />
+                    {{ article.published_at ? fmtShortDate(article.published_at) : '-' }}
                   </span>
-                </div>
-                <button
-                  type="button"
-                  class="ds-list-item__trailing justify-center w-9 h-9 rounded-[var(--radius-8)] text-icon-tertiary hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)] transition-[background-color_var(--micro-duration)_var(--micro-ease)]"
-                  :aria-label="expandedIds.has(article.id) ? '收起摘要' : '展开摘要'"
-                  :aria-expanded="expandedIds.has(article.id)"
-                  @click.stop="toggleExpand(article.id)"
-                >
-                  <ChevronDown
-                    :size="18"
-                    class="transition-transform duration-200"
-                    :class="expandedIds.has(article.id) ? 'rotate-180' : ''"
-                  />
-                </button>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Clock :size="11" />
+                    {{ estimateReadTime(article.summary) }}分
+                  </span>
+                  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
+                  <span class="inline-flex items-center gap-[var(--spacer-2)] shrink-0">
+                    <Eye :size="11" />
+                    {{ fmtCompact(article.view_count) }}
+                  </span>
+                </span>
               </div>
-              <!-- 展开后的摘要（整行宽度，主行下方） -->
-              <div
-                v-if="expandedIds.has(article.id)"
-                class="px-[var(--spacer-16)] pb-[var(--spacer-12)] text-body-sm leading-[1.6] text-text-secondary"
+              <button
+                type="button"
+                class="ds-list-item__trailing justify-center w-9 h-9 rounded-[var(--radius-8)] text-icon-tertiary hover:bg-[var(--bg-overlay-l1)] active:bg-[var(--bg-overlay-l2)] transition-[background-color_var(--micro-duration)_var(--micro-ease)]"
+                :aria-label="expandedIds.has(article.id) ? '收起摘要' : '展开摘要'"
+                :aria-expanded="expandedIds.has(article.id)"
+                @click.stop="toggleExpand(article.id)"
               >
-                {{ renderPlainText(article.summary) }}
-              </div>
+                <ChevronDown
+                  :size="18"
+                  class="transition-transform duration-200"
+                  :class="expandedIds.has(article.id) ? 'rotate-180' : ''"
+                />
+              </button>
+            </div>
+            <!-- 展开后的摘要（整行宽度，主行下方） -->
+            <div
+              v-if="expandedIds.has(article.id)"
+              class="px-[var(--spacer-16)] pb-[var(--spacer-12)] text-body-sm leading-[1.6] text-text-secondary"
+            >
+              {{ renderPlainText(article.summary) }}
             </div>
           </div>
-        </VanList>
-      </VanPullRefresh>
+        </div>
+
+        <!-- 触底哨兵 + 加载状态 -->
+        <div ref="loadSentinel" class="py-[var(--spacer-8)] min-h-[2px]">
+          <div v-if="listLoading" class="ds-loading py-[var(--spacer-8)]">
+            <span class="ds-loading__spinner ds-loading__spinner--sm" />
+          </div>
+          <p v-else-if="listFinished && articles.length" class="text-center text-body-xs text-text-tertiary m-0 py-[var(--spacer-8)]">
+            没有更多了
+          </p>
+        </div>
+      </DsPullRefresh>
 
       <!-- 空状态 - v3 风格：图标 + 文案 -->
       <EmptyState v-if="!loading && articles.length === 0" :text="searchQuery.trim() ? '未找到相关文章' : '暂无文章'" />

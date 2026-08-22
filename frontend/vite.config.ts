@@ -2,8 +2,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
-import Components from 'unplugin-vue-components/vite'
-import { VantResolver } from '@vant/auto-import-resolver'
 import { resolve } from 'node:path'
 import { readdirSync } from 'node:fs'
 
@@ -55,9 +53,6 @@ export default defineConfig({
   plugins: [
     vue(),
     tailwindcss(),
-    Components({
-      resolvers: [VantResolver({ importStyle: false })],
-    }),
     mpaFallback(),
   ],
   resolve: {

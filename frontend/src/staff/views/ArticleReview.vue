@@ -7,8 +7,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { FileText, X, Check } from '@lucide/vue'
-import { showDialog } from 'vant'
-import { useDsToast } from '@/shared/composables'
+import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, EmptyState } from '@/shared/components'
 import { wikiApi, stripHtml } from '@/shared'
 import { errmsg } from '@/shared/api/client'
@@ -16,6 +15,7 @@ import type { ArticleStaff } from '@/shared'
 
 const router = useRouter()
 const { showSuccessToast, showFailToast } = useDsToast()
+const { showDialog } = useDsDialog()
 const articles = ref<ArticleStaff[]>([])
 const loading = ref(false)
 
@@ -45,8 +45,8 @@ async function handleReject(id: number) {
       inputValidator: (val: string) => (val && val.trim() ? true : '驳回原因不能为空'),
       confirmButtonText: '驳回',
       cancelButtonText: '取消',
-    }) as { value: string }
-    reason = res.value.trim()
+    })
+    reason = (res?.value ?? '').trim()
   } catch {
     return
   }

@@ -31,14 +31,14 @@
 
 ## 布局样式
 
-`main.css` 定义布局工具类及 Vant 主题覆盖。
+`main.css` 定义布局工具类及 `@theme inline` 映射。
 
 ## 主题覆写层（staff-theme.css）
 
 医护端专属「高科技精品」（High-Tech Boutique）主题，仅在 `src/staff/main.ts` 中于 `main.css` 之后引入，chat 端不加载、零影响：
 
 - **令牌覆写**：运行时覆写 `:root` 语义令牌——电光蓝品牌色、玻璃拟态半透明表面（`--bg-base-default`）、冷调边框与阴影、250ms 微交互；并新增主题专属令牌 `--ai-gradient`、`--ai-gradient-soft`、`--glass-blur`、`--ease-spring`
-- **组件增强**：对 `.ds-*` 与 Vant 组件做渐变 / 磨玻璃 / 光晕增强，业务组件不新增控件级样式
+- **组件增强**：对 `.ds-*` 组件做渐变 / 磨玻璃 / 光晕增强，业务组件不新增控件级样式
 - **字体**：展示字体 Space Grotesk 通过 `@fontsource-variable/space-grotesk` 本地引入（禁止 CDN），覆写 `--font-family-heading` / `--font-family-metric`
 - **豁免**：作为令牌定义文件列入 `scripts/style-guard.mjs` 的 `ALLOWED_HEX_FILES` 白名单
 
@@ -102,7 +102,7 @@ Tailwind 4 的 preflight（`button { color: inherit }`、`input { font: inherit 
 **规则**：
 - `components.css` **禁止** 包裹在 `@layer components` 中，必须保持 unlayered
 - 组件样式通过特异性（`.ds-btn--primary` 比 preflight 的 `button` 更高）也无法获胜——unlayered 样式在层序上恒高于任何 `@layer`，根因是层序而非特异性。因此唯一解法是让 `.ds-*` 类本身保持 unlayered（位于 `@layer` 之外）
-- Vant 覆写若需放入 `@layer components`（如 main.css 的 Vant 覆写块），必须确认被覆写的目标不在 unlayered 中，否则同样不生效
+- 覆写若需放入 `@layer components`，必须确认被覆写的目标不在 unlayered 中，否则同样不生效
 
 ## 样式问题排查清单
 

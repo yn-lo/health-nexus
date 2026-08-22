@@ -9,7 +9,7 @@ AI 驱动的医院健康宣教平台，基于 RAG（检索增强生成）技术�
 | 层    | 技术                                                                                             |
 | ---- | ---------------------------------------------------------------------------------------------- |
 | 后端   | Go 1.25 · Chi v5 · PostgreSQL 16 (pgvector) · Redis 7 · asynq · JWT HS256 · argon2id · AES-GCM |
-| 前端   | Vue 3 · TypeScript (strict) · Vite 6 · Tailwind CSS v4 · Pinia · Vant 4 · ECharts              |
+| 前端   | Vue 3 · TypeScript (strict) · Vite 6 · Tailwind CSS v4 · Pinia · ECharts · 自研 Ds UI 组件      |
 | 基础设施 | Docker Compose · goose 迁移 · golangci-lint · Vitest · Playwright                                |
 
 ## 架构概览

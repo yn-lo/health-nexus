@@ -10,7 +10,7 @@ Health Nexus 前端是一个双 MPA（多页应用）架构的 Vue 3 项目，�
 | 语言 | TypeScript | latest |
 | 构建 | Vite | 6 |
 | 样式 | Tailwind CSS | 4 |
-| UI 组件库 | Vant | 4 |
+| UI 组件 | 自研（tokens 令牌 + `.ds-*` 组件类） | — |
 | 状态管理 | Pinia | 2 |
 | 路由 | vue-router | 4 |
 | HTTP 客户端 | ofetch | latest |
@@ -26,7 +26,7 @@ Health Nexus 前端是一个双 MPA（多页应用）架构的 Vue 3 项目，�
 | ├─ `api/` | 后端 REST API 封装（ofetch 客户端 + 各业务接口模块） |
 | ├─ `components/` | 跨门户复用的 UI 组件 |
 | ├─ `composables/` | 跨门户复用的组合式函数 |
-| ├─ `constants/` | 角色定义、Vant 主题等全局常量 |
+| ├─ `constants/` | 角色定义等全局常量 |
 | ├─ `types/` | 全局 TypeScript 类型定义 |
 | ├─ `utils/` | 工具函数（含路由守卫） |
 | ├─ `layouts/` | 页面布局壳（BottomNavLayout、ChatLayout、StaffLayout） |

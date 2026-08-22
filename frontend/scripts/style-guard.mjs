@@ -25,7 +25,6 @@ const ALLOWED_HEX_FILES = [
   'tokens.css',
   'main.css',
   'staff-theme.css',
-  'vant-theme.ts',
 ]
 
 const PRIMITIVE_COLOR_PREFIXES = [

@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * 前端架构约束测试 — AC-ARCH-FE-* 追溯矩阵
  * 对齐 CLAUDE.md 前端硬性规则 + harness/frontend/specs/2026-07-17-frontend-rewrite-design.md §9
@@ -742,7 +743,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
   })
 
   // ── AC-ARCH-FE-14: 禁止 window.prompt/alert/confirm 命令式对话框 ────
-  it('AC-ARCH-FE-14: 禁止 window.prompt/alert/confirm 命令式对话框（应使用 Vant Dialog）', () => {
+  it('AC-ARCH-FE-14: 禁止 window.prompt/alert/confirm 命令式对话框（应使用 DsDialog）', () => {
     const violations: string[] = []
     const dialogPattern = /window\.(prompt|alert|confirm)\s*\(/
 
@@ -764,7 +765,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
 
     if (violations.length > 0) {
       throw new Error(
-        `AC-ARCH-FE-14 失败：发现 ${violations.length} 处命令式对话框（应使用 Vant showDialog/showConfirmDialog）:\n${violations.join('\n')}`,
+        `AC-ARCH-FE-14 失败：发现 ${violations.length} 处命令式对话框（应使用 useDsDialog 的 showDialog/showConfirmDialog）:\n${violations.join('\n')}`,
       )
     }
   })
@@ -807,11 +808,11 @@ describe('AC-ARCH-FE-* 架构约束', () => {
 
     // 允许的模式：
     // 1. CSS 变量覆盖（--van-xxx、--ax-xxx 等）
-    // 2. :deep() / :global() 选择器（Vant 组件样式穿透）
+    // 2. :deep() / :global() 选择器（自研组件样式穿透）
     // 3. @keyframes
     // 4. @media 查询
     // 5. 纯工具类（如 .no-scrollbar 隐藏滚动条）
-    // 6. Vant 组件变量覆盖类（如 .reg-field { --van-xxx: value }）
+    // 6. 组件变量覆盖类（如 .reg-field { --xxx-xxx: value }）
     // 7. ponytail:allow-scoped-css 标注的 <style> 块整体豁免
     const allowedClassPatterns = [
       /^\.(no-scrollbar|markdown-body|prose-article)/, // 已知工具类 / :deep() 前缀类

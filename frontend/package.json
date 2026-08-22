@@ -25,7 +25,6 @@
     "markdown-it": "latest",
     "ofetch": "latest",
     "pinia": "^2",
-    "vant": "^4",
     "vue": "^3.5",
     "vue-router": "^4"
   },
@@ -34,7 +33,6 @@
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4",
     "@types/markdown-it": "latest",
-    "@vant/auto-import-resolver": "latest",
     "@vitejs/plugin-vue": "latest",
     "eslint": "latest",
     "eslint-plugin-vue": "latest",
@@ -44,7 +42,6 @@
     "tailwindcss": "^4",
     "typescript": "latest",
     "typescript-eslint": "latest",
-    "unplugin-vue-components": "latest",
     "vite": "^6",
     "vitest": "^4.1.9",
     "vue-eslint-parser": "latest",

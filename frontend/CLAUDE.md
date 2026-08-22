@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-Health Nexus Frontend 是一个双 MPA（多页应用）健康平台，包含患者聊天门户（/chat）和员工管理门户（/staff）。技术栈为 Vue 3.5 + TypeScript + Vite 6 + Tailwind CSS 4 + Vant 4 + Pinia + vue-router 4 + ofetch。
+Health Nexus Frontend 是一个双 MPA（多页应用）健康平台，包含患者聊天门户（/chat）和员工管理门户（/staff）。技术栈为 Vue 3.5 + TypeScript + Vite 6 + Tailwind CSS 4 + Pinia + vue-router 4 + ofetch。UI 组件全部为自研（tokens.css 设计令牌 + components.css `.ds-*` 组件类 + Tailwind 工具类），不依赖第三方 UI 库。
 
 ## 知识导航
 

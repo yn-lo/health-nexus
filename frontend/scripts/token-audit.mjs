@@ -25,7 +25,6 @@ const ROOT = join(import.meta.dirname, '..')
 const SRC = join(ROOT, 'src')
 const TOKENS_FILE = join(SRC, 'assets/styles/tokens.css')
 const THEME_FILE = join(SRC, 'assets/styles/main.css')
-const VANT_THEME_FILE = join(SRC, 'shared/constants/vant-theme.ts')
 
 function walkDir(dir, ext) {
   const results = []
@@ -74,14 +73,6 @@ function scanReferences() {
         refs[token].push({ file: relPath, line: i + 1 })
       }
 
-      // 也匹配 vant-theme.ts 中的字符串引用（'var(--xxx)'）
-      const strPattern = /var\((--[a-zA-Z0-9-]+)\)/g
-      let strMatch
-      while ((strMatch = strPattern.exec(line)) !== null) {
-        const token = strMatch[1]
-        if (!refs[token]) refs[token] = []
-        refs[token].push({ file: relPath, line: i + 1 })
-      }
     }
   }
 
@@ -117,11 +108,9 @@ for (const token of definedTokens) {
   // 排除 tokens.css 内部的自引用，只算外部文件引用
   const externalOnly = externalRefs.filter(r => !r.file.includes('tokens.css'))
   const mainCssRefs = externalRefs.filter(r => r.file.includes('main.css'))
-  const vantThemeRefs = externalRefs.filter(r => r.file.includes('vant-theme.ts'))
   const pageRefs = externalRefs.filter(r =>
     !r.file.includes('tokens.css') &&
-    !r.file.includes('main.css') &&
-    !r.file.includes('vant-theme.ts')
+    !r.file.includes('main.css')
   )
 
   results.push({
@@ -129,7 +118,6 @@ for (const token of definedTokens) {
     total: externalRefs.length,
     selfRefs,
     mainCss: mainCssRefs.length,
-    vantTheme: vantThemeRefs.length,
     pages: pageRefs.length,
     pageFiles: [...new Set(pageRefs.map(r => r.file))],
   })
@@ -196,9 +184,9 @@ for (const cat of categories) {
   const items = results.filter(r => matchCategory(r.token) === cat)
   if (items.length === 0) continue
 
-  const catUnused = items.filter(i => i.pages === 0 && i.mainCss === 0 && i.vantTheme === 0)
+  const catUnused = items.filter(i => i.pages === 0 && i.mainCss === 0)
   const catLow = items.filter(i => i.pages > 0 && i.pages < 5)
-  const catOk = items.filter(i => i.pages >= 5 || i.mainCss > 0 || i.vantTheme > 0)
+  const catOk = items.filter(i => i.pages >= 5 || i.mainCss > 0)
 
   unusedCount += catUnused.length
   lowFreqCount += catLow.length
@@ -213,13 +201,13 @@ for (const cat of categories) {
   }
 
   for (const item of needAttention) {
-    if (item.pages === 0 && item.mainCss === 0 && item.vantTheme === 0) {
+    if (item.pages === 0 && item.mainCss === 0) {
       console.log(`  🔴 ${item.token} — 未使用（外部引用 0 次）`)
     } else if (item.pages < 5) {
       const files = item.pageFiles.length > 2
         ? item.pageFiles.slice(0, 2).join(', ') + ` +${item.pageFiles.length - 2}`
         : item.pageFiles.join(', ')
-      console.log(`  🟡 ${item.token} — 页面引用 ${item.pages} 次（${files || 'main.css/vant-theme'}）`)
+      console.log(`  🟡 ${item.token} — 页面引用 ${item.pages} 次（${files || 'main.css'}）`)
     }
   }
   console.log()
@@ -227,7 +215,7 @@ for (const cat of categories) {
 
 // 汇总
 console.log(`── 汇总 ──────────────────────────────────────────\n`)
-console.log(`  ✅ 常用（≥5 次页面引用或 main.css/vant-theme 引用）: ${results.length - unusedCount - lowFreqCount}`)
+console.log(`  ✅ 常用（≥5 次页面引用或 main.css 引用）: ${results.length - unusedCount - lowFreqCount}`)
 console.log(`  🟡 低频（1-4 次页面引用）: ${lowFreqCount}`)
 console.log(`  🔴 未使用（0 次外部引用）: ${unusedCount}`)
 console.log()

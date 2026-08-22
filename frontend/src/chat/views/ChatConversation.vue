@@ -13,7 +13,6 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ActionSheet as VanActionSheet, showDialog, showFailToast, showToast } from 'vant'
 import {
   Copy,
   Sparkles,
@@ -23,7 +22,8 @@ import {
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
 import { useChatStore } from '@/stores/chat'
-import { DisclaimerFooter } from '@/shared/components'
+import { DisclaimerFooter, DsActionSheet } from '@/shared/components'
+import { useDsToast, useDsDialog } from '@/shared/composables'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
@@ -38,6 +38,8 @@ import type { Message, Reference } from '@/shared/types/chat'
 const router = useRouter()
 const route = useRoute()
 const chatStore = useChatStore()
+const { showToast, showFailToast } = useDsToast()
+const { showDialog } = useDsDialog()
 
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
@@ -624,7 +626,7 @@ onUnmounted(() => {
     />
 
     <!-- 点踩原因选择 -->
-    <VanActionSheet
+    <DsActionSheet
       :show="showDownReasonSheet"
       :actions="downReasonActions"
       cancel-text="取消"

@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Popup as VanPopup } from 'vant'
+import { computed, ref, watch } from 'vue'
 import { Search } from '@lucide/vue'
+import { DsPopup } from '@/shared/components'
 import type { Department } from '@/shared'
 
 const props = defineProps<{
@@ -23,24 +23,23 @@ const filteredDepartments = computed(() => {
   return props.departments.filter((d) => d.name.toLowerCase().includes(q))
 })
 
-function onOpen() {
-  deptSearch.value = ''
-}
-
 function onSelect(id: number) {
   emit('select', id)
   emit('update:show', false)
 }
+
+// 弹层打开时清空搜索词
+watch(() => props.show, (visible) => {
+  if (visible) deptSearch.value = ''
+})
 </script>
 
 <template>
-  <VanPopup
+  <DsPopup
     :show="show"
     position="bottom"
-    round
-    :style="{ height: '60vh' }"
+    height="60vh"
     @update:show="emit('update:show', $event)"
-    @open="onOpen"
   >
     <div class="flex flex-col h-full px-[var(--spacer-16)] pb-[calc(var(--spacer-16)+env(safe-area-inset-bottom,0px))]">
       <header class="pt-[var(--spacer-16)] pb-[var(--spacer-12)]">
@@ -67,5 +66,5 @@ function onSelect(id: number) {
         </li>
       </ul>
     </div>
-  </VanPopup>
+  </DsPopup>
 </template>

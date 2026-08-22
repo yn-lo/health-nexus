@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { Popup as VanPopup, SwipeCell as VanSwipeCell, Dialog, Loading as VanLoading } from 'vant'
 import { MessageSquare, ChevronRight, SquarePen, Trash2 } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { getAccessToken, getUserStored, timeAgo } from '@/shared'
 import { STAFF_ROLES, ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
-import { EmptyState } from '@/shared/components'
+import { EmptyState, DsPopup, DsSwipeCell } from '@/shared/components'
+import { useDsDialog } from '@/shared/composables'
 
 const props = withDefaults(defineProps<{
   visible: boolean
@@ -22,6 +22,7 @@ const emit = defineEmits<{
 
 const chatStore = useChatStore()
 const router = useRouter()
+const { showConfirmDialog } = useDsDialog()
 
 const user = computed(() => getUserStored())
 const userInitial = computed(() => (user.value?.username ?? '?').charAt(0).toUpperCase())
@@ -58,7 +59,7 @@ function goProfile() {
 
 async function onDelete(id: string) {
   try {
-    await Dialog.confirm({ title: '删除对话', message: '确定删除该对话记录？删除后不可恢复。' })
+    await showConfirmDialog({ title: '删除对话', message: '确定删除该对话记录？删除后不可恢复。', danger: true })
     await chatStore.deleteConversation(id)
   } catch {
     // 用户取消
@@ -67,10 +68,11 @@ async function onDelete(id: string) {
 </script>
 
 <template>
-  <VanPopup
+  <DsPopup
     :show="visible"
     position="right"
-    :style="{ width: '80vw', height: '100%' }"
+    width="80vw"
+    height="100%"
     @update:show="onClose"
   >
     <div class="history-drawer">
@@ -103,7 +105,9 @@ async function onDelete(id: string) {
       <!-- 分隔线：用户区与对话列表之间 -->
       <div class="history-drawer__divider" />
 
-      <VanLoading v-if="chatStore.loading" type="spinner" class="py-4" />
+      <div v-if="chatStore.loading" class="ds-loading py-4">
+        <span class="ds-loading__spinner" />
+      </div>
 
       <EmptyState
         v-else-if="!chatStore.conversations.length"
@@ -111,7 +115,7 @@ async function onDelete(id: string) {
       />
 
       <ul v-else class="ds-list history-drawer__list">
-        <VanSwipeCell
+        <DsSwipeCell
           v-for="conv in chatStore.conversations"
           :key="conv.id"
         >
@@ -133,10 +137,10 @@ async function onDelete(id: string) {
               <Trash2 :size="16" />
             </button>
           </template>
-        </VanSwipeCell>
+        </DsSwipeCell>
       </ul>
     </div>
-  </VanPopup>
+  </DsPopup>
 </template>
 
 <style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
@@ -267,12 +271,12 @@ async function onDelete(id: string) {
   border-bottom: 1px solid var(--border-neutral-l1);
 }
 
-.history-drawer__list :deep(.van-swipe-cell:last-child) .ds-list-item {
+.history-drawer__list :deep(.ds-swipe-cell:last-child) .ds-list-item {
   border-bottom: none;
 }
 
 /* 滑动单元格：禁止 flex 压缩，否则 cell 高度 < li 高度，overflow:hidden 裁切导致相邻项重叠 */
-.history-drawer__list :deep(.van-swipe-cell) {
+.history-drawer__list :deep(.ds-swipe-cell) {
   flex-shrink: 0;
 }
 

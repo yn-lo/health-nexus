@@ -45,8 +45,8 @@ test.describe('认证流程', () => {
     await page.getByPlaceholder('请输入密码').fill('wrongpassword')
     await page.getByRole('button', { name: '登 录', exact: true }).click()
 
-    // 应显示错误提示（role=alert 错误块 和/或 vant toast）
-    await expect(page.locator('[role="alert"], .van-toast').first()).toBeVisible({ timeout: 5000 })
+    // 应显示错误提示（role=alert 错误块 和/或 DsToast）
+    await expect(page.locator('[role="alert"], .ds-dialog, .ds-toast-icon').first()).toBeVisible({ timeout: 5000 })
     expect(page.url()).toContain('/login')
   })
 

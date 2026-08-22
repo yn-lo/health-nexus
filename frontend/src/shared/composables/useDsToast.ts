@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-type ToastType = 'success' | 'fail'
+type ToastType = 'plain' | 'success' | 'fail'
 
 interface ToastState {
   visible: boolean
@@ -8,7 +8,7 @@ interface ToastState {
   message: string
 }
 
-const state = ref<ToastState>({ visible: false, type: 'success', message: '' })
+const state = ref<ToastState>({ visible: false, type: 'plain', message: '' })
 let timer: ReturnType<typeof setTimeout> | null = null
 
 function show(type: ToastType, message: string, duration = 1500) {
@@ -23,6 +23,8 @@ function show(type: ToastType, message: string, duration = 1500) {
 export function useDsToast() {
   return {
     toastState: state,
+    /** 纯文本提示（无图标） */
+    showToast: (message: string) => show('plain', message),
     showSuccessToast: (message: string) => show('success', message),
     showFailToast: (message: string) => show('fail', message),
   }
