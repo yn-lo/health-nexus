@@ -412,7 +412,8 @@ func (s *ChatSendService) stageRAG(
 
 	// 阶段 2.1~2.4：历史加载/裁剪 + 查询改写 + 检索（检索失败/空结果在内部降级为拒答）
 	// 传入当前用户消息 ID：历史加载须排除它（已单独作为 UserMessage 传入 LLM，避免重复提问）。
-	query, history, chunks, err := s.prepareRAGContext(ctx, in, conv, out, emergencyWarned, userMsg.ID)
+	// 改写结果仅用于检索，生成用用户原话（originalQuery）。
+	_, originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, conv, out, emergencyWarned, userMsg.ID)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
 			return nil // finalizeRejection 已推送 safety_warning + done，无需继续
@@ -439,16 +440,13 @@ func (s *ChatSendService) stageRAG(
 	st := &ragStreamState{aiMsgID: aiMsg.ID, chunks: chunks}
 	defer func() { s.cleanupRAGStream(ctx, st) }()
 
-	// 阶段 2.6b：生成阶段 Token 预算兜底（REQ-CHAT-006-A）
-	// 生成器输入 = system prompt + 历史消息 + 当前查询 + 检索切片；system prompt 与切片 token 数较小，
-	// 此处以"历史 + 查询"为代表估算超 TokenBudgetGenerate 时 FIFO 丢弃最早历史轮次。
-	// 改写阶段已按 TokenBudgetRewrite 裁剪过一次，此处针对更宽松的生成预算再次确保不超。
-	history = s.trimHistoryForGeneration(ctx, history, query)
+	// 生成 Token 预算：改写阶段已按 TokenBudgetRewrite(4000) 裁过历史，TokenBudgetGenerate(16000)
+	// 更宽松，此后无需二次裁剪（原 trimHistoryForGeneration 恒为 no-op，已移除）。
 
 	slog.InfoContext(ctx, "chat: LLM stream started",
 		"history_turns", len(history)/2, "chunks", len(chunks))
 	startTime := time.Now()
-	if err := s.streamLLMTokens(ctx, s.buildSystemPrompt(ctx), query, history, chunks, out, st); err != nil {
+	if err := s.streamLLMTokens(ctx, s.buildSystemPrompt(ctx), originalQuery, history, chunks, out, st); err != nil {
 		return err
 	}
 
@@ -468,19 +466,6 @@ func (s *ChatSendService) stageRAG(
 	}
 	slog.InfoContext(ctx, "chat: request completed", "result_code", constants.ResultAnswered)
 	return nil
-}
-
-// trimHistoryForGeneration 生成阶段 Token 预算兜底：超 TokenBudgetGenerate 时 FIFO 丢弃最早历史轮次。
-func (s *ChatSendService) trimHistoryForGeneration(
-	ctx context.Context, history []*entity.Message, query string,
-) []*entity.Message {
-	beforeGen := len(history)
-	history = trimHistoryForTokens(history, query, constants.TokenBudgetGenerate)
-	if beforeGen != len(history) {
-		slog.InfoContext(ctx, "chat: history trimmed for generation",
-			"turns_before", beforeGen/2, "turns_after", len(history)/2)
-	}
-	return history
 }
 
 // handleEmptyStream LLM 流正常结束但未产生任何 token：显式 finalize placeholder 为拒答。
@@ -514,9 +499,10 @@ func (s *ChatSendService) stageRAGAnonymous(
 	// 查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询）
 	query := s.rewriteQuery(ctx, in.Message, nil)
 
-	// 检索（不限科室，匿名用户无科室偏好）
+	// 检索（不限科室，匿名用户无科室偏好）；TopK=0 让 RAGConfig.TopK 接管（与认证路径一致，
+	// 修死 硬编码 DefaultTopK 导致管理员配置 top_k 对 chat 永远失效）。
 	chunks, err := s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
-		Query: query, DeptID: nil, TopK: constants.DefaultTopK,
+		Query: query, DeptID: nil, TopK: 0,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "knowledge search failed for anonymous, degrading to rejection", "err", err)
@@ -527,6 +513,13 @@ func (s *ChatSendService) stageRAGAnonymous(
 			"query_len", len(query))
 		return s.writeAnonymousRejection(out, emergencyWarned)
 	}
+	// 与认证路径一致的 OOD 检出（REQ-CHAT-003）：所有切片向量相似度都低时拒答，
+	// 避免匿名用户绕过知识库外检测（医疗场景严肃化一致性）。
+	if isOutOfDomain(chunks, s.oodThreshold(ctx)) {
+		slog.WarnContext(ctx, "chat: anonymous OOD detected, all chunks below threshold",
+			"chunk_count", len(chunks))
+		return s.writeAnonymousRejection(out, emergencyWarned)
+	}
 
 	// 推送引用
 	if err := out.Write("references", chunks); err != nil {
@@ -535,13 +528,14 @@ func (s *ChatSendService) stageRAGAnonymous(
 
 	slog.InfoContext(ctx, "chat: anonymous RAG search completed", "chunks", len(chunks))
 
-	// 流式 LLM 生成（无历史）
+	// 流式 LLM 生成（无历史）。改写后的 query 仅用于上方检索；
+	// UserMessage 用用户原话，忠实原始表述（与认证路径一致）。
 	streamCtx, cancelStream := context.WithTimeout(ctx, llmStreamTimeout)
 	defer cancelStream()
 	streamCh, streamErr := s.llm.StreamChat(streamCtx, llm.ChatRequest{
 		SystemPrompt:  s.buildSystemPrompt(ctx),
 		History:       nil,
-		UserMessage:   query,
+		UserMessage:   in.Message,
 		ContextChunks: chunkContents(chunks),
 	})
 	if streamErr != nil {
@@ -578,6 +572,7 @@ func (s *ChatSendService) stageRAGAnonymous(
 }
 
 // rewriteQuery 查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询）。
+// 即使无历史也执行——短问/口语问需要扩写以提升检索质量（如"怎么控制"→"高血压日常护理方法"）。
 func (s *ChatSendService) rewriteQuery(ctx context.Context, msg string, history []llm.Message) string {
 	query := msg
 	if rewritten, rerr := s.rewriter.ToStandaloneQuestion(ctx, msg, history); rerr != nil {
@@ -591,6 +586,9 @@ func (s *ChatSendService) rewriteQuery(ctx context.Context, msg string, history 
 		}
 	} else {
 		query = rewritten
+	}
+	if query != msg {
+		slog.InfoContext(ctx, "chat: query rewritten", "orig_len", len(msg), "rewritten_len", len(query))
 	}
 	return query
 }
@@ -632,15 +630,17 @@ func (s *ChatSendService) writeOutputSafetyWarning(ctx context.Context, out SSEW
 // prepareRAGContext 阶段 2.1~2.4：加载并裁剪历史、查询改写（失败降级原始查询）、知识库检索。
 // currentUserMsgID 为当前轮用户消息 ID：阶段 1 已将其持久化，历史加载须排除，
 // 否则 LLM 上下文出现两条连续 user 消息（原始问题 + 改写问题）。
+// 返回 rewrittenQuery（改写后，用于检索）、originalQuery（用户原话，用于生成）、
+// 裁剪后的历史（不含当前用户消息）、检索到的 chunks。
 // 检索失败或无结果时降级为拒答（finalizeRejection），返回其错误供 stageRAG 直接透传。
 func (s *ChatSendService) prepareRAGContext(
 	ctx context.Context, in StreamInput, conv *entity.Conversation,
 	out SSEWriter, emergencyWarned bool, currentUserMsgID uuid.UUID,
-) (string, []*entity.Message, []rag.Chunk, error) {
+) (rewrittenQuery, originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
 	// 阶段 2.1：历史消息（最近 N 轮，排除当前轮用户消息）
-	history, err := s.msg.GetRecentHistory(ctx, conv.ID, constants.HistoryTurns, &currentUserMsgID)
+	history, err = s.msg.GetRecentHistory(ctx, conv.ID, constants.HistoryTurns, &currentUserMsgID)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("load history: %w", err)
+		return "", "", nil, nil, fmt.Errorf("load history: %w", err)
 	}
 
 	// 阶段 2.1b：改写阶段 Token 预算兜底（REQ-CHAT-006-A）
@@ -654,43 +654,30 @@ func (s *ChatSendService) prepareRAGContext(
 			"turns_before", beforeTrim/2, "turns_after", len(history)/2)
 	}
 
-	// 阶段 2.2：查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询，REQ-NFR-017）
-	query := in.Message
+	// 阶段 2.2：查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询，REQ-NFR-017）。
+	// 与匿名路径共用 rewriteQuery。**无论首问/多轮都改写**：短问/口语问需扩写提升检索召回
+	// （如"怎么控制"→"高血压的日常护理方法"）。改写结果仅用于检索；生成侧仍用用户原话。
 	llmHistory := toLLMMessages(history)
-	if rewritten, rerr := s.rewriter.ToStandaloneQuestion(ctx, in.Message, llmHistory); rerr != nil {
-		slog.WarnContext(ctx, "primary rewrite failed, trying LLM fallback", "err", rerr)
-		if s.fallbackRewriter != nil {
-			if rewritten2, rerr2 := s.fallbackRewriter.ToStandaloneQuestion(ctx, in.Message, llmHistory); rerr2 != nil {
-				slog.WarnContext(ctx, "LLM rewrite fallback failed, using original query", "err", rerr2)
-			} else {
-				query = rewritten2
-				slog.InfoContext(ctx, "chat: query rewritten by LLM fallback",
-					"orig_len", len(in.Message), "rewritten_len", len(query))
-			}
-		}
-	} else {
-		query = rewritten
-		slog.InfoContext(ctx, "chat: query rewritten",
-			"orig_len", len(in.Message), "rewritten_len", len(query))
-	}
+	rewrittenQuery = s.rewriteQuery(ctx, in.Message, llmHistory)
 
-	// 阶段 2.3：检索（跨域 wiki 域，阶段 2 实现；阶段 1 此处可能返回 ErrNotImplemented）
-	chunks, err := s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
-		Query: query, DeptID: deptIDPtr(in.SelectedDeptID, conv), TopK: constants.DefaultTopK,
+	// 阶段 2.3：检索（跨域 wiki 域，阶段 2 实现；阶段 1 此处可能返回 ErrNotImplemented）。
+	// TopK=0 让 RAGConfig.TopK 接管——修死 硬编码 DefaultTopK 使管理员配置 top_k 对 chat 失效。
+	chunks, err = s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
+		Query: rewrittenQuery, DeptID: deptIDPtr(in.SelectedDeptID, conv), TopK: 0,
 	})
 	if err != nil {
 		// 检索失败降级为拒答：阶段 1 用户消息已在阶段 1 事务内提交，
 		// 若直接返回 503 会留下无 assistant 回复的孤儿 user 消息，污染会话历史。
 		// 降级路径写入 assistant 拒答消息保证会话完整性，并记录原始错误供排查。
 		slog.ErrorContext(ctx, "knowledge search failed, degrading to rejection", "err", err)
-		return "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）
 	if len(chunks) == 0 {
 		slog.WarnContext(ctx, "knowledge search returned 0 chunks, degrading to rejection",
-			"query_len", len(query), "dept_id", deptIDPtr(in.SelectedDeptID, conv))
-		return "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+			"query_len", len(rewrittenQuery), "dept_id", deptIDPtr(in.SelectedDeptID, conv))
+		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	// 阶段 2.4b：OOD 检测 - 所有切片向量相似度都很低时拒答（医疗场景严肃化）
@@ -700,12 +687,14 @@ func (s *ChatSendService) prepareRAGContext(
 	if isOutOfDomain(chunks, threshold) {
 		slog.WarnContext(ctx, "chat: OOD detected, all chunks below threshold",
 			"chunk_count", len(chunks), "ood_threshold", threshold)
-		return "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	slog.InfoContext(ctx, "chat: RAG search completed",
-		"chunks", len(chunks), "query_len", len(query))
-	return query, history, chunks, nil
+		"chunks", len(chunks), "query_len", len(rewrittenQuery))
+	// 生成侧返回用户原话（in.Message），改写仅用于检索；
+	// 如此 LLM 忠实于患者原始表述，改写器扩写偏差不再污染答案，且可被精确否决（references 仍指向改写检索结果）。
+	return rewrittenQuery, in.Message, history, chunks, nil
 }
 
 // streamLLMTokens 阶段 2.7：LLM 流式调用 + token 累积 + 中断/超时检测。

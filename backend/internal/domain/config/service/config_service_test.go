@@ -1548,7 +1548,6 @@ func TestGetRAGConfig(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.0,
 			OODThreshold:        0.3,
 			UpdatedAt:           time.Now(),
 		}
@@ -1608,7 +1607,6 @@ func TestUpdateRAGConfig(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.0,
 			OODThreshold:        0.3,
 		}
 		svc := newTestService(nil, nil, nil, repo, nil, nil, nil)
@@ -1653,7 +1651,6 @@ func TestUpdateRAGConfig(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.0,
 			OODThreshold:        0.3,
 		}
 		svc := newTestService(nil, nil, nil, repo, nil, nil, nil)
@@ -1676,7 +1673,6 @@ func TestUpdateRAGConfig(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.0,
 			OODThreshold:        0.3,
 		}
 		svc := newTestService(nil, nil, nil, repo, nil, nil, nil)
@@ -2072,7 +2068,7 @@ func TestAuditLogCreatedOnCRUD(t *testing.T) {
 		ragRepo.config = &entity.RAGConfig{
 			ID: 1, ChunkSize: 500, ChunkOverlap: 50, MaxChunks: 10,
 			TopK: 5, SimilarityThreshold: 0.75, RerankEnabled: false,
-			RerankThreshold: 0.5, DiversityFactor: 0.0, OODThreshold: 0.3,
+			RerankThreshold: 0.5, OODThreshold: 0.3,
 		}
 		auditRepo := newMockAuditLogRepo()
 		svc := newTestService(nil, nil, nil, ragRepo, nil, nil, auditRepo)

@@ -916,18 +916,10 @@ func (s *ArticleService) revokeReferencesAfterArticleChange(ctx context.Context,
 
 // assertCanManage 校验：超管 / 本科室管理员 / 作者本人可编辑/提交/删除（REQ-SEC-002）。
 // 权限矩阵：超管任意科室任意文章；科室管理员本科室任意文章；普通医护仅本人文章。
+// 策略与 assertCanAuthorOrAdmin 完全一致（dupl 门禁发现的历史克隆），保留双名
+// 以在调用点表达意图；未来若 Manage 需更严权限，在此分叉实现。
 func assertCanManage(a *entity.Article, actor Actor) error {
-	if actor.Role == constants.RoleSuperAdmin {
-		return nil
-	}
-	if a.AuthorID == actor.UserID {
-		return nil
-	}
-	// 科室管理员可操作本科室任意文章（含他人）。
-	if actor.Role == constants.RoleDeptAdmin && a.DepartmentID != nil && *a.DepartmentID == actor.DeptID {
-		return nil
-	}
-	return apperrors.Forbidden("WIKI_FORBIDDEN", "无权操作该文章")
+	return assertCanAuthorOrAdmin(a, actor)
 }
 
 // assertCanAuthorOrAdmin 校验：超管 / 本科室管理员 / 作者本人可操作（用于 Update/Delete，契约 §4.5/4.7）。
@@ -1080,19 +1072,28 @@ func translateArticleErr(err error) error {
 	return err
 }
 
-// translateArticleStatusErr 区分 UpdateStatus 的"行不存在(404)"与"状态不匹配(409)"。
+// translateStatusErr 区分 UpdateStatus 的"行不存在(404)"与"状态不匹配(409)"（article/reference 通用）。
 // UpdateStatus 用 WHERE status=$from 乐观锁，RowsAffected==0 可能是不存在或并发状态漂移；
 // 在同事务内二次 GetByID 区分：存在则 409，不存在则 404。
-func (s *ArticleService) translateArticleStatusErr(ctx context.Context, id int64, err error) error {
+func translateStatusErr[T any](ctx context.Context, id int64, err error,
+	get func(context.Context, int64) (T, error),
+	notFoundCode, notFoundMsg, conflictCode, conflictMsg string,
+) error {
 	if !errors.Is(err, repository.ErrNotFound) {
 		return err
 	}
-	if _, getErr := s.repo.GetByID(ctx, id); errors.Is(getErr, repository.ErrNotFound) {
-		return apperrors.NotFound("WIKI_ARTICLE_NOT_FOUND", "文章不存在")
+	if _, getErr := get(ctx, id); errors.Is(getErr, repository.ErrNotFound) {
+		return apperrors.NotFound(notFoundCode, notFoundMsg)
 	} else if getErr != nil {
 		return getErr
 	}
-	return apperrors.Conflict("WIKI_INVALID_STATUS", "状态非预期，无法操作")
+	return apperrors.Conflict(conflictCode, conflictMsg)
+}
+
+// translateArticleStatusErr 区分 UpdateStatus 的"行不存在(404)"与"状态不匹配(409)"。
+func (s *ArticleService) translateArticleStatusErr(ctx context.Context, id int64, err error) error {
+	return translateStatusErr(ctx, id, err, s.repo.GetByID,
+		"WIKI_ARTICLE_NOT_FOUND", "文章不存在", "WIKI_INVALID_STATUS", "状态非预期，无法操作")
 }
 
 // isValidArticleStatus 文章状态白名单校验（draft|pending|published|archived|deleted）。

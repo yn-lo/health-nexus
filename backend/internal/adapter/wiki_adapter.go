@@ -13,6 +13,18 @@ import (
 	asynqlib "github.com/hibiken/asynq"
 )
 
+// enqueueIDTask 把 int64 ID 序列化为 payload 入队（本文件三个 asynq 适配器共用，
+// dupl 门禁发现的历史克隆合并而来）。
+func enqueueIDTask(ctx context.Context, client *asynqlib.Client, taskType string, id int64, label string) error {
+	payload := strconv.FormatInt(id, 10)
+	task := asynqlib.NewTask(taskType, []byte(payload))
+	_, err := client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
+	if err != nil {
+		return fmt.Errorf("enqueue %s (id=%d): %w", label, id, err)
+	}
+	return nil
+}
+
 // AsynqVectorizeEnqueuer 实现 wiki/service.VectorizeEnqueuer。
 // 桥接 wiki 域（int64 articleID）到 asynq 任务队列。
 type AsynqVectorizeEnqueuer struct {
@@ -28,13 +40,7 @@ func NewAsynqVectorizeEnqueuer(client *asynqlib.Client) *AsynqVectorizeEnqueuer 
 // ponytail: articles.id 是 BIGSERIAL（int64），payload 直接用 int64 的字符串形式，简化；
 // worker 端解析时也按 int64 处理；asynq 包仅暴露 TaskVectorizeArticle 常量，入队逻辑由本 adapter 实现。
 func (e *AsynqVectorizeEnqueuer) Enqueue(ctx context.Context, articleID int64) error {
-	payload := strconv.FormatInt(articleID, 10)
-	task := asynqlib.NewTask(asynq.TaskVectorizeArticle, []byte(payload))
-	_, err := e.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
-	if err != nil {
-		return fmt.Errorf("enqueue vectorize task (articleID=%d): %w", articleID, err)
-	}
-	return nil
+	return enqueueIDTask(ctx, e.client, asynq.TaskVectorizeArticle, articleID, "vectorize task")
 }
 
 // 编译期断言。
@@ -54,13 +60,7 @@ func NewAsynqReviewNotifyEnqueuer(client *asynqlib.Client) *AsynqReviewNotifyEnq
 // Enqueue 将文章 ID 序列化为 payload 并入队复审通知任务。
 // 通知系统未实现，worker 端 handler 仅记录 slog 占位（Critical 1 修复说明）。
 func (e *AsynqReviewNotifyEnqueuer) Enqueue(ctx context.Context, articleID int64) error {
-	payload := strconv.FormatInt(articleID, 10)
-	task := asynqlib.NewTask(asynq.TaskReviewNotify, []byte(payload))
-	_, err := e.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
-	if err != nil {
-		return fmt.Errorf("enqueue review notify task (articleID=%d): %w", articleID, err)
-	}
-	return nil
+	return enqueueIDTask(ctx, e.client, asynq.TaskReviewNotify, articleID, "review notify task")
 }
 
 // 编译期断言。
@@ -79,13 +79,7 @@ func NewAsynqCrisisNotifier(client *asynqlib.Client) *AsynqCrisisNotifier {
 
 // NotifyCrisis 将危机事件 ID 序列化为 payload 并入队通知任务。
 func (n *AsynqCrisisNotifier) NotifyCrisis(ctx context.Context, eventID int64) error {
-	payload := strconv.FormatInt(eventID, 10)
-	task := asynqlib.NewTask(asynq.TaskCrisisEvent, []byte(payload))
-	_, err := n.client.EnqueueContext(ctx, task, asynqlib.MaxRetry(asynq.DefaultMaxRetry))
-	if err != nil {
-		return fmt.Errorf("enqueue crisis notify task (eventID=%d): %w", eventID, err)
-	}
-	return nil
+	return enqueueIDTask(ctx, n.client, asynq.TaskCrisisEvent, eventID, "crisis notify task")
 }
 
 // ConfigRAGConfigProvider 实现 wikiservice.RAGConfigProvider。
@@ -115,7 +109,6 @@ func (p *ConfigRAGConfigProvider) GetRAGConfig(ctx context.Context) (*wikiservic
 		RerankEnabled:       resp.RerankEnabled,
 		RerankThreshold:     resp.RerankThreshold,
 		MaxChunks:           resp.MaxChunks,
-		DiversityFactor:     resp.DiversityFactor,
 		ChunkSize:           resp.ChunkSize,
 		ChunkOverlap:        resp.ChunkOverlap,
 		OODThreshold:        resp.OODThreshold,

@@ -161,12 +161,6 @@ func validateRAGConfig(req UpdateRAGConfigRequest) error {
 		return err
 	}
 	if err := checkFloatRange(
-		req.DiversityFactor, entity.DiversityFactorMax,
-		"CONFIG_RAG_DIVERSITY_RANGE", "diversity_factor 范围 0.0-1.0",
-	); err != nil {
-		return err
-	}
-	if err := checkFloatRange(
 		req.OODThreshold, entity.OODThresholdMax,
 		"CONFIG_RAG_OOD_THRESHOLD_RANGE", "ood_threshold 范围 0.0-0.5",
 	); err != nil {
@@ -210,9 +204,6 @@ func applyRAGPatch(c *entity.RAGConfig, req UpdateRAGConfigRequest) {
 	}
 	if req.RerankThreshold != nil {
 		c.RerankThreshold = *req.RerankThreshold
-	}
-	if req.DiversityFactor != nil {
-		c.DiversityFactor = *req.DiversityFactor
 	}
 	if req.OODThreshold != nil {
 		c.OODThreshold = *req.OODThreshold

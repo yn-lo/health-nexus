@@ -1605,7 +1605,7 @@ func TestConfigRAG(t *testing.T) {
 		defer drainAndClose(resp)
 		assertStatus(t, resp, http.StatusOK)
 		m := parseJSON(t, resp)
-		for _, k := range []string{"chunk_size", "chunk_overlap", "max_chunks", "top_k", "similarity_threshold", "rerank_enabled", "rerank_threshold", "diversity_factor", "updated_at"} {
+		for _, k := range []string{"chunk_size", "chunk_overlap", "max_chunks", "top_k", "similarity_threshold", "rerank_enabled", "rerank_threshold", "updated_at"} {
 			if _, ok := m[k]; !ok {
 				t.Errorf("missing field %q: %v", k, m)
 			}

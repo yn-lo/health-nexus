@@ -12,7 +12,6 @@ type RAGConfig struct {
 	SimilarityThreshold float64
 	RerankEnabled       bool
 	RerankThreshold     float64
-	DiversityFactor     float64
 	OODThreshold        float64
 	UpdatedAt           time.Time
 }
@@ -31,8 +30,6 @@ const (
 	SimilarityThresholdMax = 1.0
 	RerankThresholdMin     = 0.0
 	RerankThresholdMax     = 1.0
-	DiversityFactorMin     = 0.0
-	DiversityFactorMax     = 1.0
 	OODThresholdMin        = 0.0
 	OODThresholdMax        = 0.5
 )
@@ -58,6 +55,5 @@ var DefaultRAGConfig = RAGConfig{
 	SimilarityThreshold: DefaultSimilarityThreshold,
 	RerankEnabled:       false,
 	RerankThreshold:     DefaultRerankThreshold,
-	DiversityFactor:     0.0,
 	OODThreshold:        DefaultOODThreshold,
 }

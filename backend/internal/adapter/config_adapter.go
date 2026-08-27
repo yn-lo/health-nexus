@@ -198,8 +198,13 @@ func (p *ConfigSafetyRuleProvider) loadMessage(ctx context.Context, msgType, def
 
 // ConfigSystemPromptProvider 实现 rag.SystemPromptProvider。
 // 从 config 域加载 type='system' 且 is_active=true 的 PromptTemplate（全局/无科室优先）。
+// 进程内 5min 缓存（与敏感词/输出规则对齐），避免每消息查 DB + 打 Info 日志。
 type ConfigSystemPromptProvider struct {
 	svc *configservice.ConfigService
+
+	mu               sync.Mutex
+	cachedPrompt     string
+	cachedPromptTime time.Time
 }
 
 // NewConfigSystemPromptProvider 构造适配器。
@@ -209,25 +214,41 @@ func NewConfigSystemPromptProvider(svc *configservice.ConfigService) *ConfigSyst
 
 // GetSystemPrompt 返回当前生效的系统提示词。
 // 全局（DepartmentID==nil）优先；其次任一科室级 active 模板。
-// ponytail: 任何错误或无 active 行返回 ("", nil)——让调用方降级为硬编码默认 prompt，折中，
-// 避免 config 域故障导致 chat 流程整体不可用（D-HIGH-01 修复）。
-// 上限——若同时存在多个 active 行（理论上有 unique 索引保护），取 List 返回的第一条。
+// 5min 进程内缓存（TTL 与敏感词/输出规则一致）——系统提示词读取频率远高于其变更频率，
+// 避免每消息回源 DB。回源失败时降级返回过期缓存，活跃可改变更最多 5min 内生效。
+// ponytail: 无主动失效；若需 prompt 变更即时生效，可在 ConfigService 写模板时通知失效，
+// 与现有 5min TTL cache-aside 模型对齐，暂不引入通知机制。
 func (p *ConfigSystemPromptProvider) GetSystemPrompt(ctx context.Context) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cachedPrompt != "" && time.Since(p.cachedPromptTime) < sensitiveWordsCacheTTL {
+		return p.cachedPrompt, nil
+	}
+	if content := p.loadSystemPrompt(ctx); content != "" {
+		p.cachedPrompt = content
+		p.cachedPromptTime = time.Now()
+	}
+	// 无 active 或回源失败：有过期缓存则降级返回旧值，否则返回空让调用方用默认 prompt（D-HIGH-01）。
+	return p.cachedPrompt, nil
+}
+
+// loadSystemPrompt 回源 DB 加载当前生效的 system prompt，不存在或出错返回 ""。
+func (p *ConfigSystemPromptProvider) loadSystemPrompt(ctx context.Context) string {
 	isActive := true
 	list, _, err := p.svc.ListPromptTemplates(
 		ctx, constants.PromptTypeSystem, &isActive,
 		pagination.Params{Page: 1, PageSize: fullScanPageSize},
 	)
 	if err != nil || len(list) == 0 {
-		return "", nil
+		return ""
 	}
 	// 全局（DepartmentID == nil）优先；否则取首个科室级 active 模板。
 	for _, t := range list {
 		if t.DepartmentID == nil {
-			return t.Content, nil
+			return t.Content
 		}
 	}
-	return list[0].Content, nil
+	return list[0].Content
 }
 
 // 编译期断言。

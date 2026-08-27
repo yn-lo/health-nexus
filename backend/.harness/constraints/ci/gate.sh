@@ -360,6 +360,19 @@ run_p2() {
       echo "$big" | head -n 10 | sed 's/^/    /'
     fi
   fi
+
+  # P2-7 前端重复代码率门禁（jscpd，含 ts/js/vue；阈值与忽略规则见 frontend/.jscpd.json）
+  # 重复率超阈值时 jscpd 退出非 0，与后端 dupl 同为阻塞项。
+  # node_modules 未安装时优雅降级为告警（与 P1-5 一致），避免 backend-only 检出被卡。
+  if [ -d ../frontend/node_modules ] && has_tool npm; then
+    capture_fail \
+      "前端重复代码率超阈值（jscpd）" \
+      "按 consoleFull 报告重构重复代码；阈值 8%、minTokens 50，见 frontend/.jscpd.json" \
+      "frontend/.jscpd.json" \
+      -- bash -c 'cd ../frontend && npm run dup-check'
+  else
+    warn "前端 dup-check 已跳过：../frontend/node_modules 未安装或 npm 不可用（npm install 后生效）"
+  fi
 }
 
 # ============================================================================

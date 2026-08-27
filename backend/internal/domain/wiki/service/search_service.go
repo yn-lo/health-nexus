@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"sort"
 
 	"health-nexus/internal/domain/wiki/repository"
@@ -27,7 +26,7 @@ type ChunkSearcher interface {
 
 // RAGSearchConfig wiki 域消费的 RAG 配置视图（消费者定义，ISP）。
 // 由 adapter 层从 config 域 RAGConfig 转换得到，避免 wiki/service 直接 import config/entity（AC-ARCH-02）。
-// 同时承载检索参数（TopK/SimilarityThreshold/Rerank*/MaxChunks/DiversityFactor/OODThreshold）与切片参数（ChunkSize/ChunkOverlap）：
+// 同时承载检索参数（TopK/SimilarityThreshold/Rerank*/MaxChunks/OODThreshold）与切片参数（ChunkSize/ChunkOverlap）：
 // 前者由 SearchService 消费，后者由 adapter.VectorizeHandler 消费，共用同一 provider 与缓存。
 type RAGSearchConfig struct {
 	TopK                int
@@ -35,7 +34,6 @@ type RAGSearchConfig struct {
 	RerankEnabled       bool
 	RerankThreshold     float64
 	MaxChunks           int
-	DiversityFactor     float64
 	ChunkSize           int
 	ChunkOverlap        int
 	OODThreshold        float64
@@ -72,7 +70,6 @@ const (
 	defaultSimilarityThreshold = 0.75
 	defaultRerankThreshold     = 0.5
 	defaultMaxChunks           = 10
-	defaultDiversityFactor     = 0.0
 	defaultChunkSize           = 500
 	defaultChunkOverlap        = 50
 	defaultOODThreshold        = 0.3
@@ -86,7 +83,6 @@ var defaultRAGSearchConfig = RAGSearchConfig{
 	RerankEnabled:       true,
 	RerankThreshold:     defaultRerankThreshold,
 	MaxChunks:           defaultMaxChunks,
-	DiversityFactor:     defaultDiversityFactor,
 	ChunkSize:           defaultChunkSize,
 	ChunkOverlap:        defaultChunkOverlap,
 	OODThreshold:        defaultOODThreshold,
@@ -170,12 +166,7 @@ func (s *SearchService) applyFiltersAndRerank(
 		fused = s.applyRerank(ctx, q.Query, fused, topK, cfg.RerankThreshold)
 	}
 
-	// 步骤 6：可选 MMR 多样性重排（DiversityFactor > 0 时生效）。
-	if cfg.DiversityFactor > 0 && len(fused) > 1 {
-		fused = applyMMR(fused, cfg.DiversityFactor)
-	}
-
-	// 步骤 7：逐条记录检索详情。
+	// 步骤 6：逐条记录检索详情。
 	for i, c := range fused {
 		slog.InfoContext(ctx, "wiki: RAG chunk detail",
 			"rank", i+1,
@@ -373,140 +364,3 @@ func (s *SearchService) applyRerank(
 
 // 编译期断言：SearchService 实现 shared 层 rag.KnowledgeSearcher 接口。
 var _ rag.KnowledgeSearcher = (*SearchService)(nil)
-
-// applyMMR 使用 Maximal Marginal Relevance 对 fused 重排，平衡相关性与多样性。
-// MMR(d) = (1-λ) * Relevance(d) - λ * max_{d' in Selected} Similarity(d, d')
-// λ=DiversityFactor：0 纯相关性（保持原顺序），1 纯多样性。
-// ponytail: 文档间相似度用 Jaccard（词集交并比）近似，无需 embedding；
-// 升级路径：若 fusedHit 携带 embedding，改用 cosine similarity。
-func applyMMR(fused []fusedHit, lambda float64) []fusedHit {
-	if len(fused) <= 1 || lambda <= 0 {
-		return fused
-	}
-	if lambda > 1 {
-		lambda = 1
-	}
-
-	tokenSets := make([]map[string]struct{}, len(fused))
-	for i, h := range fused {
-		tokenSets[i] = tokenize(h.Content)
-	}
-	normRelevance := buildNormRelevance(fused)
-
-	selectedIdx := make([]int, 0, len(fused))
-	remaining := make([]int, len(fused))
-	for i := range fused {
-		remaining[i] = i
-	}
-
-	for len(remaining) > 0 {
-		bestIdx := mmrSelectBest(remaining, selectedIdx, fused, tokenSets, normRelevance, lambda)
-		if bestIdx < 0 {
-			break
-		}
-		selectedIdx = append(selectedIdx, bestIdx)
-		remaining = removeInt(remaining, bestIdx)
-	}
-
-	out := make([]fusedHit, 0, len(selectedIdx))
-	for _, si := range selectedIdx {
-		out = append(out, fused[si])
-	}
-	return out
-}
-
-// buildNormRelevance 返回归一化 RRF 分数到 [0,1] 的闭包。
-func buildNormRelevance(fused []fusedHit) func(float64) float64 {
-	maxRRF := fused[0].RRFScore
-	for _, h := range fused {
-		if h.RRFScore > maxRRF {
-			maxRRF = h.RRFScore
-		}
-	}
-	return func(rrf float64) float64 {
-		if maxRRF <= 0 {
-			return 0
-		}
-		return rrf / maxRRF
-	}
-}
-
-// mmrSelectBest 从 remaining 中选出 MMR 分数最高的候选索引。
-func mmrSelectBest(
-	remaining, selectedIdx []int,
-	fused []fusedHit,
-	tokenSets []map[string]struct{},
-	normRelevance func(float64) float64,
-	lambda float64,
-) int {
-	bestIdx := -1
-	bestMMR := math.Inf(-1)
-	for _, ri := range remaining {
-		relevance := normRelevance(fused[ri].RRFScore)
-		maxSim := maxSimilarity(tokenSets[ri], selectedIdx, tokenSets)
-		mmr := (1-lambda)*relevance - lambda*maxSim
-		if mmr > bestMMR {
-			bestMMR = mmr
-			bestIdx = ri
-		}
-	}
-	return bestIdx
-}
-
-// maxSimilarity 计算候选文档与已选文档集的最大 Jaccard 相似度。
-func maxSimilarity(candidate map[string]struct{}, selectedIdx []int, tokenSets []map[string]struct{}) float64 {
-	maxSim := 0.0
-	for _, si := range selectedIdx {
-		sim := jaccard(candidate, tokenSets[si])
-		if sim > maxSim {
-			maxSim = sim
-		}
-	}
-	return maxSim
-}
-
-// removeInt 从切片中移除第一个等于 target 的元素。
-func removeInt(s []int, target int) []int {
-	for i, v := range s {
-		if v == target {
-			return append(s[:i], s[i+1:]...)
-		}
-	}
-	return s
-}
-
-// tokenize 将内容转为 rune bigram 词集（兼容中文无空格文本）。
-// ponytail: 与 SQL 层 bigram_tsvector 保持一致的 bigram 策略；
-// 升级路径：引入分词器后改用词级 token。
-func tokenize(content string) map[string]struct{} {
-	set := make(map[string]struct{})
-	runes := []rune(content)
-	for i := 0; i < len(runes)-1; i++ {
-		if runes[i] == ' ' || runes[i] == '\n' || runes[i] == '\t' {
-			continue
-		}
-		if runes[i+1] == ' ' || runes[i+1] == '\n' || runes[i+1] == '\t' {
-			continue
-		}
-		set[string(runes[i:i+2])] = struct{}{}
-	}
-	return set
-}
-
-// jaccard 计算两个词集的 Jaccard 相似度：|A∩B| / |A∪B|。
-func jaccard(a, b map[string]struct{}) float64 {
-	if len(a) == 0 && len(b) == 0 {
-		return 0
-	}
-	inter := 0
-	for tok := range a {
-		if _, ok := b[tok]; ok {
-			inter++
-		}
-	}
-	union := len(a) + len(b) - inter
-	if union == 0 {
-		return 0
-	}
-	return float64(inter) / float64(union)
-}

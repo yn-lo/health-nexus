@@ -57,7 +57,9 @@ linters:
             - pkg: github.com/stretchr/testify
               desc: use standard testing + errors.As (mock 由手写实现)
     dupl:
-      threshold: 100
+      # 70 token：100 时"复制后小改"（换标识符/换字面量）的克隆会逃逸——
+      # LLM 辅助开发最常产出这种形态。降低后误报由 review 把关。
+      threshold: 70
     errcheck:
       check-type-assertions: true
       check-blank: false
@@ -129,6 +131,9 @@ linters:
   exclusions:
     generated: lax
     rules:
+      # dupl 排除 _test.go：阈值 70 下测试文件产生 90+ 项结构性噪音
+      # （E2E 子测试/角色门禁循环体骨架重复，属有意为之的显式测试形态，
+      # 与前端 jscpd 忽略 **/tests/** 一致）。逻辑层由阈值 70 覆盖（见下方分层排除）。
       - linters:
           - dupl
           - errcheck
@@ -147,6 +152,18 @@ linters:
           - lll
           - unparam
         path: tests/integration
+      # dupl 门禁目标：service/platform/shared 层的逻辑克隆（两份实现会各自漂移的真 bug 源）。
+      # handler（薄 CRUD 适配）/ repository（手写 SQL）/ _dto（平铺字段映射）三层
+      # 的骨架同形是本架构的有意形态，dupl 在这三层只产模式噪音，故排除。
+      - linters:
+          - dupl
+        path: .*handler.*\.go
+      - linters:
+          - dupl
+        path: .*repository.*\.go
+      - linters:
+          - dupl
+        path: .*_dto\.go
       - linters:
           - forbidigo
         path: cmd/

@@ -128,7 +128,6 @@ export interface RAGConfig {
   similarity_threshold: number;
   rerank_enabled: boolean;
   rerank_threshold: number;
-  diversity_factor: number;
   ood_threshold: number;
   updated_at: string;
 }
@@ -142,7 +141,6 @@ export interface RAGConfigUpdateRequest {
   similarity_threshold?: number;
   rerank_enabled?: boolean;
   rerank_threshold?: number;
-  diversity_factor?: number;
   ood_threshold?: number;
 }
 
@@ -154,7 +152,6 @@ export const RAG_LIMITS = {
   top_k: { min: 1, max: 50 },
   similarity_threshold: { min: 0, max: 1 },
   rerank_threshold: { min: 0, max: 1 },
-  diversity_factor: { min: 0, max: 1 },
   ood_threshold: { min: 0, max: 0.5 },
 } as const;
 

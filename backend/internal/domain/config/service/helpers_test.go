@@ -93,7 +93,6 @@ func TestValidateRAGConfig(t *testing.T) {
 			SimilarityThreshold: float64Ptr(0.75),
 			RerankEnabled:       boolPtr(true),
 			RerankThreshold:     float64Ptr(0.5),
-			DiversityFactor:     float64Ptr(0.3),
 			OODThreshold:        float64Ptr(0.3),
 		}
 		err := validateRAGConfig(req)
@@ -186,18 +185,6 @@ func TestValidateRAGConfig(t *testing.T) {
 		assertAppErrCode(t, err, "CONFIG_RAG_RERANK_THRESHOLD_RANGE")
 	})
 
-	// DiversityFactor 范围测试
-	t.Run("DiversityFactor低于下限", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{DiversityFactor: float64Ptr(entity.DiversityFactorMin - 0.1)}
-		err := validateRAGConfig(req)
-		assertAppErrCode(t, err, "CONFIG_RAG_DIVERSITY_RANGE")
-	})
-	t.Run("DiversityFactor高于上限", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{DiversityFactor: float64Ptr(entity.DiversityFactorMax + 0.1)}
-		err := validateRAGConfig(req)
-		assertAppErrCode(t, err, "CONFIG_RAG_DIVERSITY_RANGE")
-	})
-
 	// OODThreshold 范围测试
 	t.Run("OODThreshold低于下限", func(t *testing.T) {
 		req := UpdateRAGConfigRequest{OODThreshold: float64Ptr(entity.OODThresholdMin - 0.1)}
@@ -245,7 +232,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.3,
 			OODThreshold:        0.3,
 		}
 		// 空 patch：所有字段 nil
@@ -272,9 +258,6 @@ func TestApplyRAGPatch(t *testing.T) {
 		if original.RerankThreshold != 0.5 {
 			t.Errorf("RerankThreshold 期望保持 0.5，实际 %v", original.RerankThreshold)
 		}
-		if original.DiversityFactor != 0.3 {
-			t.Errorf("DiversityFactor 期望保持 0.3，实际 %v", original.DiversityFactor)
-		}
 		if original.OODThreshold != 0.3 {
 			t.Errorf("OODThreshold 期望保持 0.3，实际 %v", original.OODThreshold)
 		}
@@ -289,7 +272,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			DiversityFactor:     0.3,
 			OODThreshold:        0.3,
 		}
 		patch := UpdateRAGConfigRequest{
@@ -300,7 +282,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: float64Ptr(0.9),
 			RerankEnabled:       boolPtr(true),
 			RerankThreshold:     float64Ptr(0.8),
-			DiversityFactor:     float64Ptr(0.6),
 			OODThreshold:        float64Ptr(0.4),
 		}
 		applyRAGPatch(original, patch)
@@ -325,9 +306,6 @@ func TestApplyRAGPatch(t *testing.T) {
 		}
 		if original.RerankThreshold != 0.8 {
 			t.Errorf("RerankThreshold 期望 0.8，实际 %v", original.RerankThreshold)
-		}
-		if original.DiversityFactor != 0.6 {
-			t.Errorf("DiversityFactor 期望 0.6，实际 %v", original.DiversityFactor)
 		}
 		if original.OODThreshold != 0.4 {
 			t.Errorf("OODThreshold 期望 0.4，实际 %v", original.OODThreshold)

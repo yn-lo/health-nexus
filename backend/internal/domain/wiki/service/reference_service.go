@@ -532,13 +532,6 @@ func translateReferenceErr(err error) error {
 // UpdateStatus 用 WHERE status=$from 乐观锁，RowsAffected==0 可能是不存在或并发状态漂移；
 // 在同事务内二次 GetByID 区分：存在则 409，不存在则 404。
 func (s *ReferenceService) translateRefStatusErr(ctx context.Context, id int64, err error) error {
-	if !errors.Is(err, repository.ErrNotFound) {
-		return err
-	}
-	if _, getErr := s.ref.GetByID(ctx, id); errors.Is(getErr, repository.ErrNotFound) {
-		return apperrors.NotFound("WIKI_REF_NOT_FOUND", "引用授权记录不存在")
-	} else if getErr != nil {
-		return getErr
-	}
-	return apperrors.Conflict("WIKI_REF_INVALID_STATUS", "状态非预期，无法操作")
+	return translateStatusErr(ctx, id, err, s.ref.GetByID,
+		"WIKI_REF_NOT_FOUND", "引用授权记录不存在", "WIKI_REF_INVALID_STATUS", "状态非预期，无法操作")
 }
