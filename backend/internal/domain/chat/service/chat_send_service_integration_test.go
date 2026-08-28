@@ -18,6 +18,7 @@ import (
 	"health-nexus/internal/platform/redis"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/rag"
 )
 
@@ -325,7 +326,7 @@ func newTestChatSendService(
 }
 
 func newStreamInput(msg string) StreamInput {
-	return StreamInput{UserID: 100, Message: msg}
+	return StreamInput{Identity: identity.Identity{UserID: 100}, Message: msg}
 }
 
 func assertAppError(t *testing.T, err error, wantHTTP int, wantCode string) {
@@ -1050,7 +1051,7 @@ func TestStream_RewriteFallback_Anonymous(t *testing.T) {
 	svc := newTestChatSendServiceWithRewriters(t, primary, fallback, streamer, knowledge, conv, msg, crisis)
 	out := &mockSSEWriter{}
 
-	anonInput := StreamInput{UserID: 0, DeviceID: "test-device", Message: "怎么控制"}
+	anonInput := StreamInput{Identity: identity.Identity{DeviceID: "test-device"}, Message: "怎么控制"}
 	err := svc.Stream(context.Background(), anonInput, out)
 	if err != nil {
 		t.Fatalf("Stream error: %v", err)

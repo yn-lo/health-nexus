@@ -14,8 +14,8 @@ import (
 
 	"health-nexus/internal/domain/chat/service"
 	"health-nexus/internal/shared/constants"
-	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/response"
 )
 
@@ -78,20 +78,15 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseStreamInput 解析 JSON 请求体为 service.StreamInput。
-// 已认证用户从 context 读取 UserID；匿名用户从 context 读取 DeviceID（UserID=0）。
-// 校验：message 必填且 ≤2000 字符；conversation_id 与 selected_dept_id 可选且需为有效 UUID/非负整数。selected_dept_id=0 表示不限科室。
+// 身份从 context 解析（shared/identity）：已认证取 user，匿名取 device；拿到后再校验 IsValid。
+// 其余校验：message 必填且 ≤2000 字符；conversation_id 与 selected_dept_id 可选且需为有效 UUID/非负整数。selected_dept_id=0 表示不限科室。
 func parseStreamInput(r *http.Request) (service.StreamInput, error) {
-	// 已认证用户取 user_id；匿名用户取 device_id
-	userID := currentPatientIDOrZero(r)
-	deviceID := ""
-	if userID == 0 {
-		did, ok := r.Context().Value(contextkeys.DeviceID).(string)
-		if !ok || did == "" {
-			return service.StreamInput{}, apperrors.Unauthorized(
-				"UNAUTHORIZED", "missing user_id or device_id in context",
-			)
-		}
-		deviceID = did
+	id := identity.FromRequestOrZero(r)
+	// 身份可信边界的单一校验：认证必携 user，匿名必携 device。
+	if !id.IsValid() {
+		return service.StreamInput{}, apperrors.Unauthorized(
+			"UNAUTHORIZED", "missing user_id or device_id in context",
+		)
 	}
 
 	var body struct {
@@ -128,8 +123,7 @@ func parseStreamInput(r *http.Request) (service.StreamInput, error) {
 	}
 
 	return service.StreamInput{
-		UserID:         userID,
-		DeviceID:       deviceID,
+		Identity:       id,
 		ConversationID: convID,
 		SelectedDeptID: body.SelectedDeptID,
 		Message:        msg,

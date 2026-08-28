@@ -13,8 +13,8 @@ import (
 	"github.com/go-redis/redis_rate/v10"
 	"github.com/redis/go-redis/v9"
 
-	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/response"
 )
 
@@ -146,15 +146,17 @@ const globalScopePrefix = "global:"
 
 // buildRateKey 构造限流 key：global: 前缀 scope 返回全局共享桶；
 // 否则已认证用 user_id，匿名用 device_id，兜底用客户端 IP。
+// 身份解析统一走 shared/identity（同 chat 流式链路一个来源）。
 func buildRateKey(r *http.Request, scope string, trustedProxies []*net.IPNet) string {
 	if strings.HasPrefix(scope, globalScopePrefix) {
 		return rateKeyPrefix + ":" + scope
 	}
-	if uid, ok := r.Context().Value(contextkeys.UserID).(int64); ok && uid > 0 {
-		return fmt.Sprintf("%s:%s:%d", rateKeyPrefix, scope, uid)
+	id := identity.FromRequestOrZero(r)
+	if !id.Anon() {
+		return fmt.Sprintf("%s:%s:%d", rateKeyPrefix, scope, id.UserID)
 	}
-	if did, ok := r.Context().Value(contextkeys.DeviceID).(string); ok && did != "" {
-		return fmt.Sprintf("%s:%s:%s", rateKeyPrefix, scope, did)
+	if id.DeviceID != "" {
+		return fmt.Sprintf("%s:%s:%s", rateKeyPrefix, scope, id.DeviceID)
 	}
 	return fmt.Sprintf("%s:%s:%s", rateKeyPrefix, scope, clientIP(r, trustedProxies))
 }

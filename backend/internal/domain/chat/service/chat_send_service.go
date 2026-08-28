@@ -20,6 +20,7 @@ import (
 	"health-nexus/internal/platform/redis"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/rag"
 )
 
@@ -31,10 +32,9 @@ type SSEWriter interface {
 
 // StreamInput 流式问答输入。
 type StreamInput struct {
-	UserID         int64
-	DeviceID       string     // 匿名用户设备标识（UserID==0 时有效）
-	ConversationID *uuid.UUID // nil = 新建会话
-	SelectedDeptID *int64     // nil = 不限定；会话已锁定时必须与锁定值一致
+	Identity       identity.Identity // 请求身份载体（认证用户或匿名设备），见 shared/identity
+	ConversationID *uuid.UUID        // nil = 新建会话
+	SelectedDeptID *int64            // nil = 不限定；会话已锁定时必须与锁定值一致
 	Message        string
 }
 
@@ -178,21 +178,21 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 // 匿名用户承载 Redis 瞬态会话（多轮上下文，TTL 自动过期，不限科室，危机不记录）。
 // 链条自此只与 Session 交互，不区分身份。
 func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Session, error) {
-	if in.UserID > 0 {
-		_, conv, err := s.resolveDeptAndConversation(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
-		return &Session{
-			SID:    conv.ID.String(),
-			DeptID: deptIDPtr(in.SelectedDeptID, conv),
-			store:  store,
-		}, nil
+	if in.Identity.Anon() {
+		// 匿名：会话 id 由 device 稳定派生（多轮续传），科室不限。
+		sid := deriveAnonSessionID(in.Identity.DeviceID)
+		return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, sid)}, nil
 	}
-	// 匿名：会话 id 由 device 稳定派生（多轮续传），科室不限。
-	sid := deriveAnonSessionID(in.DeviceID)
-	return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, sid)}, nil
+	_, conv, err := s.resolveDeptAndConversation(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
+	return &Session{
+		SID:    conv.ID.String(),
+		DeptID: deptIDPtr(in.SelectedDeptID, conv),
+		store:  store,
+	}, nil
 }
 
 // deriveAnonSessionID 由 device_id 稳定派生匿名会话 id（同设备多轮沿用同一标识）。
@@ -204,7 +204,7 @@ func deriveAnonSessionID(deviceID string) string {
 func (s *ChatSendService) resolveDeptAndConversation(
 	ctx context.Context, in StreamInput,
 ) (rag.Department, *entity.Conversation, error) {
-	dept, err := s.dept.ResolveForPatient(ctx, in.UserID, in.SelectedDeptID)
+	dept, err := s.dept.ResolveForPatient(ctx, in.Identity.UserID, in.SelectedDeptID)
 	if err != nil {
 		return rag.Department{}, nil, fmt.Errorf("resolve dept: %w", err)
 	}
@@ -230,14 +230,14 @@ func (s *ChatSendService) writeEmergencyWarning(
 
 // buildLockKey 构造防并发锁 key。已认证用 user_id，匿名用 device_id。
 func buildLockKey(in StreamInput) string {
-	if in.UserID > 0 {
+	if !in.Identity.Anon() {
 		cid := "new"
 		if in.ConversationID != nil {
 			cid = in.ConversationID.String()
 		}
-		return fmt.Sprintf("chat_pending:%d:%s", in.UserID, cid)
+		return fmt.Sprintf("chat_pending:%d:%s", in.Identity.UserID, cid)
 	}
-	return fmt.Sprintf("chat_pending:anon:%s", in.DeviceID)
+	return fmt.Sprintf("chat_pending:anon:%s", in.Identity.DeviceID)
 }
 
 // validateStreamInput 校验消息长度。
@@ -271,7 +271,7 @@ func (s *ChatSendService) loadOrPrepareConversation(
 		// SelectedDeptID 为 nil 或 0 时 lockedDeptID 保持 nil——检索全部科室。
 		var newConv *entity.Conversation
 		err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-			c, err := s.conv.Create(ctx, in.UserID, lockedDeptID)
+			c, err := s.conv.Create(ctx, in.Identity.UserID, lockedDeptID)
 			if err != nil {
 				return fmt.Errorf("create conversation: %w", err)
 			}
@@ -283,7 +283,7 @@ func (s *ChatSendService) loadOrPrepareConversation(
 		}
 		return newConv, nil
 	}
-	conv, err := s.conv.GetByIDForPatient(ctx, *in.ConversationID, in.UserID)
+	conv, err := s.conv.GetByIDForPatient(ctx, *in.ConversationID, in.Identity.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("load conversation: %w", err)
 	}
@@ -312,7 +312,7 @@ func (s *ChatSendService) handleCrisis(
 	ctx context.Context, in StreamInput, sess *Session, c *rag.Crisis, out SSEWriter,
 ) error {
 	// DB store 内部含一次性重试并记录告警；匿名 store 为空操作。不阻断热线下发。
-	if err := sess.store.PersistCrisis(ctx, in.UserID, in.Message, c, s.safetyIn.CrisisResponse()); err != nil {
+	if err := sess.store.PersistCrisis(ctx, in.Identity.UserID, in.Message, c, s.safetyIn.CrisisResponse()); err != nil {
 		slog.ErrorContext(ctx, "chat crisis persist failed, still pushing hotline", "err", err)
 	}
 

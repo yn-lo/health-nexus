@@ -121,15 +121,6 @@ func currentPatientID(r *http.Request) (int64, error) {
 	return currentUserID(r)
 }
 
-// currentPatientIDOrZero 从 ctx 取 user_id，不存在时返回 0（用于区分匿名/已认证）。
-func currentPatientIDOrZero(r *http.Request) int64 {
-	uid, ok := r.Context().Value(contextkeys.UserID).(int64)
-	if !ok || uid <= 0 {
-		return 0
-	}
-	return uid
-}
-
 // currentCrisisActor 从 ctx 提取危机事件操作者上下文（JWTAuth + DataIsolation 注入）。
 func currentCrisisActor(r *http.Request) (service.CrisisActor, error) {
 	ctx := r.Context()

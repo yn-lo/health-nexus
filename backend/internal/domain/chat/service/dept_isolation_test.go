@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"health-nexus/internal/domain/chat/entity"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/rag"
 )
 
@@ -54,7 +55,7 @@ func TestDeptIDPtr_SelectedAllDepartments(t *testing.T) {
 func TestNewConversation_NoSelectedDept(t *testing.T) {
 	// 模拟 StreamInput: SelectedDeptID 为 nil 时 lockedDeptID 应为 nil。
 	in := StreamInput{
-		UserID:         1,
+		Identity:       identity.Identity{UserID: 1},
 		ConversationID: nil, // 新会话
 		SelectedDeptID: nil, // 未选科室
 		Message:        "test",
@@ -69,7 +70,7 @@ func TestNewConversation_NoSelectedDept(t *testing.T) {
 func TestNewConversation_WithSelectedDept(t *testing.T) {
 	selectedDept := int64(3)
 	in := StreamInput{
-		UserID:         1,
+		Identity:       identity.Identity{UserID: 1},
 		ConversationID: nil,
 		SelectedDeptID: &selectedDept,
 		Message:        "test",
