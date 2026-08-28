@@ -318,7 +318,8 @@ func newTestChatSendService(
 		dept, safetyIn, safetyOut, knowledge,
 		rewriter, nil, streamer,
 		conv, msg, crisis, &noopCrisisNotifier{},
-		locker, tx, nil, // promptProvider=nil -> 降级为 defaultSystemPrompt
+		locker, tx, nil, // ring=nil -> 匿名退化为单轮（无历史）
+		nil, // promptProvider=nil -> 降级为 defaultSystemPrompt
 		func(context.Context) float64 { return 0.3 }, // oodThreshold
 	)
 }
@@ -870,7 +871,8 @@ func newTestChatSendServiceWithRewriters(
 		dept, safetyIn, safetyOut, knowledge,
 		rewriter, fallbackRewriter, streamer,
 		conv, msg, crisis, &noopCrisisNotifier{},
-		locker, tx, nil,
+		locker, tx, nil, // ring=nil
+		nil,
 		func(context.Context) float64 { return 0.3 },
 	)
 }
@@ -952,7 +954,8 @@ func TestCleanupRAGStream_AbortedWithSafePartialContent(t *testing.T) {
 	st := &ragStreamState{aiMsgID: placeholder.ID}
 	st.full.WriteString(partialContent)
 
-	svc.cleanupRAGStream(context.Background(), st)
+	store := newDBSessionStore(conv, msg, crisis, &noopCrisisNotifier{}, mockTxRunner{}, &entity.Conversation{ID: convID})
+	svc.cleanupRAGStream(context.Background(), &Session{SID: convID.String(), store: store}, st)
 
 	msg.mu.Lock()
 	defer msg.mu.Unlock()
@@ -983,7 +986,8 @@ func TestCleanupRAGStream_AbortedWithUnsafePartialContent(t *testing.T) {
 	st := &ragStreamState{aiMsgID: placeholder.ID}
 	st.full.WriteString("确诊为肺炎，建议服用阿莫西林胶囊500mg")
 
-	svc.cleanupRAGStream(context.Background(), st)
+	store := newDBSessionStore(conv, msg, crisis, &noopCrisisNotifier{}, mockTxRunner{}, &entity.Conversation{ID: convID})
+	svc.cleanupRAGStream(context.Background(), &Session{SID: convID.String(), store: store}, st)
 
 	msg.mu.Lock()
 	defer msg.mu.Unlock()
@@ -1013,7 +1017,8 @@ func TestCleanupRAGStream_AbortedWithEmptyContent(t *testing.T) {
 
 	st := &ragStreamState{aiMsgID: placeholder.ID}
 
-	svc.cleanupRAGStream(context.Background(), st)
+	store := newDBSessionStore(conv, msg, crisis, &noopCrisisNotifier{}, mockTxRunner{}, &entity.Conversation{ID: convID})
+	svc.cleanupRAGStream(context.Background(), &Session{SID: convID.String(), store: store}, st)
 
 	msg.mu.Lock()
 	defer msg.mu.Unlock()

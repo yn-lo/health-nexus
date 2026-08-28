@@ -21,7 +21,7 @@ import {
 } from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, loadAnonMessages, saveAnonMessages, upsertAnonSession, type AnonSessionMeta } from '@/stores/chat'
 import { DisclaimerFooter, DsActionSheet } from '@/shared/components'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
@@ -32,7 +32,7 @@ import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 import MarkdownIt from 'markdown-it'
 import { sanitizeHtml } from '@/shared/utils/sanitize-html'
 import { submitMessageFeedback } from '@/shared/api/chat'
-import { errmsg } from '@/shared/api/client'
+import { errmsg, getAccessToken } from '@/shared/api/client'
 import type { Message, Reference } from '@/shared/types/chat'
 
 const router = useRouter()
@@ -97,6 +97,38 @@ const { isStreaming, currentContent, references, crisis, error, aborted, convers
 
 const conversationId = computed(() => (route.params.id as string) ?? '')
 const isThinking = computed(() => isStreaming.value && !currentContent.value)
+// 匿名用户（无 access token）：走 /api/public/chat/stream，上下文存服务端 Redis 48h，
+// 前端无公开消息拉取/反馈端点——消息本地回显（localStorage），隐藏反馈入口，避免 401 与无效反馈。
+const isAnon = !getAccessToken()
+
+/** 匿名会话：将当前消息列表持久化到 localStorage（key 绑定会话 id），刷新后回显 */
+function persistAnonMessages() {
+  if (!isAnon) return
+  const convId = sseConversationId.value || conversationId.value
+  if (convId) {
+    saveAnonMessages(convId, chatStore.messages)
+    upsertAnonSession(buildAnonSessionMeta(convId, chatStore.messages))
+  }
+}
+
+/** 由消息列表构建匿名会话索引元信息（标题=首条用户消息，活跃时间=最后一条消息时间） */
+function buildAnonSessionMeta(convId: string, list: Message[]): AnonSessionMeta {
+  const firstUser = list.find((m) => m.role === 'user')
+  const last = list[list.length - 1]
+  return {
+    id: convId,
+    title: truncateTitle(firstUser?.content ?? ''),
+    created_at: list[0]?.created_at ?? new Date().toISOString(),
+    last_message_at: last?.created_at ?? new Date().toISOString(),
+  }
+}
+
+/** 截断会话标题到 24 字符（对齐后端 truncateTitle 语义） */
+function truncateTitle(title: string): string {
+  const t = title.trim().replace(/\s+/g, ' ')
+  if (!t) return '新对话'
+  return t.length > 24 ? t.slice(0, 24) + '…' : t
+}
 
 const downReasonActions: { name: string }[] = [
   { name: '回答不准确' },
@@ -301,6 +333,12 @@ watch(conversationId, (newId) => {
   sseConversationId.value = newId
   sseOptions.conversationId = newId
   if (newId) {
+    if (isAnon) {
+      // 匿名：无公开拉取端点，从 localStorage 回显本地缓存（服务端 Redis 上下文此时不展示给用户）
+      chatStore.messages = loadAnonMessages(newId)
+      scrollToBottom()
+      return
+    }
     void chatStore.fetchMessages(newId).then(() => {
       syncFeedbackFromMessages()
       scrollToBottom()
@@ -334,6 +372,7 @@ watch(isStreaming, (streaming, prev) => {
         created_at: new Date().toISOString(),
       })
     }
+    persistAnonMessages()
     return
   }
   if (crisis.value) {
@@ -352,6 +391,7 @@ watch(isStreaming, (streaming, prev) => {
       created_at: new Date().toISOString(),
     })
     scrollToBottom()
+    persistAnonMessages()
     return
   }
   if (currentContent.value) {
@@ -366,8 +406,9 @@ watch(isStreaming, (streaming, prev) => {
     })
   }
   scrollToBottom()
+  persistAnonMessages()
   const convId = sseConversationId.value || conversationId.value
-  if (convId) {
+  if (convId && !isAnon) {
     chatStore.fetchMessages(convId).then(() => {
       syncFeedbackFromMessages()
       scrollToBottom()
@@ -399,6 +440,12 @@ onMounted(async () => {
   }
 
   if (!conversationId.value) return
+  if (isAnon) {
+    // 匿名：无公开拉取端点，从 localStorage 回显本地缓存
+    chatStore.messages = loadAnonMessages(conversationId.value)
+    scrollToBottom(true)
+    return
+  }
   try {
     await chatStore.fetchMessages(conversationId.value)
     syncFeedbackFromMessages()
@@ -493,26 +540,28 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 反馈栏 -->
+              <!-- 反馈栏（匿名用户无服务端持久化，仅保留复制） -->
               <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
-                <button
-                  class="feedback-btn flex items-center justify-center"
-                  :class="feedbackMap[msg.id] === 'up' ? 'text-icon-brand' : 'text-icon-tertiary'"
-                  :aria-pressed="feedbackMap[msg.id] === 'up'"
-                  aria-label="有帮助"
-                  @click="onThumbsUp(msg)"
-                >
-                  <ThumbsUp :size="15" />
-                </button>
-                <button
-                  class="feedback-btn flex items-center justify-center"
-                  :class="feedbackMap[msg.id] === 'down' ? 'text-icon-brand' : 'text-icon-tertiary'"
-                  :aria-pressed="feedbackMap[msg.id] === 'down'"
-                  aria-label="无帮助"
-                  @click="onThumbsDown(msg)"
-                >
-                  <ThumbsDown :size="16" />
-                </button>
+                <template v-if="!isAnon">
+                  <button
+                    class="feedback-btn flex items-center justify-center"
+                    :class="feedbackMap[msg.id] === 'up' ? 'text-icon-brand' : 'text-icon-tertiary'"
+                    :aria-pressed="feedbackMap[msg.id] === 'up'"
+                    aria-label="有帮助"
+                    @click="onThumbsUp(msg)"
+                  >
+                    <ThumbsUp :size="15" />
+                  </button>
+                  <button
+                    class="feedback-btn flex items-center justify-center"
+                    :class="feedbackMap[msg.id] === 'down' ? 'text-icon-brand' : 'text-icon-tertiary'"
+                    :aria-pressed="feedbackMap[msg.id] === 'down'"
+                    aria-label="无帮助"
+                    @click="onThumbsDown(msg)"
+                  >
+                    <ThumbsDown :size="16" />
+                  </button>
+                </template>
                 <button
                   class="feedback-btn flex items-center justify-center text-icon-tertiary"
                   aria-label="复制内容"

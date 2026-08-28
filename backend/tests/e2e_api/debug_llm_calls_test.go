@@ -82,7 +82,7 @@ func TestDebugLLMCalls(t *testing.T) {
 
 	// 2. Safety check (agnes)
 	safetyClient, _ := llm.NewClient(cfg)
-	safetyChecker := llm.NewLLMSafetyChecker(safetyClient)
+	safetyChecker := llm.NewLLMSafetyChecker(func() *llm.Client { return safetyClient })
 	if safetyChecker == nil {
 		fmt.Println("SafetyChecker is nil (LLM client not ready)")
 	} else {

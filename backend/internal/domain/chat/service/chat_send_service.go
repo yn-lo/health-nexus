@@ -62,6 +62,7 @@ type ChatSendService struct {
 	crisisNotifier   CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
 	locker           LockProvider
 	tx               TxRunner
+	ring             ringStore // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
 	oodThreshold     func(ctx context.Context) float64 // 知识库外检测阈值（动态读取 DB 配置，热生效）
 }
 
@@ -87,6 +88,7 @@ func NewChatSendService(
 	crisisNotifier CrisisNotifier,
 	locker LockProvider,
 	tx TxRunner,
+	ring ringStore,
 	promptProvider rag.SystemPromptProvider,
 	oodThreshold func(ctx context.Context) float64,
 ) *ChatSendService {
@@ -94,14 +96,15 @@ func NewChatSendService(
 		dept: dept, safetyIn: safetyIn, safetyOut: safetyOut, knowledge: knowledge,
 		rewriter: rewriter, fallbackRewriter: fallbackRewriter, llm: llmStreamer,
 		conv: conv, msg: msg, crisis: crisis, crisisNotifier: crisisNotifier,
-		locker: locker, tx: tx,
+		locker: locker, tx: tx, ring: ring,
 		promptProvider: promptProvider,
 		oodThreshold:   oodThreshold,
 	}
 }
 
 // Stream 执行 RAG 三阶段流式问答。
-// 匿名用户（UserID==0）跳过会话持久化，仅做安全审查 + RAG 流式生成。
+// 认证用户与匿名用户统一为 Session 后进入同一链条；差异收敛到 Session.Store 实现
+// （认证=DB 会话，匿名=Redis 瞬态会话）。链条自此不感知用户身份。
 // 错误统一返回 AppError 由 handler 写 SSE error 事件或 HTTP 错误响应。
 func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWriter) error {
 	// 输入校验
@@ -109,19 +112,13 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		return err
 	}
 
-	isAnonymous := in.UserID == 0
-
-	// (1)~(2) 科室范围校验 + 会话准备（REQ-CHAT-019）——匿名用户跳过（无科室偏好，检索时不限科室）
-	var dept rag.Department
-	var conv *entity.Conversation
-	if !isAnonymous {
-		var err error
-		if dept, conv, err = s.resolveDeptAndConversation(ctx, in); err != nil {
-			return err
-		}
+	// (1)~(2) 会话准备（REQ-CHAT-019）：统一构建 Session（认证=DB 会话+科室锁定；匿名=Redis 瞬态会话，不限科室）。
+	sess, err := s.buildSession(ctx, in)
+	if err != nil {
+		return err
 	}
 
-	// (3) 防并发锁（REQ-NFR-012）——匿名用户用 device_id 标识。
+	// (3) 防并发锁（REQ-NFR-012）——key 随身份（认证=user+conv；匿名=device）。
 	// 须在 conversation 事件之前获取：锁失败（并发生成）时 wroteAny=false，handler 回退 HTTP 409
 	// （符合 Conflict 语义，客户端可据此重试）；若先发 conversation 事件，错误会降级为 SSE error 事件（HTTP 200）。
 	lockKey := buildLockKey(in)
@@ -141,12 +138,10 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		}
 	}()
 
-	// (2.5) 回传会话 ID（新建/已有均下发，锁获取成功后首个 SSE 事件）：前端据此更新 URL 与后续请求的 conversation_id。
-	// 缺失此事件时，新会话每条消息都会隐式创建独立会话，多轮上下文丢失、会话列表被单条消息会话污染。
-	if !isAnonymous {
-		if err := out.Write("conversation", map[string]string{"conversation_id": conv.ID.String()}); err != nil {
-			return err
-		}
+	// (2.5) 回传会话 ID（升级/已有均下发，锁获取成功后首个 SSE 事件）：认证为会话 UUID，匿名为 device 派生 id。
+	// 前端据此更新 URL 与后续请求的 conversation_id，匿名用户据此维持多轮上下文标识。
+	if err := out.Write("conversation", map[string]string{"conversation_id": sess.ID()}); err != nil {
+		return err
 	}
 
 	// (4) 紧急症状预提醒（REQ-CHAT-010，spec §3.1 safety_warning 事件）
@@ -159,9 +154,9 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 	decision, crisis := s.safetyIn.CheckRules(ctx, in.Message)
 	if decision == rag.DecisionBlock {
 		if crisis != nil {
-			return s.handleCrisis(ctx, in, conv, dept, crisis, out)
+			return s.handleCrisis(ctx, in, sess, crisis, out)
 		}
-		return s.handleInjection(ctx, in, conv, dept, out, constants.ResultRejected, emergencyWarned)
+		return s.handleInjection(ctx, in, sess, out, constants.ResultRejected, emergencyWarned)
 	}
 
 	// (6) LLM 就绪性预检
@@ -172,14 +167,37 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 	// (7) LLM 层深度审查（疑似复核，REQ-CHAT-007）
 	if !s.safetyIn.LLMCheck(ctx, in.Message) {
 		slog.InfoContext(ctx, "chat: input blocked by LLM safety check")
-		return s.handleInjection(ctx, in, conv, dept, out, constants.ResultIntercepted, emergencyWarned)
+		return s.handleInjection(ctx, in, sess, out, constants.ResultIntercepted, emergencyWarned)
 	}
 
 	slog.InfoContext(ctx, "chat: input safety passed")
-	if isAnonymous {
-		return s.stageRAGAnonymous(ctx, in, out, emergencyWarned)
+	return s.stageRAG(ctx, in, sess, out, emergencyWarned)
+}
+
+// buildSession 统一构建会话：认证用户承载 DB 会话（含科室锁定与持久化）；
+// 匿名用户承载 Redis 瞬态会话（多轮上下文，TTL 自动过期，不限科室，危机不记录）。
+// 链条自此只与 Session 交互，不区分身份。
+func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Session, error) {
+	if in.UserID > 0 {
+		_, conv, err := s.resolveDeptAndConversation(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
+		return &Session{
+			SID:    conv.ID.String(),
+			DeptID: deptIDPtr(in.SelectedDeptID, conv),
+			store:  store,
+		}, nil
 	}
-	return s.stageRAG(ctx, in, conv, dept, out, emergencyWarned)
+	// 匿名：会话 id 由 device 稳定派生（多轮续传），科室不限。
+	sid := deriveAnonSessionID(in.DeviceID)
+	return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, sid)}, nil
+}
+
+// deriveAnonSessionID 由 device_id 稳定派生匿名会话 id（同设备多轮沿用同一标识）。
+func deriveAnonSessionID(deviceID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("health-nexus:anon:"+deviceID)).String()
 }
 
 // resolveDeptAndConversation 非匿名用户的科室范围校验 + 会话加载/创建。
@@ -236,7 +254,7 @@ func validateStreamInput(in StreamInput) error {
 // loadOrPrepareConversation 取已有会话（含所属 + 锁定科室校验），或新建会话（独立 tx 内 Create）。
 // 新会话提前创建——使后续防并发锁 lockKey 基于真实 conv.ID，避免 uuid.Nil 造成同一用户新会话串行化，
 // 以及创建后真实 ID 与 lockKey 不一致导致的同会话双流并发漏洞。
-// ponytail: 代价——若后续 ensureConversationAndUserMessage 失败会留下空会话，折中；
+// ponytail: 代价——若后续用户消息持久化失败会留下空会话，折中；
 // 这比 uuid.Nil lockKey 导致的并发漏洞（同会话双流、消息乱序、危机事件重复）影响小得多。
 // 升级路径：若空会话成为问题，可在 lock 失败时标记会话为 archived 或由后台清理任务回收。
 // ponytail: 孤儿会话清理——在 cleanupRAGStream 中，若 placeholder 为空且会话无其他消息，
@@ -287,45 +305,18 @@ func (s *ChatSendService) loadOrPrepareConversation(
 	return conv, nil
 }
 
-// handleCrisis 命中危机关键词：先事务内持久化 user msg + crisis event + assistant msg（非匿名），
-// tx 失败时不阻断 SSE 流——仍推送 crisis 事件（心理援助热线）+ done，确保患者收到救命信息（REQ-CHAT-008 / R7-1）。
+// handleCrisis 命中危机关键词：持久化危机（认证=落库危机事件并通知医护；匿名=空操作——不汇报不记录）
+// 并下发危机热线。持久化失败不阻断 SSE——无论成败都推送 crisis 热线，确保患者收到救命信息（REQ-CHAT-008 / R7-1）。
 // 紧急就医提醒已在 Stream 主流程提前下发，此处不再重复推送 safety_warning。
-// 匿名用户（conv==nil）跳过持久化，仅下发 crisis 热线。
 func (s *ChatSendService) handleCrisis(
-	ctx context.Context, in StreamInput, conv *entity.Conversation,
-	dept rag.Department, c *rag.Crisis, out SSEWriter,
+	ctx context.Context, in StreamInput, sess *Session, c *rag.Crisis, out SSEWriter,
 ) error {
-
-	if conv != nil {
-		var crisisEventID int64
-		err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-			_, _, ceID, err := s.persistUserMessageAndCrisis(ctx, in, conv, dept, c)
-			if err != nil {
-				return err
-			}
-			crisisEventID = ceID
-			if _, err := s.msg.SaveAssistant(
-				ctx, conv.ID, s.safetyIn.CrisisResponse(), constants.ResultCrisis, nil,
-			); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			slog.ErrorContext(ctx, "chat crisis persistence failed, still pushing hotline",
-				"patient_id", in.UserID, "conversation_id", conv.ID,
-				"keywords", c.Keywords, "err", err)
-		} else {
-			slog.InfoContext(ctx, "chat crisis event created",
-				"event_id", crisisEventID, "patient_id", in.UserID, "conversation_id", conv.ID, "keywords", c.Keywords)
-			// 主动通知：入队 asynq 任务，worker 落库站内通知给 DEPT_ADMIN（fire-and-forget，不阻断 SSE 流）
-			if err := s.crisisNotifier.NotifyCrisis(ctx, crisisEventID); err != nil {
-				slog.ErrorContext(ctx, "chat crisis notify enqueue failed", "event_id", crisisEventID, "err", err)
-			}
-		}
+	// DB store 内部含一次性重试并记录告警；匿名 store 为空操作。不阻断热线下发。
+	if err := sess.store.PersistCrisis(ctx, in.UserID, in.Message, c, s.safetyIn.CrisisResponse()); err != nil {
+		slog.ErrorContext(ctx, "chat crisis persist failed, still pushing hotline", "err", err)
 	}
 
-	// 无论 tx 是否成功，都推送 crisis 热线（心理援助话术，已含热线号码）。
+	// 无论事务是否成功，都推送 crisis 热线（心理援助话术，已含热线号码）。
 	if err := out.Write("crisis", map[string]any{
 		"answer": s.safetyIn.CrisisResponse(),
 	}); err != nil {
@@ -341,28 +332,18 @@ func (s *ChatSendService) handleCrisis(
 }
 
 // handleInjection 命中 Prompt 注入（规则层）或 LLM 审查拒绝（LLM 层）：
-// 非匿名时事务内创建会话 + 用户消息 + assistant 拒答消息，推送 safety_warning + done SSE。
-// 匿名用户跳过持久化，直接推送 safety_warning + done。
+// 保存用户消息 + assistant 拒答消息（认证=落库；匿名=Redis 环/退化为不持久化），
+// 推送 safety_warning + done SSE。
 // resultCode 区分：规则层用 ResultRejected，LLM 层用 ResultIntercepted（深度拦截）。
 // emergencyWarned=true 时跳过 safety_warning SSE（紧急就医提醒已下发，避免双 warning）。
 func (s *ChatSendService) handleInjection(
-	ctx context.Context, in StreamInput, conv *entity.Conversation,
-	dept rag.Department, out SSEWriter, resultCode string, emergencyWarned bool,
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, resultCode string, emergencyWarned bool,
 ) error {
-	if conv != nil {
-		err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-			_, _, err := s.ensureConversationAndUserMessage(ctx, in, conv, dept)
-			if err != nil {
-				return err
-			}
-			if _, err = s.msg.SaveAssistant(ctx, conv.ID, s.safetyIn.RejectionMessage(), resultCode, nil); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
+	if _, err := sess.store.SaveUser(ctx, in.Message, sess.DeptID); err != nil {
+		return err
+	}
+	if err := sess.store.SaveAssistant(ctx, s.safetyIn.RejectionMessage(), resultCode, nil); err != nil {
+		return err
 	}
 	// 紧急提醒已下发时不再发拒答 warning--避免一次流中两条 safety_warning 造成前端困惑。
 	if !emergencyWarned {
@@ -392,20 +373,16 @@ type ragStreamState struct {
 }
 
 // stageRAG 阶段 1（持久化用户消息）+ 阶段 2（检索 + 流式生成）+ 阶段 3（持久化 AI 消息）。
+// 认证/匿名统一走此链：持久化全部委托 sess.store（认证=DB 会话，匿名=Redis 瞬态环），链条不感知身份。
 // emergencyWarned 表示是否已下发紧急 safety_warning——为 true 时 finalizeRejection 跳过拒答 warning。
 // 编排各子阶段：prepareRAGContext（历史/改写/检索）→ streamLLMTokens（流式累积）→ finalizeRAGOutput（输出审查 + 落库），
 // defer 委托 cleanupRAGStream 处理中断路径的孤儿占位消息清理。
 func (s *ChatSendService) stageRAG(
-	ctx context.Context, in StreamInput, conv *entity.Conversation,
-	dept rag.Department, out SSEWriter, emergencyWarned bool,
+	ctx context.Context, in StreamInput, sess *Session,
+	out SSEWriter, emergencyWarned bool,
 ) error {
-	// 阶段 1：事务内确保会话 + 用户消息 + 标题
-	var userMsg *entity.Message
-	err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-		var txErr error
-		_, userMsg, txErr = s.ensureConversationAndUserMessage(ctx, in, conv, dept)
-		return txErr
-	})
+	// 阶段 1：持久化用户消息 + 标题（DB 实现含科室锁定；Redis 实现入环），返回消息用于历史排除。
+	userMsg, err := sess.store.SaveUser(ctx, in.Message, sess.DeptID)
 	if err != nil {
 		return err
 	}
@@ -413,7 +390,7 @@ func (s *ChatSendService) stageRAG(
 	// 阶段 2.1~2.4：历史加载/裁剪 + 查询改写 + 检索（检索失败/空结果在内部降级为拒答）
 	// 传入当前用户消息 ID：历史加载须排除它（已单独作为 UserMessage 传入 LLM，避免重复提问）。
 	// 改写结果仅用于检索，生成用用户原话（originalQuery）。
-	_, originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, conv, out, emergencyWarned, userMsg.ID)
+	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, emergencyWarned, userMsg.ID)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
 			return nil // finalizeRejection 已推送 safety_warning + done，无需继续
@@ -427,7 +404,7 @@ func (s *ChatSendService) stageRAG(
 	}
 
 	// 阶段 2.6：保存 AI 占位消息
-	aiMsg, err := s.msg.SaveAssistantPlaceholder(ctx, conv.ID)
+	aiMsg, err := sess.store.SaveAssistantPlaceholder(ctx)
 	if err != nil {
 		return fmt.Errorf("save ai placeholder: %w", err)
 	}
@@ -438,7 +415,7 @@ func (s *ChatSendService) stageRAG(
 	//   - 流已完成但后续步骤因 ctx 取消失败：保留真实答案（经输出安全审查），不覆盖为拒答。
 	// finalized 阻止 defer 重复清理——正常路径 finalize 成功后置 true。
 	st := &ragStreamState{aiMsgID: aiMsg.ID, chunks: chunks}
-	defer func() { s.cleanupRAGStream(ctx, st) }()
+	defer func() { s.cleanupRAGStream(ctx, sess, st) }()
 
 	// 生成 Token 预算：改写阶段已按 TokenBudgetRewrite(4000) 裁过历史，TokenBudgetGenerate(16000)
 	// 更宽松，此后无需二次裁剪（原 trimHistoryForGeneration 恒为 no-op，已移除）。
@@ -454,14 +431,14 @@ func (s *ChatSendService) stageRAG(
 	// 若不显式拦截，placeholder 会被 finalize 为空 content + ResultAnswered（违反 REQ-CHAT-003）。
 	// 显式 finalize placeholder 为 RejectionMessage + REJECTED，并设置 finalized=true 阻止 defer 重复清理。
 	if st.full.Len() == 0 {
-		return s.handleEmptyStream(ctx, st, out, emergencyWarned)
+		return s.handleEmptyStream(ctx, sess, st, out, emergencyWarned)
 	}
 
 	slog.InfoContext(ctx, "chat: LLM stream completed",
 		"tokens", st.full.Len(), "duration_ms", time.Since(startTime).Milliseconds())
 
-	// 阶段 2.8 + 阶段 3：输出侧安全审查 + 事务内 finalize AI 消息
-	if err := s.finalizeRAGOutput(ctx, st, out); err != nil {
+	// 阶段 2.8 + 阶段 3：输出侧安全审查 + 持久化 finalize AI 消息
+	if err := s.finalizeRAGOutput(ctx, sess, st, out); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "chat: request completed", "result_code", constants.ResultAnswered)
@@ -471,12 +448,12 @@ func (s *ChatSendService) stageRAG(
 // handleEmptyStream LLM 流正常结束但未产生任何 token：显式 finalize placeholder 为拒答。
 // finalized=true 阻止 defer 重复清理（否则 cleanupRAGStream 会再次清理并产生误导日志）。
 func (s *ChatSendService) handleEmptyStream(
-	ctx context.Context, st *ragStreamState, out SSEWriter, emergencyWarned bool,
+	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter, emergencyWarned bool,
 ) error {
 	slog.WarnContext(ctx, "llm stream returned empty content, degrading to rejection")
 	st.streamCompleted = false
 	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), ragCleanupTimeout)
-	if ferr := s.msg.FinalizeAssistant(
+	if ferr := sess.store.FinalizeAssistant(
 		cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
 	); ferr != nil {
 		slog.ErrorContext(ctx, "finalize empty stream placeholder failed", "err", ferr)
@@ -488,86 +465,6 @@ func (s *ChatSendService) handleEmptyStream(
 			return err
 		}
 	}
-	return out.Write("done", "[DONE]")
-}
-
-// stageRAGAnonymous 匿名用户 RAG 流式生成：跳过会话持久化与历史上下文，仅检索 + 流式输出。
-// 无消息落库。
-func (s *ChatSendService) stageRAGAnonymous(
-	ctx context.Context, in StreamInput, out SSEWriter, emergencyWarned bool,
-) error {
-	// 查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询）
-	query := s.rewriteQuery(ctx, in.Message, nil)
-
-	// 检索（不限科室，匿名用户无科室偏好）；TopK=0 让 RAGConfig.TopK 接管（与认证路径一致，
-	// 修死 硬编码 DefaultTopK 导致管理员配置 top_k 对 chat 永远失效）。
-	chunks, err := s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
-		Query: query, DeptID: nil, TopK: 0,
-	})
-	if err != nil {
-		slog.ErrorContext(ctx, "knowledge search failed for anonymous, degrading to rejection", "err", err)
-		return s.writeAnonymousRejection(out, emergencyWarned)
-	}
-	if len(chunks) == 0 {
-		slog.WarnContext(ctx, "knowledge search returned 0 chunks for anonymous, degrading to rejection",
-			"query_len", len(query))
-		return s.writeAnonymousRejection(out, emergencyWarned)
-	}
-	// 与认证路径一致的 OOD 检出（REQ-CHAT-003）：所有切片向量相似度都低时拒答，
-	// 避免匿名用户绕过知识库外检测（医疗场景严肃化一致性）。
-	if isOutOfDomain(chunks, s.oodThreshold(ctx)) {
-		slog.WarnContext(ctx, "chat: anonymous OOD detected, all chunks below threshold",
-			"chunk_count", len(chunks))
-		return s.writeAnonymousRejection(out, emergencyWarned)
-	}
-
-	// 推送引用
-	if err := out.Write("references", chunks); err != nil {
-		return err
-	}
-
-	slog.InfoContext(ctx, "chat: anonymous RAG search completed", "chunks", len(chunks))
-
-	// 流式 LLM 生成（无历史）。改写后的 query 仅用于上方检索；
-	// UserMessage 用用户原话，忠实原始表述（与认证路径一致）。
-	streamCtx, cancelStream := context.WithTimeout(ctx, llmStreamTimeout)
-	defer cancelStream()
-	streamCh, streamErr := s.llm.StreamChat(streamCtx, llm.ChatRequest{
-		SystemPrompt:  s.buildSystemPrompt(ctx),
-		History:       nil,
-		UserMessage:   in.Message,
-		ContextChunks: chunkContents(chunks),
-	})
-	if streamErr != nil {
-		return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
-	}
-	var full strings.Builder
-	for chunk := range streamCh {
-		if chunk.Err != nil {
-			slog.ErrorContext(ctx, "llm stream error", "err", chunk.Err)
-			return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
-		}
-		if chunk.Done {
-			break
-		}
-		if err := out.Write("token", chunk.Token); err != nil {
-			return err
-		}
-		full.WriteString(chunk.Token)
-	}
-
-	if full.Len() == 0 {
-		slog.WarnContext(ctx, "chat: anonymous LLM stream produced no tokens, rejecting")
-		_ = out.Write("safety_warning", s.safetyIn.SystemErrorMessage())
-		return out.Write("done", "[DONE]")
-	}
-
-	// 输出安全审查（与 finalizeRAGOutput 一致的 mode 载荷，前端据此覆盖/追加 UI 内容）
-	if err := s.writeOutputSafetyWarning(ctx, out, full.String()); err != nil {
-		return err
-	}
-
-	slog.InfoContext(ctx, "chat: anonymous request completed", "tokens", full.Len())
 	return out.Write("done", "[DONE]")
 }
 
@@ -593,54 +490,20 @@ func (s *ChatSendService) rewriteQuery(ctx context.Context, msg string, history 
 	return query
 }
 
-// writeAnonymousRejection 匿名用户检索失败/空结果降级：推送拒答 warning + done。
-// emergencyWarned=true 时跳过 warning（紧急就医提醒已下发，避免双 warning）。
-func (s *ChatSendService) writeAnonymousRejection(out SSEWriter, emergencyWarned bool) error {
-	if !emergencyWarned {
-		if werr := out.Write("safety_warning", s.safetyIn.NoKnowledgeMessage()); werr != nil {
-			return werr
-		}
-	}
-	return out.Write("done", "[DONE]")
-}
-
-// writeOutputSafetyWarning 输出安全审查：命中时推送 safety_warning（{"mode","text"}）。
-//   - mode=replace：越权内容已替换为安全话术，text 为完整安全话术。
-//   - mode=append：追加免责声明，text 为追加部分。
-func (s *ChatSendService) writeOutputSafetyWarning(ctx context.Context, out SSEWriter, content string) error {
-	out2 := s.safetyOut.Validate(ctx, content)
-	if !out2.Changed {
-		return nil
-	}
-	mode := "replace"
-	warning := out2.Final
-	if !out2.Blocked {
-		mode = "append"
-		if strings.HasPrefix(out2.Final, content) {
-			warning = out2.Final[len(content):]
-		} else {
-			// 防御：前缀不匹配（不应发生），降级为 replace 避免前端追加错误内容
-			mode = "replace"
-			warning = out2.Final
-		}
-	}
-	return out.Write("safety_warning", map[string]string{"mode": mode, "text": warning})
-}
-
 // prepareRAGContext 阶段 2.1~2.4：加载并裁剪历史、查询改写（失败降级原始查询）、知识库检索。
 // currentUserMsgID 为当前轮用户消息 ID：阶段 1 已将其持久化，历史加载须排除，
 // 否则 LLM 上下文出现两条连续 user 消息（原始问题 + 改写问题）。
-// 返回 rewrittenQuery（改写后，用于检索）、originalQuery（用户原话，用于生成）、
+// 改写仅用于检索（函数内部），返回 originalQuery（用户原话，用于生成）、
 // 裁剪后的历史（不含当前用户消息）、检索到的 chunks。
 // 检索失败或无结果时降级为拒答（finalizeRejection），返回其错误供 stageRAG 直接透传。
 func (s *ChatSendService) prepareRAGContext(
-	ctx context.Context, in StreamInput, conv *entity.Conversation,
+	ctx context.Context, in StreamInput, sess *Session,
 	out SSEWriter, emergencyWarned bool, currentUserMsgID uuid.UUID,
-) (rewrittenQuery, originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
+) (originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
 	// 阶段 2.1：历史消息（最近 N 轮，排除当前轮用户消息）
-	history, err = s.msg.GetRecentHistory(ctx, conv.ID, constants.HistoryTurns, &currentUserMsgID)
+	history, err = sess.store.History(ctx, constants.HistoryTurns, &currentUserMsgID)
 	if err != nil {
-		return "", "", nil, nil, fmt.Errorf("load history: %w", err)
+		return "", nil, nil, fmt.Errorf("load history: %w", err)
 	}
 
 	// 阶段 2.1b：改写阶段 Token 预算兜底（REQ-CHAT-006-A）
@@ -655,29 +518,29 @@ func (s *ChatSendService) prepareRAGContext(
 	}
 
 	// 阶段 2.2：查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询，REQ-NFR-017）。
-	// 与匿名路径共用 rewriteQuery。**无论首问/多轮都改写**：短问/口语问需扩写提升检索召回
+	// **无论首问/多轮都改写**：短问/口语问需扩写提升检索召回
 	// （如"怎么控制"→"高血压的日常护理方法"）。改写结果仅用于检索；生成侧仍用用户原话。
 	llmHistory := toLLMMessages(history)
-	rewrittenQuery = s.rewriteQuery(ctx, in.Message, llmHistory)
+	rewrittenQuery := s.rewriteQuery(ctx, in.Message, llmHistory)
 
 	// 阶段 2.3：检索（跨域 wiki 域，阶段 2 实现；阶段 1 此处可能返回 ErrNotImplemented）。
 	// TopK=0 让 RAGConfig.TopK 接管——修死 硬编码 DefaultTopK 使管理员配置 top_k 对 chat 失效。
 	chunks, err = s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
-		Query: rewrittenQuery, DeptID: deptIDPtr(in.SelectedDeptID, conv), TopK: 0,
+		Query: rewrittenQuery, DeptID: sess.DeptID, TopK: 0,
 	})
 	if err != nil {
-		// 检索失败降级为拒答：阶段 1 用户消息已在阶段 1 事务内提交，
+		// 检索失败降级为拒答：阶段 1 用户消息已在阶段 1 持久化，
 		// 若直接返回 503 会留下无 assistant 回复的孤儿 user 消息，污染会话历史。
 		// 降级路径写入 assistant 拒答消息保证会话完整性，并记录原始错误供排查。
 		slog.ErrorContext(ctx, "knowledge search failed, degrading to rejection", "err", err)
-		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）
 	if len(chunks) == 0 {
 		slog.WarnContext(ctx, "knowledge search returned 0 chunks, degrading to rejection",
-			"query_len", len(rewrittenQuery), "dept_id", deptIDPtr(in.SelectedDeptID, conv))
-		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+			"query_len", len(rewrittenQuery), "dept_id", sess.DeptID)
+		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	// 阶段 2.4b：OOD 检测 - 所有切片向量相似度都很低时拒答（医疗场景严肃化）
@@ -687,14 +550,14 @@ func (s *ChatSendService) prepareRAGContext(
 	if isOutOfDomain(chunks, threshold) {
 		slog.WarnContext(ctx, "chat: OOD detected, all chunks below threshold",
 			"chunk_count", len(chunks), "ood_threshold", threshold)
-		return "", "", nil, nil, s.finalizeRejection(ctx, conv, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	slog.InfoContext(ctx, "chat: RAG search completed",
 		"chunks", len(chunks), "query_len", len(rewrittenQuery))
 	// 生成侧返回用户原话（in.Message），改写仅用于检索；
 	// 如此 LLM 忠实于患者原始表述，改写器扩写偏差不再污染答案，且可被精确否决（references 仍指向改写检索结果）。
-	return rewrittenQuery, in.Message, history, chunks, nil
+	return in.Message, history, chunks, nil
 }
 
 // streamLLMTokens 阶段 2.7：LLM 流式调用 + token 累积 + 中断/超时检测。
@@ -773,13 +636,13 @@ func (s *ChatSendService) checkStreamTermination(
 	return nil
 }
 
-// finalizeRAGOutput 阶段 2.8（输出侧安全审查，REQ-CHAT-012~014）+ 阶段 3（事务内 finalize AI 消息）。
+// finalizeRAGOutput 阶段 2.8（输出侧安全审查，REQ-CHAT-012~014）+ 阶段 3（持久化 finalize AI 消息）。
 // 输出审查触发时推送 safety_warning（spec §3.1），data 为 JSON 对象 {"mode","text"}：
 //   - mode=replace：越权内容已替换为安全话术，text 为完整安全话术，前端据此覆盖已累积的 token 缓冲。
 //   - mode=append：追加免责声明，text 为追加部分，前端追加到累积答案末尾。
 //
 // 这样 UI 最终内容与 DB 持久化内容保持一致（修复前 UI 保留被拦截的原始内容）。
-func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, st *ragStreamState, out SSEWriter) error {
+func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter) error {
 	out2 := s.safetyOut.Validate(ctx, st.full.String())
 	final := out2.Final
 	if out2.Changed {
@@ -805,17 +668,14 @@ func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, st *ragStreamSt
 		slog.InfoContext(ctx, "chat: output safety passed")
 	}
 
-	// 阶段 3：事务内 finalize AI 消息
-	err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-		resultCode := constants.ResultAnswered
-		if out2.Blocked {
-			resultCode = constants.ResultIntercepted
-		} else if st.partial {
-			resultCode = constants.ResultPartial
-		}
-		return s.msg.FinalizeAssistant(ctx, st.aiMsgID, final, resultCode, toEntityRefs(st.chunks))
-	})
-	if err != nil {
+	// 阶段 3：持久化 finalize AI 消息（DB=更新占位行；Redis=入环）
+	resultCode := constants.ResultAnswered
+	if out2.Blocked {
+		resultCode = constants.ResultIntercepted
+	} else if st.partial {
+		resultCode = constants.ResultPartial
+	}
+	if err := sess.store.FinalizeAssistant(ctx, st.aiMsgID, final, resultCode, toEntityRefs(st.chunks)); err != nil {
 		return fmt.Errorf("finalize ai message: %w", err)
 	}
 	st.finalized = true // 阻止 defer 清理——已成功 finalize
@@ -829,7 +689,8 @@ func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, st *ragStreamSt
 // 此时用原 ctx 清理会因 context.Canceled 而失败，留下孤儿消息。
 //   - streamCompleted=true：LLM 流已完成，对完整内容做输出审查后用真实答案 finalize，避免覆盖已生成内容。
 //   - streamCompleted=false：LLM 流未完成，清理为拒答，避免遗留空 content 的孤儿消息。
-func (s *ChatSendService) cleanupRAGStream(ctx context.Context, st *ragStreamState) {
+// 持久化经 sess.store 收敛身份（DB=更新占位行；Redis=入环，最终一致多轮上下文）。
+func (s *ChatSendService) cleanupRAGStream(ctx context.Context, sess *Session, st *ragStreamState) {
 	if st.finalized {
 		return
 	}
@@ -843,7 +704,7 @@ func (s *ChatSendService) cleanupRAGStream(ctx context.Context, st *ragStreamSta
 		} else if st.partial {
 			resultCode = constants.ResultPartial
 		}
-		if ferr := s.msg.FinalizeAssistant(
+		if ferr := sess.store.FinalizeAssistant(
 			cleanupCtx, st.aiMsgID, out2.Final, resultCode, toEntityRefs(st.chunks),
 		); ferr != nil {
 			slog.ErrorContext(ctx, "cleanup finalized stream failed", "err", ferr)
@@ -853,21 +714,21 @@ func (s *ChatSendService) cleanupRAGStream(ctx context.Context, st *ragStreamSta
 	if st.full.Len() > 0 {
 		out2 := s.safetyOut.Validate(cleanupCtx, st.full.String())
 		if out2.Blocked {
-			if ferr := s.msg.FinalizeAssistant(
+			if ferr := sess.store.FinalizeAssistant(
 				cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
 			); ferr != nil {
 				slog.ErrorContext(ctx, "cleanup unsafe partial failed", "err", ferr)
 			}
 			return
 		}
-		if ferr := s.msg.FinalizeAssistant(
+		if ferr := sess.store.FinalizeAssistant(
 			cleanupCtx, st.aiMsgID, out2.Final, constants.ResultPartial, toEntityRefs(st.chunks),
 		); ferr != nil {
 			slog.ErrorContext(ctx, "cleanup partial content failed", "err", ferr)
 		}
 		return
 	}
-	if ferr := s.msg.FinalizeAssistant(
+	if ferr := sess.store.FinalizeAssistant(
 		cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
 	); ferr != nil {
 		slog.ErrorContext(ctx, "cleanup orphan placeholder failed", "err", ferr)
@@ -881,13 +742,9 @@ var errRejectionHandled = errors.New("rejection already handled")
 // finalizeRejection 持久化 assistant 拒答消息并推送 safety_warning + done。
 // msg 为具体拒答话术（无知识 / 系统异常等），emergencyWarned=true 时跳过 SSE warning。
 func (s *ChatSendService) finalizeRejection(
-	ctx context.Context, conv *entity.Conversation, out SSEWriter, emergencyWarned bool, msg string,
+	ctx context.Context, sess *Session, out SSEWriter, emergencyWarned bool, msg string,
 ) error {
-	err := s.tx.WithTx(ctx, func(ctx context.Context) error {
-		_, err := s.msg.SaveAssistant(ctx, conv.ID, msg, constants.ResultRejected, nil)
-		return err
-	})
-	if err != nil {
+	if err := sess.store.SaveAssistant(ctx, msg, constants.ResultRejected, nil); err != nil {
 		return err
 	}
 	// 紧急提醒已下发时不再发拒答 warning——避免一次流中两条 safety_warning 造成前端困惑。
@@ -900,66 +757,6 @@ func (s *ChatSendService) finalizeRejection(
 		return err
 	}
 	return errRejectionHandled
-}
-
-// persistUserMessageAndCrisis 事务内子操作：确保会话 + 用户消息 + 危机事件。
-// ponytail: 调用方 handleCrisis 已包裹 s.tx.WithTx，message 与 crisis_event 原子提交，简化——
-// 故先 SaveUserMessage 拿到 messageID，再一次性 INSERT crisis_event(message_id)，
-// 省去原先"INSERT(NULL) + UPDATE(message_id)"中的 UPDATE。
-func (s *ChatSendService) persistUserMessageAndCrisis(
-	ctx context.Context, in StreamInput, conv *entity.Conversation,
-	dept rag.Department, c *rag.Crisis,
-) (*entity.Conversation, *entity.Message, int64, error) {
-	c2, userMsg, err := s.ensureConversationAndUserMessage(ctx, in, conv, dept)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	e := &entity.CrisisEvent{
-		PatientID:        in.UserID,
-		ConversationID:   c2.ID,
-		TriggeredContent: in.Message,
-		MatchedKeywords:  c.Keywords,
-		Level:            c.Level,
-	}
-	// 用户消息已在同事务内保存，直接关联 message_id——避免后续 UPDATE 回填。
-	if userMsg != nil {
-		msgID := userMsg.ID
-		e.MessageID = &msgID
-	}
-	id, err := s.crisis.Create(ctx, e)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	return c2, userMsg, id, nil
-}
-
-// ensureConversationAndUserMessage 保存用户消息 + 设置标题 + 更新 last_message_at。
-// 会话由 loadOrPrepareConversation 提前创建（新会话）或加载（已有会话），此处不再创建。
-// 已有会话未锁定科室时用当前 dept 锁定（兼容历史数据）；新会话已锁定，跳过。
-func (s *ChatSendService) ensureConversationAndUserMessage(
-	ctx context.Context, in StreamInput, conv *entity.Conversation, dept rag.Department,
-) (*entity.Conversation, *entity.Message, error) {
-	// 会话未锁定时，仅当用户明确选择具体科室（>0）才锁定到该科室；
-	// nil/0 一律视为"全部科室"，保持未锁定（检索不限科室），修复旧逻辑把未传科室误锁到解析科室的问题。
-	if conv.LockedDeptID == nil && in.SelectedDeptID != nil && *in.SelectedDeptID > 0 {
-		if err := s.conv.LockDept(ctx, conv.ID, dept.ID); err != nil {
-			return nil, nil, err
-		}
-		deptID := dept.ID
-		conv.LockedDeptID = &deptID
-	}
-	msg, err := s.msg.SaveUserMessage(ctx, conv.ID, in.Message)
-	if err != nil {
-		return nil, nil, err
-	}
-	// 设置标题（首条消息前 20 字截断，REQ-CHAT-018）
-	if err := s.conv.UpdateTitleIfEmpty(ctx, conv.ID, truncateTitle(in.Message)); err != nil {
-		return nil, nil, err
-	}
-	if err := s.conv.TouchLastMessageAt(ctx, conv.ID); err != nil {
-		return nil, nil, err
-	}
-	return conv, msg, nil
 }
 
 // defaultSystemPrompt 已移至 constants.DefaultSystemPrompt。

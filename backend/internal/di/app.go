@@ -277,13 +277,9 @@ func buildChatRouter(
 	rewriteClient := swappable.Rewrite
 
 	var _ rag.LLMSafetyChecker = (*llm.LLMSafetyChecker)(nil)
-	var llmSafetyChecker rag.LLMSafetyChecker
-	// LLMSafetyChecker 使用 SwappableClient 内部的 Client 快照构建。
-	// 热切换后 SafetyChecker 仍引用旧 Client——这是可接受的，因为安全审查
-	// 只需任何可用的 LLM 即可，不要求与主 chat client 实时一致。
-	if c := llm.NewLLMSafetyChecker(swappable.Chat.Load()); c != nil {
-		llmSafetyChecker = c
-	}
+	// LLMSafetyChecker 通过 provider 函数每次审查时取当前 swappable.Chat 快照——
+	// 热切换后安全审查自动跟随新 client，也避免"启动未配置则永远不启用"。
+	llmSafetyChecker := llm.NewLLMSafetyChecker(func() *llm.Client { return swappable.Chat.Load() })
 	inputSafety := rag.NewDefaultInputSafetyFilter(safetyRuleProvider, llmSafetyChecker)
 	outputSafety := rag.NewDefaultOutputSafetyFilter(safetyRuleProvider)
 	ragConfigProvider := adapter.NewConfigRAGConfigProvider(configSvc)
@@ -297,16 +293,17 @@ func buildChatRouter(
 		}
 		return defaultOODThreshold
 	}
-	rewriter := rewriteClient
-	if !rewriter.IsReady() {
-		rewriter = llmClient
-	}
+	// rewriter 直接注入动态的 swappable.Rewrite / swappable.Chat：
+	// 依赖 SwappableClient 原子取当前 Client，管理员后续配置专用改写模型时热切换即生效，
+	// 无需启动时快照决定（此前 `if !IsReady() 回退主 chat` 使专用模型后配置永不生效）。
 	crisisNotifier := adapter.NewAsynqCrisisNotifier(infra.AsynqClient)
+	// 匿名会话瞬态上下文环（Redis List，48h TTL 自动过期，无需清理任务）。
+	ring := redis.NewRingStore(infra.Redis)
 	chatSvc := chatservice.NewChatSendService(
 		deptResolver, inputSafety, outputSafety, knowledgeSearcher,
-		rewriter, llmClient, llmClient,
+		rewriteClient, llmClient, llmClient,
 		conversationRepo, messageRepo, crisisRepo, crisisNotifier,
-		infra.Locker, infra.TxMgr, promptProvider,
+		infra.Locker, infra.TxMgr, ring, promptProvider,
 		oodThresholdFn,
 	)
 	convSvc := chatservice.NewConversationService(conversationRepo, messageRepo)

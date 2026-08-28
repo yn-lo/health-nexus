@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { MessageSquare, ChevronRight, SquarePen, Trash2 } from '@lucide/vue'
-import { useRouter } from 'vue-router'
-import { useChatStore } from '@/stores/chat'
+import { useRouter, useRoute } from 'vue-router'
+import { useChatStore, removeAnonSession } from '@/stores/chat'
 import { getAccessToken, getUserStored, timeAgo } from '@/shared'
 import { STAFF_ROLES, ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
 import { EmptyState, DsPopup, DsSwipeCell } from '@/shared/components'
@@ -22,7 +22,18 @@ const emit = defineEmits<{
 
 const chatStore = useChatStore()
 const router = useRouter()
+const route = useRoute()
 const { showConfirmDialog } = useDsDialog()
+
+/** 匿名（无 token）：会话索引来自 localStorage；已登录：来自服务端 */
+const isAnon = computed(() => !getAccessToken())
+/** 匿名历史列表（本地索引）与登录会话列表合并展示 */
+const displayList = computed(() => (isAnon.value ? chatStore.anonSessions : chatStore.conversations))
+/** 当前高亮会话 id：匿名用路由参数，登录用 store 中的 currentConversation */
+const activeConvId = computed(() => {
+  if (isAnon.value) return (route.params.id as string) || ''
+  return chatStore.currentConversation?.id
+})
 
 const user = computed(() => getUserStored())
 const userInitial = computed(() => (user.value?.username ?? '?').charAt(0).toUpperCase())
@@ -31,11 +42,11 @@ const userRoleLabel = computed(() => {
   return (role && ROLE_LABEL[role]) || DEFAULT_STAFF_LABEL
 })
 
-// 仅在抽屉打开且用户已登录时拉取会话列表
+// 仅在抽屉打开时加载会话列表：登录拉取服务端，匿名读本地索引
 watch(() => props.visible, (visible) => {
-  if (visible && getAccessToken()) {
-    chatStore.fetchConversations()
-  }
+  if (!visible) return
+  if (isAnon.value) chatStore.loadAnonSessionsList()
+  else chatStore.fetchConversations()
 })
 
 function onClose() {
@@ -60,6 +71,12 @@ function goProfile() {
 async function onDelete(id: string) {
   try {
     await showConfirmDialog({ title: '删除对话', message: '确定删除该对话记录？删除后不可恢复。', danger: true })
+    if (isAnon.value) {
+      // 匿名：删除本地索引 + 本地消息缓存（服务端 Redis 上下文无公开删除端点，48h 自动过期）
+      removeAnonSession(id)
+      chatStore.loadAnonSessionsList()
+      return
+    }
     await chatStore.deleteConversation(id)
   } catch {
     // 用户取消
@@ -110,18 +127,18 @@ async function onDelete(id: string) {
       </div>
 
       <EmptyState
-        v-else-if="!chatStore.conversations.length"
+        v-else-if="!displayList.length"
         text="暂无对话记录"
       />
 
       <ul v-else class="ds-list history-drawer__list">
         <DsSwipeCell
-          v-for="conv in chatStore.conversations"
+          v-for="conv in displayList"
           :key="conv.id"
         >
           <li
             class="ds-list-item"
-            :class="{ 'ds-list-item--active': conv.id === chatStore.currentConversation?.id }"
+            :class="{ 'ds-list-item--active': conv.id === activeConvId }"
             @click="onSelect(conv.id)"
           >
             <div class="ds-list-item__icon">

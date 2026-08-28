@@ -42,7 +42,7 @@ func (c *Client) ToStandaloneQuestion(ctx context.Context, userQuery string, his
 	if model == "" {
 		model = c.cfg.ChatModel
 	}
-	resp, err := c.chat.CreateChatCompletion(ctx, c.chatRequest(model, msgs))
+	resp, err := c.chat.CreateChatCompletion(ctx, c.chatRequestPlain(model, msgs))
 	if err != nil {
 		return "", fmt.Errorf("rewrite query: %w", err)
 	}

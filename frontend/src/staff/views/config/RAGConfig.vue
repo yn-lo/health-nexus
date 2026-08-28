@@ -41,7 +41,7 @@ const retrievalFields: { key: keyof Pick<RAGConfigUpdateRequest, 'top_k' | 'simi
  { key: 'top_k', label: '检索数量 (top_k)', step: 1, isFloat: false, hint: '向量+BM25 混合检索的候选数。推荐 5。医疗场景建议 3-10，影响召回率和性能。' },
  { key: 'similarity_threshold', label: '相似度阈值', step: 0.05, isFloat: true, hint: '向量相似度过滤阈值 (0-1)。推荐 0.75。低于此值的切片不被采用。医疗场景建议 0.7-0.85，过高导致漏答，过低导致误答。设为 0 表示不过滤（不推荐）。' },
  { key: 'rerank_threshold', label: 'Rerank 阈值', step: 0.05, isFloat: true, hint: 'Rerank 重排后的过滤阈值。推荐 0.5。低于此值的切片在 rerank 后被剔除。仅在启用 Rerank 时生效。' },
- { key: 'ood_threshold', label: 'OOD 阈值', step: 0.05, isFloat: true, hint: '知识库外检测阈值 (0-0.5)。所有切片最大向量相似度低于此值时系统拒答。推荐 0.3。设为 0 关闭检测。过高可能导致正常问答被拒。' },
+ { key: 'ood_threshold', label: 'OOD 阈值', step: 0.05, isFloat: true, hint: '知识库外检测阈值 (0-0.5)。所有切片最大向量相似度低于此值时系统拒答。推荐 0.3。设为 0 关闭检测。注意：当相似度阈值 (similarity_threshold) 大于 0 时已在此处过滤掉低相关切片，OOD 仅在 similarity_threshold=0（不过滤）时才实际生效。' },
 ]
 
 const allNumericFields = [...chunkFields, ...retrievalFields]

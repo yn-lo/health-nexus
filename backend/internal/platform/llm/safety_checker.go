@@ -31,17 +31,13 @@ const safetySystemPrompt = `你是医疗问答平台的输入安全审查助手�
 // （满足 AC-ARCH-09：platform 层禁止 import domain 层）。
 // 编译期断言在 di 包完成（di 同时可见两个包）。
 type LLMSafetyChecker struct {
-	client *Client
+	client func() *Client
 }
 
 // NewLLMSafetyChecker 构造 LLM 安全审查器。
-// client 为 nil 或未就绪（API Key 未配置）时返回 nil——
-// 调用方应将 nil 赋值给 rag.LLMSafetyChecker 接口变量（保持 nil interface），
-// 让 DefaultInputSafetyFilter.LLMCheck 走降级路径始终放行。
-func NewLLMSafetyChecker(client *Client) *LLMSafetyChecker {
-	if client == nil || !client.IsReady() {
-		return nil
-	}
+// client 为 client 解析函数：每次审查时调用取当前快照，支持 LLM 热切换后安全审查跟随新 client。
+// 解析返回 nil（未配置）时 IsInputSafe fail-open 放行。
+func NewLLMSafetyChecker(client func() *Client) *LLMSafetyChecker {
 	return &LLMSafetyChecker{client: client}
 }
 
@@ -55,6 +51,10 @@ func (c *LLMSafetyChecker) IsInputSafe(ctx context.Context, message string) (boo
 	if c == nil || c.client == nil {
 		return true, nil
 	}
+	cli := c.client()
+	if cli == nil || !cli.IsReady() {
+		return true, nil
+	}
 	if strings.TrimSpace(message) == "" {
 		return true, nil
 	}
@@ -65,7 +65,8 @@ func (c *LLMSafetyChecker) IsInputSafe(ctx context.Context, message string) (boo
 		{Role: openai.ChatMessageRoleSystem, Content: safetySystemPrompt},
 		{Role: openai.ChatMessageRoleUser, Content: message},
 	}
-	resp, err := c.client.chat.CreateChatCompletion(ctx, c.client.chatRequest(c.client.cfg.ChatModel, msgs))
+	// chatRequestPlain：剥离 response_format，确保输出纯文本 SAFE/UNSAFE（JSON 包装会被误放行）。
+	resp, err := cli.chat.CreateChatCompletion(ctx, cli.chatRequestPlain(cli.cfg.ChatModel, msgs))
 	if err != nil {
 		// fail-open：LLM 故障 / 超时 / 未配置时放行，依赖规则层兜底。
 		slog.WarnContext(ctx, "llm: safety check failed, fail-open", "err", err)

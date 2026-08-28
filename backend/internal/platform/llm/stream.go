@@ -126,8 +126,10 @@ func buildChatMessages(req ChatRequest) []openai.ChatCompletionMessage {
 	})
 	if hasChunks {
 		chunkText := retrievedDocsLabel + strings.Join(req.ContextChunks, "\n---\n")
-		if len(chunkText) > maxChunkBytes {
-			chunkText = chunkText[:maxChunkBytes]
+		// 按 rune（而非字节）截断，避免切碎多字节字符（中文/emoji）产生无效 UTF-8，
+		// 否则 JSON 序列化会将其静默替换为 U+FFFD，损坏一个字符。
+		if runes := []rune(chunkText); len(runes) > maxChunkBytes {
+			chunkText = string(runes[:maxChunkBytes])
 			slog.Warn("llm: context chunks truncated, exceeded maxChunkBytes", "max", maxChunkBytes)
 		}
 		msgs = append(msgs, openai.ChatCompletionMessage{
@@ -150,6 +152,20 @@ func buildChatMessages(req ChatRequest) []openai.ChatCompletionMessage {
 
 // chatRequest 构造 ChatCompletionRequest 并注入供应商扩展参数（temperature / top_p / max_tokens / response_format）。
 func (c *Client) chatRequest(model string, messages []openai.ChatCompletionMessage) openai.ChatCompletionRequest {
+	return c.buildChatRequest(model, messages, true)
+}
+
+// chatRequestPlain 与 chatRequest 相同，但剥离 response_format（强制 JSON 输出）。
+// 用于改写与安全审查：这两类调用依赖纯文本输出，JSON 包装会破坏 SAFE/UNSAFE 判定与改写结果解析。
+// 温度等其余参数照常注入（无害）。
+func (c *Client) chatRequestPlain(model string, messages []openai.ChatCompletionMessage) openai.ChatCompletionRequest {
+	return c.buildChatRequest(model, messages, false)
+}
+
+// buildChatRequest 统一构造请求；applyResponseFormat=false 时跳过 response_format 注入。
+func (c *Client) buildChatRequest(
+	model string, messages []openai.ChatCompletionMessage, applyResponseFormat bool,
+) openai.ChatCompletionRequest {
 	r := openai.ChatCompletionRequest{Model: model, Messages: messages}
 	for k, v := range c.params {
 		switch k {
@@ -166,6 +182,9 @@ func (c *Client) chatRequest(model string, messages []openai.ChatCompletionMessa
 				r.MaxTokens = int(f)
 			}
 		case "response_format":
+			if !applyResponseFormat {
+				continue
+			}
 			if s, ok := v.(string); ok && s == "json_object" {
 				r.ResponseFormat = &openai.ChatCompletionResponseFormat{
 					Type: openai.ChatCompletionResponseFormatTypeJSONObject,
