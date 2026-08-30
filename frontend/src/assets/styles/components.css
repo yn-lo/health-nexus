@@ -1572,7 +1572,8 @@
 .ds-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal-backdrop);
+  /* 高于 ds-popup 面板(--z-modal)，保证确认框始终在最上层 */
+  z-index: var(--z-popover);
   background: var(--bg-overlay-l3);
   display: flex;
   align-items: center;

@@ -297,7 +297,7 @@ func buildChatRouter(
 	// 依赖 SwappableClient 原子取当前 Client，管理员后续配置专用改写模型时热切换即生效，
 	// 无需启动时快照决定（此前 `if !IsReady() 回退主 chat` 使专用模型后配置永不生效）。
 	crisisNotifier := adapter.NewAsynqCrisisNotifier(infra.AsynqClient)
-	// 匿名会话瞬态上下文环（Redis List，48h TTL 自动过期，无需清理任务）。
+	// 匿名会话瞬态上下文环（Redis List，12h TTL 自动过期，无需清理任务）。
 	ring := redis.NewRingStore(infra.Redis)
 	chatSvc := chatservice.NewChatSendService(
 		deptResolver, inputSafety, outputSafety, knowledgeSearcher,

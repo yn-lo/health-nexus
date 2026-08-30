@@ -97,7 +97,7 @@ const { isStreaming, currentContent, references, crisis, error, aborted, convers
 
 const conversationId = computed(() => (route.params.id as string) ?? '')
 const isThinking = computed(() => isStreaming.value && !currentContent.value)
-// 匿名用户（无 access token）：走 /api/public/chat/stream，上下文存服务端 Redis 48h，
+// 匿名用户（无 access token）：走 /api/public/chat/stream，上下文存服务端 Redis 12h，
 // 前端无公开消息拉取/反馈端点——消息本地回显（localStorage），隐藏反馈入口，避免 401 与无效反馈。
 const isAnon = !getAccessToken()
 

@@ -3,17 +3,17 @@ import { ref } from 'vue'
 import * as chatApi from '@/shared/api/chat'
 import type { Conversation, ConversationUpdateRequest, Message } from '@/shared/types/chat'
 
-// 匿名会话本地持久化：后端匿名上下文存 Redis（48h TTL 自动过期），前端无公开
+// 匿名会话本地持久化：后端匿名上下文存 Redis（12h TTL 自动过期），前端无公开
 // 消息拉取端点，故在 localStorage 按 conversation_id 本地缓存消息做刷新回显，
-// TTL 与后端 Redis 保持一致的 48h，过期自动清理。
+// TTL 与后端 Redis 保持一致的 12h，过期自动清理。
 const ANON_MSGS_PREFIX = 'hn_anon_msgs:'
-const ANON_MSG_TTL = 48 * 60 * 60 * 1000
+const ANON_MSG_TTL = 12 * 60 * 60 * 1000
 
 function anonKey(conversationId: string): string {
   return ANON_MSGS_PREFIX + conversationId
 }
 
-/** 读取匿名会话近期本地消息（超 48h 视为过期并清理） */
+/** 读取匿名会话近期本地消息（超 12h 视为过期并清理） */
 export function loadAnonMessages(conversationId: string): Message[] {
   if (!conversationId) return []
   try {
@@ -71,8 +71,8 @@ function writeAnonSessions(list: AnonSessionMeta[]): void {
   }
 }
 
-/** 读取匿名会话索引（已按最近活跃倒序；消息已过期的会话自动剔除，保持与后端 Redis 48h 对齐） */
-export function loadAnonSessions(): AnonSessionMeta[] {
+/** 读取匿名会话索引（已按最近活跃倒序；消息已过期的会话自动剔除，保持与后端 Redis 12h 对齐） */
+function loadAnonSessions(): AnonSessionMeta[] {
   return rawAnonSessions().filter((m) => loadAnonMessages(m.id).length > 0)
 }
 

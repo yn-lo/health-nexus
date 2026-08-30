@@ -72,7 +72,7 @@ async function onDelete(id: string) {
   try {
     await showConfirmDialog({ title: '删除对话', message: '确定删除该对话记录？删除后不可恢复。', danger: true })
     if (isAnon.value) {
-      // 匿名：删除本地索引 + 本地消息缓存（服务端 Redis 上下文无公开删除端点，48h 自动过期）
+      // 匿名：删除本地索引 + 本地消息缓存（服务端 Redis 上下文无公开删除端点，12h 自动过期）
       removeAnonSession(id)
       chatStore.loadAnonSessionsList()
       return
@@ -314,8 +314,8 @@ async function onDelete(id: string) {
   height: 100%;
   border: none;
   border-radius: 0;
-  background: var(--status-error-default);
-  color: var(--text-onaccent);
+  background: transparent;
+  color: var(--icon-tertiary);
   font-size: var(--body-xs-font-size);
 }
 </style>

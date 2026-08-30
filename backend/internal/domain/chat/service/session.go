@@ -16,7 +16,7 @@ import (
 )
 
 // anonymousContextTTL 匿名会话上下文在 Redis 中的保留时长。TTL 自动过期，无需清理任务。
-const anonymousContextTTL = 48 * time.Hour
+const anonymousContextTTL = 12 * time.Hour
 
 // ringStore 匿名会话的瞬态消息环存取能力（消费者定义，ISP）。*redis.RingStore 实现此接口。
 // 使用 Redis List 作为环：RPush 追加、LRange 读取、Expire 刷新 TTL。
