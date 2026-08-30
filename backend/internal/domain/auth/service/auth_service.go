@@ -63,6 +63,14 @@ type UserRepo interface {
 	ListByDept(ctx context.Context, deptID, limit, offset int64) ([]*entity.User, int64, error)
 }
 
+// InviteRepo 定义 AuthService 所需的邀请码数据访问能力（消费者接口，ISP）。
+// 实现在 internal/domain/auth/repository 包，由 di 装配时注入。
+type InviteRepo interface {
+	Create(ctx context.Context, ic *entity.InviteCode) error
+	List(ctx context.Context, limit, offset int) ([]*entity.InviteCode, int64, error)
+	ConsumeForRegistration(ctx context.Context, code, username, passwordHash, role string) (*entity.User, error)
+}
+
 // LoginResponse 统一登录响应体。
 type LoginResponse struct {
 	Access  string   `json:"access"`
@@ -135,6 +143,7 @@ type RedisClient interface {
 // AuthService 实现登录/注册/刷新/登出/密码重置业务逻辑。
 type AuthService struct {
 	repo   UserRepo
+	invite InviteRepo
 	issuer *TokenIssuer
 	auth   *middleware.Authenticator
 	rdb    RedisClient
@@ -144,12 +153,13 @@ type AuthService struct {
 // NewAuthService 构造 AuthService。
 func NewAuthService(
 	repo UserRepo,
+	invite InviteRepo,
 	issuer *TokenIssuer,
 	auth *middleware.Authenticator,
 	rdb RedisClient,
 	cfg *config.Config,
 ) *AuthService {
-	return &AuthService{repo: repo, issuer: issuer, auth: auth, rdb: rdb, cfg: cfg}
+	return &AuthService{repo: repo, invite: invite, issuer: issuer, auth: auth, rdb: rdb, cfg: cfg}
 }
 
 // UnifiedLogin 统一登录。不校验角色，登录后由前端根据 user.role 跳转对应端。
@@ -216,24 +226,32 @@ func (s *AuthService) login(
 	return u, access, refresh, nil
 }
 
-// Register 患者注册。校验用户名格式、密码强度、用户名未占用，创建 PATIENT 用户并签发 token。
-func (s *AuthService) Register(ctx context.Context, username, password string) (*RegisterResponse, error) {
+// Register 患者注册。必须持有效邀请码（一次性、未过期、角色 PATIENT）。
+// 事务内校验并消费邀请码 + 创建用户，随后签发 token。角色固定为 PATIENT。
+func (s *AuthService) Register(ctx context.Context, username, password, inviteCode string) (*RegisterResponse, error) {
 	if err := validateUsername(username); err != nil {
 		return nil, err
 	}
 	if err := validatePasswordStrength(password); err != nil {
 		return nil, err
 	}
+	if inviteCode == "" {
+		return nil, apperrors.Validation("VALIDATION_MISSING", "邀请码必填")
+	}
 	hash, err := crypto.HashPassword(password, s.cfg.Argon2)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	u, err := s.repo.Create(ctx, username, hash, constants.RolePatient)
+	u, err := s.invite.ConsumeForRegistration(ctx, inviteCode, username, hash, constants.RolePatient)
 	if err != nil {
+		if errors.Is(err, entity.ErrInviteInvalid) {
+			// 统一消息：不区分码不存在/过期/已用，避免探测有效码。
+			return nil, apperrors.Validation("AUTH_INVALID_INVITE", "邀请码无效或已过期")
+		}
 		if postgres.IsUniqueViolation(err) {
 			return nil, apperrors.Conflict("AUTH_USERNAME_EXISTS", "用户名已存在")
 		}
-		return nil, fmt.Errorf("create user: %w", err)
+		return nil, fmt.Errorf("register with invite: %w", err)
 	}
 	access, refresh, err := s.issuer.Issue(ctx, u.ID, u.Role, 0)
 	if err != nil {
@@ -244,6 +262,101 @@ func (s *AuthService) Register(ctx context.Context, username, password string) (
 		Refresh: refresh,
 		User:    RegisterUserInfo{ID: u.ID, Username: u.Username, Role: u.Role},
 	}, nil
+}
+
+// 邀请码有效期（30 天）。
+const inviteCodeTTL = 30 * 24 * time.Hour
+
+// 生成数量上下限。
+const (
+	defaultInviteCount = 1
+	maxInviteCount     = 100
+)
+
+// InviteCodeDTO 管理员视角的邀请码信息。
+type InviteCodeDTO struct {
+	ID        int64      `json:"id"`
+	Code      string     `json:"code"`
+	Role      string     `json:"role"`
+	CreatedBy int64      `json:"created_by"`
+	UsedBy    *int64     `json:"used_by"`
+	UsedAt    *time.Time `json:"used_at"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// CreateInviteCodes 管理员生成患者邀请码（仅管理员，router 层 RequireAdmin 已约束，此处双保险）。
+// count 为生成数量，越界时收口到 [1, maxInviteCount]。每个码均为 6 位纯数字、有效期 30 天、一次性。
+// 生成时对 DB 唯一约束冲突自动重试，保证返回的每个码都唯一且已落库。
+func (s *AuthService) CreateInviteCodes(
+	ctx context.Context, actorID int64, actorRole string, count int,
+) ([]InviteCodeDTO, error) {
+	if !constants.IsAdmin(actorRole) {
+		return nil, apperrors.Forbidden("AUTH_NOT_ADMIN", "仅管理员可生成邀请码")
+	}
+	if count <= 0 {
+		count = defaultInviteCount
+	}
+	if count > maxInviteCount {
+		count = maxInviteCount
+	}
+	expiresAt := time.Now().Add(inviteCodeTTL)
+	dtos := make([]InviteCodeDTO, 0, count)
+	for len(dtos) < count {
+		ic := &entity.InviteCode{
+			Code:      generateInviteCode(),
+			Role:      constants.RolePatient,
+			CreatedBy: actorID,
+			ExpiresAt: expiresAt,
+		}
+		if err := s.invite.Create(ctx, ic); err != nil {
+			if postgres.IsUniqueViolation(err) {
+				continue // 撞码，重新生成
+			}
+			return nil, fmt.Errorf("create invite code: %w", err)
+		}
+		dtos = append(dtos, InviteCodeDTO{
+			ID: ic.ID, Code: ic.Code, Role: ic.Role, CreatedBy: ic.CreatedBy,
+			UsedBy: ic.UsedBy, UsedAt: ic.UsedAt, ExpiresAt: ic.ExpiresAt, CreatedAt: ic.CreatedAt,
+		})
+	}
+	return dtos, nil
+}
+
+// ListInviteCodes 管理员分页查询邀请码（含已用/已过期，创建倒序）。
+func (s *AuthService) ListInviteCodes(
+	ctx context.Context, actorRole string, limit, offset int,
+) ([]InviteCodeDTO, int64, error) {
+	if !constants.IsAdmin(actorRole) {
+		return nil, 0, apperrors.Forbidden("AUTH_NOT_ADMIN", "仅管理员可查看邀请码")
+	}
+	codes, total, err := s.invite.List(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list invite codes: %w", err)
+	}
+	dtos := make([]InviteCodeDTO, 0, len(codes))
+	for _, c := range codes {
+		dtos = append(dtos, InviteCodeDTO{
+			ID: c.ID, Code: c.Code, Role: c.Role, CreatedBy: c.CreatedBy,
+			UsedBy: c.UsedBy, UsedAt: c.UsedAt, ExpiresAt: c.ExpiresAt, CreatedAt: c.CreatedAt,
+		})
+	}
+	return dtos, total, nil
+}
+
+// inviteCodeDigits 邀请码字符集（仅数字）。
+const inviteCodeDigits = "0123456789"
+
+// generateInviteCode 生成 N 位纯数字邀请码（crypto/rand 安全随机）。
+func generateInviteCode() string {
+	const n = 6
+	b := make([]byte, n)
+	// rand.Read 极难失败；失败时返回固定长度但可能非随机的值，交由唯一约束兜底重试。
+	_, _ = rand.Read(b)
+	for i := range b {
+		b[i] = inviteCodeDigits[int(b[i])%len(inviteCodeDigits)]
+	}
+	return string(b[:n])
 }
 
 // Refresh 校验 refresh token 签名、类型，原子占用后签发新的 access+refresh（轮换）。

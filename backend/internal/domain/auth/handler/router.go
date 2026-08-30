@@ -80,5 +80,8 @@ func (h *AuthHandler) Mount(
 		r.Post("/accounts/{id}/reset-password", h.ResetAccountPassword)
 		r.Patch("/accounts/{id}/department", h.UpdateAccountDept)
 		r.Patch("/accounts/{id}/role", h.UpdateAccountRole)
+		// 邀请码管理：生成（患者注册强制邀请码）+ 列表。
+		r.Get("/invite-codes", h.ListInviteCodes)
+		r.Post("/invite-codes", h.GenerateInviteCodes)
 	})
 }

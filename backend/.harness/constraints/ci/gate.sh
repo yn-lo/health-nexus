@@ -174,35 +174,27 @@ run_p0() {
     warn "deadcode 未安装，已跳过 P0-7b 全程序死代码扫描（go install golang.org/x/tools/cmd/deadcode@latest；CI 服务器应装齐）"
   fi
 
-  # P0-8 数据库迁移完整性（goose 命名规范 + 编号唯一连续）
-  if [ -d migrations ]; then
-    local mig_bad=0
-    # 1) 命名规范：NNNNN_name.sql（goose 约定，Bug#1 历史教训）
-    local naming
-    naming="$(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -vE '^[0-9]{5}_[a-z0-9_]+\.sql$' || true)"
-    if [ -n "$naming" ]; then
-      fail "迁移文件命名不符合 goose 规范（NNNNN_name.sql）" "重命名迁移文件" "migrations/, .harness/specs/e2e-test-plan.md Bug#1"
-      echo "$naming" | head -n 10 | sed 's/^/    /'
-      mig_bad=1
+  # P0-8 数据库结构/种子单一事实来源（schema.sql + seed.sql，内嵌，内容哈希幂等）
+  # 保证新方案下文件存在且命名约定正确；不再使用 goose 编号迁移。
+  local db_src=internal/di
+  local ok=0
+  if [ ! -f "$db_src/schema.sql" ]; then
+    fail "缺少 schema.sql（数据库结构单一事实来源）" "新建 $db_src/schema.sql" "internal/di/"
+    ok=1
+  fi
+  if [ ! -f "$db_src/seed.sql" ]; then
+    fail "缺少 seed.sql（数据库种子单一事实来源）" "新建 $db_src/seed.sql" "internal/di/"
+    ok=1
+  fi
+  if [ "$ok" -eq 0 ]; then
+    # 幂等性抽查：schema.sql 必须包含可安全重放的幂等关键字，违反应视为书写缺陷。
+    local name="${db_src}/schema.sql"
+    if ! grep -qE 'IF NOT EXISTS|OR REPLACE|ON CONFLICT' "$name"; then
+      fail "$name 未使用幂等 DDL（缺 IF NOT EXISTS/OR REPLACE/ON CONFLICT）" \
+        "全部 DDL 需写成可安全重放形式" "$name"
     fi
-    # 2) 编号唯一（无重复）
-    local dups
-    dups="$(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | grep -oE '^[0-9]{5}' | sort | uniq -d)"
-    if [ -n "$dups" ]; then
-      fail "迁移编号重复：$(echo "$dups" | tr '\n' ' ')" "按序重排迁移编号" "migrations/"
-      mig_bad=1
-    fi
-    # 3) 编号连续（从 00001 开始无跳号）
-    if [ "$mig_bad" -eq 0 ]; then
-      local expected=1 num
-      for f in $(ls migrations/*.sql 2>/dev/null | xargs -n1 basename 2>/dev/null | sort); do
-        num="$((10#${f%%_*}))"
-        if [ "$num" -ne "$expected" ]; then
-          fail "迁移编号不连续：期望 0000${expected}，实际 ${num}" "检查缺失/跳号的迁移文件" "migrations/"
-          break
-        fi
-        expected=$((expected + 1))
-      done
+    if [ -d migrations ]; then
+      warn "migrations/（旧 goose 编号迁移）已弃用，迁移内容应并入 internal/di/schema.sql"
     fi
   fi
 }

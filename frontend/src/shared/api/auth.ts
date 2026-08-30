@@ -12,6 +12,7 @@ import type {
   StaffAccount,
   StaffAccountCreateRequest,
   ResetPasswordRequest,
+  InviteCode,
 } from '../types/auth';
 import type { Paginated } from '../types/base';
 import type { UserRole } from '../constants/roles';
@@ -133,4 +134,16 @@ export function updateStaffAccountRole(id: number, role: UserRole) {
 /** 恢复软删除账户（仅超管） */
 export function restoreStaffAccount(id: number) {
   return apiClient<StaffAccount>(`/staff/auth/accounts/${id}/restore`, { method: 'POST' });
+}
+
+// ===== 邀请码管理（PATIENT 注册强制邀请码，JWT + RequireAdmin） =====
+
+/** 管理员生成邀请码 — count 可省略（缺省 1，上限 100），每个码 6 位纯数字、有效期 30 天、一次性 */
+export function createInviteCodes(count = 1) {
+  return apiClient<InviteCode[]>('/staff/auth/invite-codes', { method: 'POST', body: { count } });
+}
+
+/** 管理员分页查询邀请码（含已用/已过期） */
+export function listInviteCodes(params?: { page?: number; page_size?: number }) {
+  return apiClient<Paginated<InviteCode>>('/staff/auth/invite-codes', { params });
 }

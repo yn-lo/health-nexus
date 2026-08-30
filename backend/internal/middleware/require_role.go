@@ -38,11 +38,6 @@ func RequireStaff() func(http.Handler) http.Handler {
 	return RequireRole(constants.RoleSuperAdmin, constants.RoleDeptAdmin, constants.RoleDoctor, constants.RoleNurse)
 }
 
-// RequirePatient 要求患者角色。
-func RequirePatient() func(http.Handler) http.Handler {
-	return RequireRole(constants.RolePatient)
-}
-
 // RequireAdmin 要求管理员角色（超管/科室管理员）。
 func RequireAdmin() func(http.Handler) http.Handler {
 	return RequireRole(constants.RoleSuperAdmin, constants.RoleDeptAdmin)

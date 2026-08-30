@@ -36,10 +36,11 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// registerRequest 注册请求体（与 loginRequest 结构相同，语义独立）。
+// registerRequest 注册请求体（PATIENT 注册须携带邀请码 invite_code，强制）。
 type registerRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	InviteCode string `json:"invite_code"`
 }
 
 // refreshRequest 刷新请求体。
@@ -84,6 +85,11 @@ type createAccountRequest struct {
 	Password string `json:"password"`
 	Role     string `json:"role"`
 	DeptID   int64  `json:"dept_id"`
+}
+
+// generateInviteRequest 生成邀请码请求体（count 可省略，缺省为 1，上限 100）。
+type generateInviteRequest struct {
+	Count int `json:"count"`
 }
 
 // resetPasswordRequest 超级管理员重置用户密码请求体。
@@ -132,6 +138,7 @@ func (h *AuthHandler) UnifiedLogin(w http.ResponseWriter, r *http.Request) {
 // Register POST /api/auth/register - 患者注册（201）。
 // 字段缺失返回 422 VALIDATION_MISSING（与 refresh/logout 一致，契约 §1.3）；
 // 字段存在但格式不合法（用户名非法字符/密码强度不足）返回 422（语义验证错误）。
+// invite_code（邀请码）必填：无邀请码或邀请码无效/过期/已用均返回 422。
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -146,7 +153,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "password 字段必填"))
 		return
 	}
-	res, err := h.svc.Register(r.Context(), req.Username, req.Password)
+	if req.InviteCode == "" {
+		response.WriteError(w, r, apperrors.Validation("VALIDATION_MISSING", "invite_code 字段必填"))
+		return
+	}
+	res, err := h.svc.Register(r.Context(), req.Username, req.Password, req.InviteCode)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -360,6 +371,48 @@ func (h *AuthHandler) CreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteCreated(w, account)
+}
+
+// GenerateInviteCodes POST /api/staff/auth/invite-codes — 管理员批量生成患者邀请码（JWT + RequireAdmin，201）。
+// count 越界由 service 层收口到 [1,100]。返回每个新生成的码及其有效期（30 天）。
+func (h *AuthHandler) GenerateInviteCodes(w http.ResponseWriter, r *http.Request) {
+	actorID, actorRole, _, ok := currentIdentity(r)
+	if !ok {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
+		return
+	}
+	var req generateInviteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	codes, err := h.svc.CreateInviteCodes(r.Context(), actorID, actorRole, req.Count)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteCreated(w, codes)
+}
+
+// ListInviteCodes GET /api/staff/auth/invite-codes — 管理员分页查询邀请码（JWT + RequireAdmin）。
+// 查询参数：page、page_size（pagination 统一解析，page_size 上限 100）。
+func (h *AuthHandler) ListInviteCodes(w http.ResponseWriter, r *http.Request) {
+	_, actorRole, _, ok := currentIdentity(r)
+	if !ok {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity"))
+		return
+	}
+	params, err := pagination.Parse(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	codes, total, err := h.svc.ListInviteCodes(r.Context(), actorRole, params.Page, params.PageSize)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, pagination.NewResult(codes, total, params))
 }
 
 // LockAccount POST /api/staff/auth/accounts/{id}/lock — 管理员锁定账户（JWT + RequireAdmin）。

@@ -62,7 +62,7 @@ type ChatSendService struct {
 	crisisNotifier   CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
 	locker           LockProvider
 	tx               TxRunner
-	ring             ringStore // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
+	ring             ringStore                         // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
 	oodThreshold     func(ctx context.Context) float64 // 知识库外检测阈值（动态读取 DB 配置，热生效）
 }
 
@@ -312,7 +312,9 @@ func (s *ChatSendService) handleCrisis(
 	ctx context.Context, in StreamInput, sess *Session, c *rag.Crisis, out SSEWriter,
 ) error {
 	// DB store 内部含一次性重试并记录告警；匿名 store 为空操作。不阻断热线下发。
-	if err := sess.store.PersistCrisis(ctx, in.Identity.UserID, in.Message, c, s.safetyIn.CrisisResponse()); err != nil {
+	if err := sess.store.PersistCrisis(
+		ctx, in.Identity.UserID, in.Message, c, s.safetyIn.CrisisResponse(),
+	); err != nil {
 		slog.ErrorContext(ctx, "chat crisis persist failed, still pushing hotline", "err", err)
 	}
 
@@ -642,7 +644,9 @@ func (s *ChatSendService) checkStreamTermination(
 //   - mode=append：追加免责声明，text 为追加部分，前端追加到累积答案末尾。
 //
 // 这样 UI 最终内容与 DB 持久化内容保持一致（修复前 UI 保留被拦截的原始内容）。
-func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter) error {
+func (s *ChatSendService) finalizeRAGOutput(
+	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter,
+) error {
 	out2 := s.safetyOut.Validate(ctx, st.full.String())
 	final := out2.Final
 	if out2.Changed {
@@ -689,6 +693,7 @@ func (s *ChatSendService) finalizeRAGOutput(ctx context.Context, sess *Session, 
 // 此时用原 ctx 清理会因 context.Canceled 而失败，留下孤儿消息。
 //   - streamCompleted=true：LLM 流已完成，对完整内容做输出审查后用真实答案 finalize，避免覆盖已生成内容。
 //   - streamCompleted=false：LLM 流未完成，清理为拒答，避免遗留空 content 的孤儿消息。
+//
 // 持久化经 sess.store 收敛身份（DB=更新占位行；Redis=入环，最终一致多轮上下文）。
 func (s *ChatSendService) cleanupRAGStream(ctx context.Context, sess *Session, st *ragStreamState) {
 	if st.finalized {

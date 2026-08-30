@@ -9,6 +9,12 @@
 // （embedding 维度由 TestSeedChunk 动态读取 DB 列定义，方案 C 后维度可变）。
 //
 // 输出：每个用例 t.Logf 输出 PASS/FAIL，最后 t.Logf 汇总。
+//
+// SSE happy path 会真实触发 LLM 调用，涉及外部 API，仅在显式指定 -tags e2e 时编译，
+// 默认 go test ./tests/... 不运行（"手动"测试）。
+//
+//go:build e2e
+
 package e2e_api_test
 
 import (

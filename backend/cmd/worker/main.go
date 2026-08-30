@@ -48,9 +48,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// 启动时自动执行数据库迁移（幂等，已执行的迁移不会重复；advisory lock 防止与 server 并发）
-	if err := di.RunMigrations(ctx, cfg.Postgres.DSN, ""); err != nil {
-		slog.Error("run migrations failed", "err", err)
+	// 启动时自动应用数据库 schema + 种子（幂等：内容哈希未变则跳过；advisory lock 防止与 server 并发）
+	if err := di.ApplySchema(ctx, cfg.Postgres.DSN); err != nil {
+		slog.Error("run schema apply failed", "err", err)
 		panic(err)
 	}
 

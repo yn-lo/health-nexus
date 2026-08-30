@@ -167,7 +167,7 @@ DevTools → Network → 筛选:
 | **air** | Go 热重载，修改代码自动重启 | `air` 自动检测文件变更 |
 | **dlv** | Go 源码级调试器 | `dlv debug ./cmd/server`，设断点、单步、查看变量 |
 | **go test -run** | 运行特定测试用例 | `go test -run TestAuthGate_ProtectedEndpoints -v ./tests/` |
-| **go test -tags debug** | 运行依赖外部服务的诊断测试 | `go test -tags debug ./tests/e2e_api/` |
+| **go test -tags e2e** | 运行涉及真实外部 API 的 e2e（LLM/真机 HTTP），默认 `go test ./tests/...` 不编译（手动） | `go test -tags e2e ./tests/e2e_api/` |
 
 #### 进程状态检查
 

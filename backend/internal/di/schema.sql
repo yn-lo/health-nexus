@@ -1,20 +1,17 @@
--- +goose Up
--- +goose StatementBegin
-
 -- ============================================================================
--- 00001_baseline: 合并 00001~00031 的最终 schema
--- 适用于全新生产环境初始化；已有环境请勿执行。
--- 合并来源：
---   00001-00025  原 baseline
---   00026        messages.result_code 增加 PARTIAL
---   00027        crisis_events.conversation_id 外键 CASCADE → RESTRICT
---   00028        rag_configs.ood_threshold（已包含在原 baseline）
---   00029        users 删除 avatar_url，新增 phone/date_of_birth/gender/emergency_contact/emergency_phone
---   00030        messages 新增 feedback 列
---   00031        新增 notifications 表
+-- schema.sql — 数据库结构的单一事实来源（幂等）
+-- ----------------------------------------------------------------------------
+-- 用法：由应用启动时（internal/di.ApplySchema）按内容哈希幂等应用：
+--   · 哈希未变化 → 跳过；
+--   · 哈希变化 → 整文件重跑（本文件全部 DDL 均为幂等/可安全重放形式）。
+--
+-- ⚠️ 维护约定（务必遵守）：
+--   1. 所有对象必须用 IF NOT EXISTS / OR REPLACE 或 DO 块守卫写成幂等；
+--   2. 新增表/列用 CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS；
+--   3. 破坏性变更（DROP/改类型）写成"幂等且不破坏已有列"（如 DROP COLUMN IF EXISTS）；
+--   4. 尽量避免破坏性变更；确需时确认对已有环境重跑安全。
 -- ============================================================================
 
--- ── 扩展 ────────────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -22,7 +19,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- base 域
 -- ============================================================================
 
-CREATE TABLE departments (
+CREATE TABLE IF NOT EXISTS departments (
     id           BIGSERIAL    PRIMARY KEY,
     name         VARCHAR(100) NOT NULL,
     parent_id    BIGINT       REFERENCES departments(id) ON DELETE RESTRICT,
@@ -33,7 +30,7 @@ CREATE TABLE departments (
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE TABLE user_departments (
+CREATE TABLE IF NOT EXISTS user_departments (
     id            BIGSERIAL   PRIMARY KEY,
     user_id       BIGINT      NOT NULL,
     department_id BIGINT      NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
@@ -42,17 +39,17 @@ CREATE TABLE user_departments (
     UNIQUE (user_id, department_id)
 );
 
-CREATE UNIQUE INDEX uq_user_departments_one_primary
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_departments_one_primary
     ON user_departments(user_id) WHERE is_primary = TRUE;
-CREATE INDEX idx_departments_parent_id   ON departments (parent_id);
-CREATE INDEX idx_user_departments_user_id ON user_departments (user_id);
-CREATE INDEX idx_user_departments_dept_id ON user_departments (department_id);
+CREATE INDEX IF NOT EXISTS idx_departments_parent_id   ON departments (parent_id);
+CREATE INDEX IF NOT EXISTS idx_user_departments_user_id ON user_departments (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_departments_dept_id ON user_departments (department_id);
 
 -- ============================================================================
 -- auth 域
 -- ============================================================================
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id                 BIGSERIAL    PRIMARY KEY,
     username           VARCHAR(64)  NOT NULL UNIQUE,
     role               VARCHAR(20)  NOT NULL,
@@ -69,13 +66,13 @@ CREATE TABLE users (
     CONSTRAINT users_role_chk CHECK (role IN ('SUPER_ADMIN','DEPT_ADMIN','DOCTOR','NURSE','PATIENT'))
 );
 
-CREATE INDEX idx_users_is_deleted ON users (is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON users (is_deleted) WHERE is_deleted = FALSE;
 
 -- ============================================================================
 -- wiki 域
 -- ============================================================================
 
-CREATE TABLE articles (
+CREATE TABLE IF NOT EXISTS articles (
     id                 BIGSERIAL    PRIMARY KEY,
     title              VARCHAR(255) NOT NULL,
     content            TEXT         NOT NULL,
@@ -127,7 +124,7 @@ RETURNS tsquery LANGUAGE sql IMMUTABLE STRICT AS $$
   SELECT to_tsquery('simple', array_to_string(bigram_array(input), '|'));
 $$;
 
-CREATE TABLE article_chunks (
+CREATE TABLE IF NOT EXISTS article_chunks (
     id            BIGSERIAL   PRIMARY KEY,
     article_id    BIGINT      NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     chunk_index   INT         NOT NULL,
@@ -147,17 +144,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_article_chunks_tsv
-    BEFORE INSERT OR UPDATE OF content ON article_chunks
-    FOR EACH ROW EXECUTE FUNCTION article_chunks_tsv_update();
+-- 触发器无 IF NOT EXISTS，用 DO 块守卫保证幂等。
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_article_chunks_tsv') THEN
+        EXECUTE 'CREATE TRIGGER trg_article_chunks_tsv
+                 BEFORE INSERT OR UPDATE OF content ON article_chunks
+                 FOR EACH ROW EXECUTE FUNCTION article_chunks_tsv_update()';
+    END IF;
+END
+$$;
 
-CREATE INDEX idx_article_chunks_embedding
+CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding
     ON article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_article_chunks_tsv     ON article_chunks USING gin (tsv);
-CREATE INDEX idx_article_chunks_article ON article_chunks (article_id);
-CREATE INDEX idx_article_chunks_active  ON article_chunks (article_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_tsv     ON article_chunks USING gin (tsv);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_article ON article_chunks (article_id);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_active  ON article_chunks (article_id, is_active);
 
-CREATE TABLE article_references (
+CREATE TABLE IF NOT EXISTS article_references (
     id              BIGSERIAL   PRIMARY KEY,
     article_id      BIGINT      NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     source_dept_id  BIGINT      NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
@@ -173,13 +177,13 @@ CREATE TABLE article_references (
     CONSTRAINT article_refs_status_chk CHECK (status IN ('pending','approved','rejected','revoked'))
 );
 
-CREATE UNIQUE INDEX uq_article_refs_pending
+CREATE UNIQUE INDEX IF NOT EXISTS uq_article_refs_pending
     ON article_references (article_id, target_dept_id) WHERE status = 'pending';
-CREATE INDEX idx_article_refs_source ON article_references (source_dept_id);
-CREATE INDEX idx_article_refs_target ON article_references (target_dept_id);
-CREATE INDEX idx_article_refs_status ON article_references (status);
+CREATE INDEX IF NOT EXISTS idx_article_refs_source ON article_references (source_dept_id);
+CREATE INDEX IF NOT EXISTS idx_article_refs_target ON article_references (target_dept_id);
+CREATE INDEX IF NOT EXISTS idx_article_refs_status ON article_references (status);
 
-CREATE TABLE article_audit_logs (
+CREATE TABLE IF NOT EXISTS article_audit_logs (
     id            BIGSERIAL   PRIMARY KEY,
     article_id    BIGINT      NOT NULL REFERENCES articles(id) ON DELETE RESTRICT,
     operator_id   BIGINT      NOT NULL,
@@ -191,14 +195,14 @@ CREATE TABLE article_audit_logs (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_articles_status_dept    ON articles (status, department_id) WHERE is_deleted = FALSE;
-CREATE INDEX idx_articles_author         ON articles (author_id);
-CREATE INDEX idx_articles_published_at   ON articles (published_at);
-CREATE INDEX idx_articles_review_overdue ON articles (review_overdue_at) WHERE review_overdue = FALSE;
-CREATE INDEX idx_article_audit_logs_article ON article_audit_logs (article_id);
-CREATE UNIQUE INDEX uq_articles_featured_rank
+CREATE INDEX IF NOT EXISTS idx_articles_status_dept    ON articles (status, department_id) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_articles_author         ON articles (author_id);
+CREATE INDEX IF NOT EXISTS idx_articles_published_at   ON articles (published_at);
+CREATE INDEX IF NOT EXISTS idx_articles_review_overdue ON articles (review_overdue_at) WHERE review_overdue = FALSE;
+CREATE INDEX IF NOT EXISTS idx_article_audit_logs_article ON article_audit_logs (article_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_articles_featured_rank
     ON articles (department_id, featured_rank) WHERE featured_rank > 0;
-CREATE INDEX idx_articles_featured
+CREATE INDEX IF NOT EXISTS idx_articles_featured
     ON articles (department_id, view_count DESC, published_at DESC)
     WHERE status = 'published' AND is_deleted = false;
 
@@ -206,7 +210,7 @@ CREATE INDEX idx_articles_featured
 -- chat 域
 -- ============================================================================
 
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
     id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id      BIGINT       NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     locked_dept_id  BIGINT       REFERENCES departments(id) ON DELETE SET NULL,
@@ -217,13 +221,13 @@ CREATE TABLE conversations (
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_conversations_patient_archived
+CREATE INDEX IF NOT EXISTS idx_conversations_patient_archived
     ON conversations (patient_id, is_archived);
-CREATE INDEX idx_conversations_patient_archived_lastmsg
+CREATE INDEX IF NOT EXISTS idx_conversations_patient_archived_lastmsg
     ON conversations (patient_id, is_archived, last_message_at DESC);
-CREATE INDEX idx_conversations_locked_dept ON conversations (locked_dept_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_locked_dept ON conversations (locked_dept_id);
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id   UUID         NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role              VARCHAR(20)  NOT NULL,
@@ -238,9 +242,9 @@ CREATE TABLE messages (
     CONSTRAINT messages_feedback_chk CHECK (feedback IS NULL OR feedback IN ('up', 'down'))
 );
 
-CREATE INDEX idx_messages_conv_created ON messages (conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages (conversation_id, created_at);
 
-CREATE TABLE crisis_events (
+CREATE TABLE IF NOT EXISTS crisis_events (
     id                BIGSERIAL   PRIMARY KEY,
     patient_id        BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     conversation_id   UUID        NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
@@ -256,17 +260,17 @@ CREATE TABLE crisis_events (
     CONSTRAINT crisis_level_chk CHECK (level IN ('high','medium','low'))
 );
 
-CREATE INDEX idx_crisis_events_patient       ON crisis_events (patient_id);
-CREATE INDEX idx_crisis_events_handled       ON crisis_events (is_handled);
-CREATE INDEX idx_crisis_events_level         ON crisis_events (level);
-CREATE INDEX idx_crisis_events_created       ON crisis_events (created_at DESC);
-CREATE INDEX idx_crisis_events_handled_level ON crisis_events (is_handled, level);
+CREATE INDEX IF NOT EXISTS idx_crisis_events_patient       ON crisis_events (patient_id);
+CREATE INDEX IF NOT EXISTS idx_crisis_events_handled       ON crisis_events (is_handled);
+CREATE INDEX IF NOT EXISTS idx_crisis_events_level         ON crisis_events (level);
+CREATE INDEX IF NOT EXISTS idx_crisis_events_created       ON crisis_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crisis_events_handled_level ON crisis_events (is_handled, level);
 
 -- ============================================================================
 -- config 域
 -- ============================================================================
 
-CREATE TABLE ai_providers (
+CREATE TABLE IF NOT EXISTS ai_providers (
     id                 BIGSERIAL    PRIMARY KEY,
     name               VARCHAR(100) NOT NULL UNIQUE,
     provider_type      VARCHAR(20)  NOT NULL,
@@ -282,9 +286,12 @@ CREATE TABLE ai_providers (
     CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank','rewrite'))
 );
 
-CREATE INDEX idx_ai_providers_type_active ON ai_providers (provider_type, is_active);
+-- 对已有库的增量同步：补齐 is_full_url（新增于 00003，幂等）。
+ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS is_full_url BOOLEAN NOT NULL DEFAULT FALSE;
 
-CREATE TABLE sensitive_words (
+CREATE INDEX IF NOT EXISTS idx_ai_providers_type_active ON ai_providers (provider_type, is_active);
+
+CREATE TABLE IF NOT EXISTS sensitive_words (
     id          BIGSERIAL   PRIMARY KEY,
     word        VARCHAR(100) NOT NULL,
     category    VARCHAR(30)  NOT NULL,
@@ -294,9 +301,9 @@ CREATE TABLE sensitive_words (
     CONSTRAINT sensitive_words_cat_chk CHECK (category IN ('suicide','emergency','injection'))
 );
 
-CREATE INDEX idx_sensitive_words_category ON sensitive_words (category);
+CREATE INDEX IF NOT EXISTS idx_sensitive_words_category ON sensitive_words (category);
 
-CREATE TABLE safety_rules (
+CREATE TABLE IF NOT EXISTS safety_rules (
     id          BIGSERIAL   PRIMARY KEY,
     name        VARCHAR(100) NOT NULL UNIQUE,
     pattern     TEXT        NOT NULL,
@@ -310,10 +317,10 @@ CREATE TABLE safety_rules (
     CONSTRAINT safety_rules_cat_chk CHECK (category IN ('diagnosis','prescription','stop_medication','delay_medical','other'))
 );
 
-CREATE INDEX idx_safety_rules_enabled  ON safety_rules (is_active);
-CREATE INDEX idx_safety_rules_category ON safety_rules (category);
+CREATE INDEX IF NOT EXISTS idx_safety_rules_enabled  ON safety_rules (is_active);
+CREATE INDEX IF NOT EXISTS idx_safety_rules_category ON safety_rules (category);
 
-CREATE TABLE rag_configs (
+CREATE TABLE IF NOT EXISTS rag_configs (
     id                    BIGSERIAL    PRIMARY KEY,
     chunk_size            INT          NOT NULL DEFAULT 500,
     chunk_overlap         INT          NOT NULL DEFAULT 50,
@@ -322,7 +329,6 @@ CREATE TABLE rag_configs (
     similarity_threshold  NUMERIC(4,3) NOT NULL DEFAULT 0.750,
     rerank_enabled        BOOLEAN      NOT NULL DEFAULT FALSE,
     rerank_threshold      NUMERIC(4,3) NOT NULL DEFAULT 0.500,
-    diversity_factor      NUMERIC(4,3) NOT NULL DEFAULT 0.000,
     ood_threshold         NUMERIC(4,3) NOT NULL DEFAULT 0.300,
     updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT rag_configs_singleton CHECK (id = 1),
@@ -332,11 +338,13 @@ CREATE TABLE rag_configs (
     CONSTRAINT rag_top_k_chk CHECK (top_k BETWEEN 1 AND 50),
     CONSTRAINT rag_similarity_chk CHECK (similarity_threshold BETWEEN 0 AND 1),
     CONSTRAINT rag_rerank_threshold_chk CHECK (rerank_threshold BETWEEN 0 AND 1),
-    CONSTRAINT rag_diversity_factor_chk CHECK (diversity_factor BETWEEN 0 AND 1),
     CONSTRAINT rag_ood_chk CHECK (ood_threshold BETWEEN 0 AND 0.5)
 );
 
-CREATE TABLE prompt_templates (
+-- 对已有库的增量同步：移除已废弃的 diversity_factor（00004，幂等）。
+ALTER TABLE rag_configs DROP COLUMN IF EXISTS diversity_factor;
+
+CREATE TABLE IF NOT EXISTS prompt_templates (
     id            BIGSERIAL   PRIMARY KEY,
     type          VARCHAR(30) NOT NULL,
     version       INT         NOT NULL,
@@ -350,12 +358,12 @@ CREATE TABLE prompt_templates (
     UNIQUE (type, version)
 );
 
-CREATE INDEX idx_prompt_templates_type ON prompt_templates (type);
-CREATE INDEX idx_prompt_templates_dept ON prompt_templates (department_id) WHERE department_id IS NOT NULL;
-CREATE UNIQUE INDEX uq_prompt_templates_active_per_type_dept
+CREATE INDEX IF NOT EXISTS idx_prompt_templates_type ON prompt_templates (type);
+CREATE INDEX IF NOT EXISTS idx_prompt_templates_dept ON prompt_templates (department_id) WHERE department_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_active_per_type_dept
     ON prompt_templates (type, COALESCE(department_id, 0)) WHERE is_active = TRUE;
 
-CREATE TABLE safety_messages (
+CREATE TABLE IF NOT EXISTS safety_messages (
     id          BIGSERIAL   PRIMARY KEY,
     type        VARCHAR(40) NOT NULL UNIQUE,
     content     TEXT        NOT NULL,
@@ -366,7 +374,7 @@ CREATE TABLE safety_messages (
     )
 );
 
-CREATE TABLE config_audit_logs (
+CREATE TABLE IF NOT EXISTS config_audit_logs (
     id            BIGSERIAL    PRIMARY KEY,
     action        VARCHAR(50)  NOT NULL,
     entity_type   VARCHAR(50)  NOT NULL,
@@ -377,10 +385,10 @@ CREATE TABLE config_audit_logs (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_config_audit_logs_entity   ON config_audit_logs (entity_type, entity_id);
-CREATE INDEX idx_config_audit_logs_operator ON config_audit_logs (operator_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_config_audit_logs_entity   ON config_audit_logs (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_config_audit_logs_operator ON config_audit_logs (operator_id, created_at DESC);
 
-CREATE TABLE vectorize_outbox (
+CREATE TABLE IF NOT EXISTS vectorize_outbox (
     id           BIGSERIAL    PRIMARY KEY,
     article_id   BIGINT       NOT NULL,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -388,54 +396,43 @@ CREATE TABLE vectorize_outbox (
     processed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_vectorize_outbox_pending ON vectorize_outbox (processed, created_at) WHERE processed = false;
+CREATE INDEX IF NOT EXISTS idx_vectorize_outbox_pending ON vectorize_outbox (processed, created_at) WHERE processed = false;
 
 -- ============================================================================
 -- notification 域
 -- ============================================================================
 
-CREATE TABLE notifications (
-    id               BIGSERIAL    PRIMARY KEY,
-    recipient_role   VARCHAR(20)  NOT NULL,
-    recipient_dept_id BIGINT,
-    type             VARCHAR(30)  NOT NULL,
-    title            VARCHAR(200) NOT NULL,
-    body             TEXT         NOT NULL DEFAULT '',
-    ref_id           VARCHAR(50),
-    is_read          BOOLEAN      NOT NULL DEFAULT false,
-    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS notifications (
+    id                 BIGSERIAL    PRIMARY KEY,
+    recipient_role     VARCHAR(20)  NOT NULL,
+    recipient_dept_id  BIGINT,
+    type               VARCHAR(30)  NOT NULL,
+    title              VARCHAR(200) NOT NULL,
+    body               TEXT         NOT NULL DEFAULT '',
+    ref_id             VARCHAR(50),
+    is_read            BOOLEAN      NOT NULL DEFAULT false,
+    created_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_notifications_unread ON notifications (recipient_role, is_read, created_at DESC) WHERE NOT is_read;
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (recipient_role, is_read, created_at DESC) WHERE NOT is_read;
 
--- +goose StatementEnd
+-- ============================================================================
+-- 邀请码（PATIENT 注册强制邀请码）
+-- ============================================================================
 
--- +goose Down
--- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS invite_codes (
+    id          BIGSERIAL    PRIMARY KEY,
+    code        CHAR(6)      NOT NULL UNIQUE,
+    role        VARCHAR(20)  NOT NULL DEFAULT 'PATIENT',
+    created_by  BIGINT       NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    used_by     BIGINT       REFERENCES users(id) ON DELETE SET NULL,
+    used_at     TIMESTAMPTZ,
+    expires_at  TIMESTAMPTZ  NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT invite_codes_role_chk CHECK (role IN ('SUPER_ADMIN','DEPT_ADMIN','DOCTOR','NURSE','PATIENT')),
+    CONSTRAINT invite_codes_used_pair_chk CHECK ((used_by IS NULL) = (used_at IS NULL))
+);
 
-DROP TABLE IF EXISTS notifications CASCADE;
-DROP TABLE IF EXISTS vectorize_outbox CASCADE;
-DROP TABLE IF EXISTS config_audit_logs CASCADE;
-DROP TABLE IF EXISTS safety_messages CASCADE;
-DROP TABLE IF EXISTS prompt_templates CASCADE;
-DROP TABLE IF EXISTS rag_configs CASCADE;
-DROP TABLE IF EXISTS safety_rules CASCADE;
-DROP TABLE IF EXISTS sensitive_words CASCADE;
-DROP TABLE IF EXISTS ai_providers CASCADE;
-DROP TABLE IF EXISTS crisis_events CASCADE;
-DROP TABLE IF EXISTS messages CASCADE;
-DROP TABLE IF EXISTS conversations CASCADE;
-DROP TABLE IF EXISTS article_audit_logs CASCADE;
-DROP TABLE IF EXISTS article_references CASCADE;
-DROP TRIGGER IF EXISTS trg_article_chunks_tsv ON article_chunks;
-DROP TABLE IF EXISTS article_chunks CASCADE;
-DROP TABLE IF EXISTS articles CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS user_departments CASCADE;
-DROP TABLE IF EXISTS departments CASCADE;
-DROP FUNCTION IF EXISTS article_chunks_tsv_update();
-DROP FUNCTION IF EXISTS bigram_tsquery(text);
-DROP FUNCTION IF EXISTS bigram_tsvector(text);
-DROP FUNCTION IF EXISTS bigram_array(text);
-
--- +goose StatementEnd
+-- code 已有 UNIQUE 约束索引，满足按 code 精确查找；无需额外的 now()-谓词部分索引
+--（now() 为 STABLE，不能用于索引谓词）。仅保留创建时间倒序索引供管理员列表排序。
+CREATE INDEX IF NOT EXISTS idx_invite_codes_created ON invite_codes (created_at DESC);

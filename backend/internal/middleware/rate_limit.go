@@ -71,32 +71,6 @@ func parseTrustedProxies(cidrs []string) []*net.IPNet {
 	return out
 }
 
-// Middleware 按 scope 限流，key 含 user_id（已认证）或 IP（匿名），超限返回 429。
-// limit 为周期内允许的请求数，period 为窗口时长；Burst 与 limit 一致以简化语义。
-func (rl *RateLimiter) Middleware(scope string, limit int, period time.Duration) func(http.Handler) http.Handler {
-	rateLimit := redis_rate.Limit{Rate: limit, Period: period, Burst: limit}
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := buildRateKey(r, scope, rl.trustedProxies)
-			res, err := rl.limiter.Allow(r.Context(), key, rateLimit)
-			if err != nil {
-				response.WriteError(w, r, apperrors.ServiceUnavailable("RATE_LIMITER_UNAVAILABLE", "限流服务暂不可用，请稍后重试"))
-				return
-			}
-			if res.Allowed == 0 {
-				retryAfter := int(res.RetryAfter.Seconds())
-				if retryAfter < 1 {
-					retryAfter = 1
-				}
-				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
-				response.WriteError(w, r, apperrors.RateLimited("RATE_LIMITED", "请求过于频繁，请稍后重试"))
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
 // rateCfgPrefix 热更新限流配置的 Redis key 前缀。
 const rateCfgPrefix = "rl_cfg:"
 
@@ -208,18 +182,6 @@ func remoteIPFromAddr(addr string) string {
 		return host
 	}
 	return addr
-}
-
-// ClientIP 提取客户端 IP（导出版本，不解析 X-Forwarded-For）。
-//
-// 仅供非安全敏感场景使用（如 wiki 阅读量防刷 D-LOW-08）；安全敏感场景（限流）请走
-// RateLimiter.Middleware，其基于 trustedProxies 严格校验 XFF 链，杜绝伪造绕过。
-//
-// ponytail: 直接取 RemoteAddr IP，部署在反代后会按代理 IP 聚合，折中——对 view_count
-// 防刷上限可接受（最坏情况是同代理下多用户共享一个去重桶，阅读量略偏低）；
-// 升级路径：注入 trustedProxies 配置并复用 clientIP(r, trustedProxies)。
-func ClientIP(r *http.Request) string {
-	return remoteIPFromAddr(r.RemoteAddr)
 }
 
 // ipInTrusted 判断 IP 是否在任一可信 CIDR 内。解析失败返回 false（保守：视为不可信）。

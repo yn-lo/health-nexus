@@ -9,17 +9,17 @@ import (
 )
 
 func reqWithUserID(uid int64) *http.Request {
-	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "/", http.NoBody)
 	return r.WithContext(context.WithValue(r.Context(), contextkeys.UserID, uid))
 }
 
 func reqWithDeviceID(did string) *http.Request {
-	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "/", http.NoBody)
 	return r.WithContext(context.WithValue(r.Context(), contextkeys.DeviceID, did))
 }
 
 func TestFromRequestOrZero(t *testing.T) {
-	req, _ := http.NewRequest(http.MethodGet, "/", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/", http.NoBody)
 
 	// 两者皆无 → 零值（匿名且无设备，IP 兜底场景）
 	if id := FromRequestOrZero(req); !id.Anon() || id.DeviceID != "" {
@@ -52,13 +52,5 @@ func TestIdentity_IsValidAndSubject(t *testing.T) {
 	anon := Identity{DeviceID: "d"}
 	if !anon.IsValid() || !anon.Anon() {
 		t.Fatal("anon identity with device should be valid")
-	}
-	userSubj := Identity{UserID: 7}.Subject()
-	if userSubj != "user:7" {
-		t.Fatalf("Subject(user) = %q", userSubj)
-	}
-	anonSubj := Identity{DeviceID: "d"}.Subject()
-	if anonSubj != "anon:d" {
-		t.Fatalf("Subject(anon) = %q", anonSubj)
 	}
 }

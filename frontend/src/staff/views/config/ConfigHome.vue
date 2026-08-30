@@ -18,6 +18,7 @@ import {
  MessageSquareWarning,
  ChevronRight,
  ShieldCheck,
+ KeyRound,
 } from '@lucide/vue'
 import { AppHeader, StatRow, SectionHeading } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
@@ -54,6 +55,14 @@ const sections = computed<ConfigSection[]>(() => {
   desc: '账户创建 / 锁定 / 解锁',
   icon: Users,
   routeName: 'staff-config-accounts',
+  variant: 'brand',
+  },
+  {
+  key: 'invite-codes',
+  label: '邀请码管理',
+  desc: '生成/查看患者注册邀请码',
+  icon: KeyRound,
+  routeName: 'staff-config-invite-codes',
   variant: 'brand',
   },
   ],

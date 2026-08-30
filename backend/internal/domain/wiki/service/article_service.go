@@ -16,10 +16,8 @@ import (
 
 	"health-nexus/internal/domain/wiki/entity"
 	"health-nexus/internal/domain/wiki/repository"
-	"health-nexus/internal/middleware"
 	"health-nexus/internal/shared/constants"
 	"health-nexus/internal/shared/contenthash"
-	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
 )
 
@@ -35,17 +33,6 @@ type Actor struct {
 	UserID int64
 	Role   string
 	DeptID int64
-}
-
-// ActorFromDataScope 从 ctx 中的 DataScope（DataIsolation 中间件注入）构造 Actor。
-// 返回 ok=false 表示 ctx 未挂载 DataScope（如未走 DataIsolation 中间件的路由）。
-// 保留现有 Actor 参数兼容：handler 可继续显式传 Actor，本 helper 仅供 service 内部需要时使用（REQ-SEC-003）。
-func ActorFromDataScope(ctx context.Context) (Actor, bool) {
-	scope, ok := ctx.Value(contextkeys.DataScopeKey).(*middleware.DataScope)
-	if !ok || scope == nil {
-		return Actor{}, false
-	}
-	return Actor{UserID: scope.UserID, Role: scope.Role, DeptID: scope.DeptID}, true
 }
 
 // VectorizeEnqueuer 文章向量化任务入队（消费者定义，ISP）。

@@ -55,16 +55,24 @@ for _, ep := range protectedEndpoints {
 - `fakeRateLimiter` 用不可达 Redis 地址快速失败返回 503，不测限流逻辑本身。
 - 端点数硬编码断言（`tests/api_contract_test.go` 中 `if len(allEndpoints) != N`，N 是当前端点数）：新增/删除端点必须同步更新 `allEndpoints` 表与该数字——防止 router 与契约表漂移。**具体数字以代码为准**，本 spec 不记录，避免双向维护漂移。
 
-## 诊断测试隔离（debug build tag）
-依赖真实 DB / LLM / 外部 API 的诊断性 e2e 测试（`tests/e2e_api/debug_*_test.go`）**必须**在首行加 `//go:build debug`：
+## 外部 API / e2e 测试手动化（build tag）
+**涉及真实外部 API 调用（LLM / Embedding / Rerank / 真机 HTTP e2e）的测试**必须在首行加 `//go:build e2e`，默认 `go test ./...` 不编译、不运行（手动执行才跑）。统一使用单一 `e2e` tag：
+- 覆盖 `tests/llm_integration_test.go`、`tests/rag_retrieval_e2e_test.go`、以及 `tests/e2e_api/` 下全部 `_test.go`（`e2e_api_test.go`、`chat_module_e2e_test.go`、`debug_llm_calls_test.go`）。
+
 ```go
-//go:build debug
+//go:build e2e
 
 package e2e_api_test
 ```
-**理由**：这类测试需要联网、调用付费 LLM、依赖环境变量，不应进标准 CI（P0）。
-**运行**：`go test -tags debug ./tests/e2e_api/` —— 默认 `go test ./...` 不编译这些文件。
-**判定**：是否需要 `//go:build debug` 的标准是"是否依赖不可在 CI 沙箱里满足的外部服务"。本地快速回归、纯逻辑、契约测试**不**加。
+**理由**：这类测试需要联网、调用付费 LLM、依赖环境变量/真实服务，不应进标准 CI（P0），也不应由 `go test ./tests/...` 或 `go test ./...` 自动触发。
+**运行**：
+```bash
+go test ./tests/...                 # 外部 API 测试被跳过（不编译）
+go test -tags e2e ./tests/e2e_api/   # 真机 HTTP e2e（含真实 LLM）—— 手动
+go test -tags e2e ./tests/ -run TestLLM -v -count=1   # LLM 集成 —— 手动
+```
+**判定**：是否需要 build tag 的标准是"是否依赖不可在 CI 沙箱里满足的外部/真实服务"。纯本地快速回归、纯逻辑、契约测试**不**加。
+**约定**：`tests/e2e_api` 包内 `_test.go` 统一使用 `e2e` tag，并保留一个 `//go:build !e2e` 的占位 `_test.go`（`e2e_guard_test.go`），否则无 tag 时该包会因"build constraints exclude all Go files"报错。
 
 ## 覆盖率门禁
 - **floor 而非 ceiling**：当前 floor 设为 service 层 60%（ratchet，随测试基建成熟度上调）。

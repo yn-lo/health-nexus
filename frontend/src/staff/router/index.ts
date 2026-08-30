@@ -146,6 +146,12 @@ const routes = [
         component: () => import('@/staff/views/config/DepartmentConfig.vue'),
         beforeEnter: superAdminRouteGuard,
       },
+      {
+        path: 'profile/config/invite-codes',
+        name: 'staff-config-invite-codes',
+        component: () => import('@/staff/views/config/InviteCodeConfig.vue'),
+        beforeEnter: adminRouteGuard,
+      },
     ],
     meta: { requiresAuth: true },
   },

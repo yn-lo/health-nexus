@@ -5,7 +5,6 @@
 package identity
 
 import (
-	"fmt"
 	"net/http"
 
 	"health-nexus/internal/shared/contextkeys"
@@ -22,14 +21,6 @@ func (i Identity) Anon() bool { return i.UserID <= 0 }
 
 // IsValid 身份是否可接受：认证必携 user，匿名必携 device。
 func (i Identity) IsValid() bool { return !i.Anon() || i.DeviceID != "" }
-
-// Subject 身份标识（供锁/限流 key、日志）：匿名前缀 anon，认证前缀 user。
-func (i Identity) Subject() string {
-	if i.Anon() {
-		return "anon:" + i.DeviceID
-	}
-	return fmt.Sprintf("user:%d", i.UserID)
-}
 
 // FromRequestOrZero 从请求 context 解析身份：先 user 后 device，两者皆无时返回零值，
 // 不返回错误（供「既无身份又需 IP 兜底」的限流场景）。对身份有硬性要求的调用方自行判 IsValid。

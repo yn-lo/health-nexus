@@ -11,6 +11,12 @@
 //
 // ponytail: 用标准库 + pgx + redis，不引入 testify（go.mod 未依赖，避免新增）。
 // 危机/引用授权/跨科室审核等需要 dept=2 用户的场景，通过 e2ePool 临时 SQL 注入 admin2/doctor2 测试用户，测试后清理。
+//
+// 需要真实后端(localhost:5230)+PostgreSQL+Redis+LLM API key，涉及外部 API，
+// 仅在显式指定 -tags e2e 时编译，默认 go test ./tests/... 不运行（"手动"测试）。
+//
+//go:build e2e
+
 package e2e_api_test
 
 import (

@@ -12,8 +12,10 @@ import (
 	"health-nexus/internal/shared/constants"
 )
 
-// rewriteTimeout 改写超时，小模型应快速返回；超时由调用方降级为原始查询。
-const rewriteTimeout = 5 * time.Second
+// rewriteTimeout 改写兜底超时：仅当客户端配置未携带 timeout 时使用。
+// 实际改写超时优先取客户端配置（管理后台 provider 统一 60s / config.yaml rewrite 30s），
+// 与 HTTP ResponseHeaderTimeout 保持一致，避免 context 先于 HTTP 层超时导致误判。
+const rewriteTimeout = 30 * time.Second
 
 // rewriteSystemPrompt 改写系统提示：把追问改写为不含代词的独立问题。
 const rewriteSystemPrompt = `你是一个问题改写助手。根据对话历史，把用户最新追问改写为一个独立、完整、不含代词的问题。
@@ -33,7 +35,11 @@ func (c *Client) ToStandaloneQuestion(ctx context.Context, userQuery string, his
 	if c.chat == nil {
 		return "", ErrNotConfigured
 	}
-	ctx, cancel := context.WithTimeout(ctx, rewriteTimeout)
+	timeout := c.cfg.Timeout
+	if timeout <= 0 {
+		timeout = rewriteTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	msgs := buildRewriteMessages(userQuery, history)

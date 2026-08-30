@@ -116,14 +116,6 @@ func (i *Infrastructure) Close() {
 	}
 }
 
-// Close 释放应用持有的基础设施资源（连接池/Redis/asynq）。
-// 由 main 在 graceful shutdown 后调用。
-func (a *App) Close() {
-	if a.Infra != nil {
-		a.Infra.Close()
-	}
-}
-
 // defaultOODThreshold OOD 判定阈值兜底值：RAG 配置读取失败时使用。
 const defaultOODThreshold = 0.3
 
@@ -134,7 +126,7 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 	// 任意后续步骤失败时关闭已创建的基础设施资源（连接池/Redis/asynq），
-	// 避免进程残留或重启时连接泄漏。success=true 时由 App.Close() 接管。
+	// 避免进程残留或重启时连接泄漏。success=true 时由调用方（main 的 defer app.Infra.Close()）接管。
 	success := false
 	defer func() {
 		if !success {
@@ -153,11 +145,12 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// ========== auth 域 ==========
 	userRepo := authrepo.NewUserRepo(infra.Pool)
+	inviteRepo := authrepo.NewInviteRepo(infra.Pool)
 	tokenIssuer, err := authservice.NewTokenIssuer(cfg.JWT)
 	if err != nil {
 		return nil, fmt.Errorf("init token issuer: %w", err)
 	}
-	authSvc := authservice.NewAuthService(userRepo, tokenIssuer, infra.Auth, infra.Redis, cfg)
+	authSvc := authservice.NewAuthService(userRepo, inviteRepo, tokenIssuer, infra.Auth, infra.Redis, cfg)
 	authHandler := handler.NewAuthHandler(authSvc)
 
 	// ========== config 域 ==========

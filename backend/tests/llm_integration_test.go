@@ -6,9 +6,13 @@
 //	set HEALTH_NEXUS_EMBEDDING_API_KEY=<your-api-key>   # 硅基流动 embedding+rerank
 //	set HEALTH_NEXUS_LLM_REWRITE_API_KEY=<your-api-key> # 智谱 rewrite
 //
-// 运行：cd backend && go test ./tests/... -run TestLLM -v -count=1
+// 运行：cd backend && go test ./tests/... -run TestLLM -v -count=1 -tags e2e
 //
 // 注意：API key 有限速，测试间已加 2s delay。
+// 涉及真实外部 API 调用，仅在显式指定 -tags e2e 时编译，默认 go test ./tests/... 不运行。
+//
+//go:build e2e
+
 package tests_test
 
 import (

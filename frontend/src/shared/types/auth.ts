@@ -6,10 +6,11 @@ export interface LoginRequest {
   password: string;
 }
 
-/** 注册请求 — 对齐后端 registerRequest（仅 username/password，DisallowUnknownFields） */
+/** 注册请求 — 对齐后端 registerRequest（含邀请码 invite_code，PATIENT 注册强制必填） */
 export interface RegisterRequest {
   username: string;
   password: string;
+  invite_code: string;
 }
 
 /** JWT Token 响应 — 对齐后端 StaffLoginResponse / PatientLoginResponse（含 user 字段） */
@@ -91,4 +92,16 @@ export interface StaffAccountCreateRequest {
 /** POST /api/staff/auth/accounts/{id}/reset-password — 管理员重置用户密码请求体 */
 export interface ResetPasswordRequest {
   new_password: string
+}
+
+/** 邀请码 — 对齐后端 service.InviteCodeDTO（PATIENT 注册强制邀请码） */
+export interface InviteCode {
+  id: number
+  code: string
+  role: UserRole
+  created_by: number
+  used_by: number | null
+  used_at: string | null
+  expires_at: string
+  created_at: string
 }

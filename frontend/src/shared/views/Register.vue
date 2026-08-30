@@ -24,6 +24,7 @@ const { showFailToast, showSuccessToast } = useDsToast()
 const username = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const inviteCode = ref('')
 const agreed = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
@@ -46,21 +47,27 @@ async function handleRegister() {
  return
  }
  if (password.value !== confirmPassword.value) {
- errorMsg.value = '两次输入的密码不一致'
- showFailToast(errorMsg.value)
- return
+  errorMsg.value = '两次输入的密码不一致'
+  showFailToast(errorMsg.value)
+  return
+ }
+ if (!inviteCode.value.trim()) {
+  errorMsg.value = '请输入邀请码'
+  showFailToast(errorMsg.value)
+  return
  }
  if (!agreed.value) {
- errorMsg.value = '请阅读并同意用户协议和隐私政策'
- showFailToast(errorMsg.value)
- return
+  errorMsg.value = '请阅读并同意用户协议和隐私政策'
+  showFailToast(errorMsg.value)
+  return
  }
 
  loading.value = true
  try {
  await authStore.register({
- username: username.value,
- password: password.value,
+  username: username.value,
+  password: password.value,
+  invite_code: inviteCode.value.trim(),
  })
  showSuccessToast('注册成功')
  await router.push('/chat')
@@ -90,7 +97,7 @@ function goLogin() {
    <!-- 上半屏：品牌叙事区（视觉重心） -->
    <AuthHero>
     <template #title>创建您的<br>健康助手账户</template>
-    <template #subtitle>设置用户名与密码，<br>即可开始使用</template>
+    <template #subtitle>填写邀请码、用户名与密码，<br>即可开始使用</template>
    </AuthHero>
 
    <!-- 下半屏：注册表单区（功能） -->
@@ -123,6 +130,15 @@ function goLogin() {
         两次输入的密码不一致
        </p>
       </DsPasswordField>
+     </div>
+
+     <!-- 邀请码 -->
+     <div class="auth-field">
+      <label class="auth-label" for="reg-invite">邀请码</label>
+      <div class="ds-field-wrap ds-field-wrap--underline">
+       <input id="reg-invite" v-model="inviteCode" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="请输入 6 位邀请码" aria-label="邀请码">
+      </div>
+      <p class="text-body-xs text-text-tertiary">注册本平台需要邀请码，请向管理员索取</p>
      </div>
 
      <!-- 错误提示 -->

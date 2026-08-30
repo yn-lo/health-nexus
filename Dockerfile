@@ -33,7 +33,6 @@ COPY --from=builder /bin/worker /bin/worker
 
 WORKDIR /app
 COPY backend/config.yaml ./config.yaml
-COPY backend/migrations ./migrations
 COPY --from=web-builder /web/dist ./web
 
 ENV TZ=Asia/Shanghai

@@ -12,6 +12,7 @@ export type {
   StaffAccount,
   StaffAccountCreateRequest,
   ResetPasswordRequest,
+  InviteCode,
 } from './types/auth';
 export type { Conversation, ConversationUpdateRequest, ConversationListParams, Message, MessageListParams, Reference, SSEEvent } from './types/chat';
 export type { ArticleStatus, ArticlePublic, ArticleDetail, ArticleStaff, ArticleChunk, ArticleCreateRequest, ArticleUpdateRequest, ArticleListParams, ArticleStaffListParams, ArticleReference, ReferenceApplyRequest, ReferenceListParams, ReferenceStatus } from './types/wiki';

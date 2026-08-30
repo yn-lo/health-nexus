@@ -49,8 +49,8 @@ type SessionStore interface {
 // Session 一次 RAG 流式请求的会话载体，统一认证 / 匿名两类会话。
 // 链条只认识 Session：会话标识、检索科室、持久化均由 Session 承载，不出现身份分支。
 type Session struct {
-	SID    string         // 会话标识：DB 场景为 conversation.ID；匿名场景为 device 派生 uuid。
-	DeptID *int64         // 检索科室范围；nil 表示不限科室。
+	SID    string // 会话标识：DB 场景为 conversation.ID；匿名场景为 device 派生 uuid。
+	DeptID *int64 // 检索科室范围；nil 表示不限科室。
 	store  SessionStore
 }
 
@@ -116,7 +116,9 @@ func (d *dbSessionStore) SaveAssistantPlaceholder(ctx context.Context) (*entity.
 	return d.msg.SaveAssistantPlaceholder(ctx, d.convEntity.ID)
 }
 
-func (d *dbSessionStore) FinalizeAssistant(ctx context.Context, id uuid.UUID, content, resultCode string, refs []entity.Reference) error {
+func (d *dbSessionStore) FinalizeAssistant(
+	ctx context.Context, id uuid.UUID, content, resultCode string, refs []entity.Reference,
+) error {
 	return d.msg.FinalizeAssistant(ctx, id, content, resultCode, refs)
 }
 
@@ -220,8 +222,17 @@ func (m *memSessionStore) SaveUser(ctx context.Context, content string, _ *int64
 	return mf, nil
 }
 
-func (m *memSessionStore) SaveAssistant(ctx context.Context, content, resultCode string, refs []entity.Reference) error {
-	mf := &entity.Message{ID: uuid.New(), Role: constants.MessageRoleAssistant, Content: content, ResultCode: resultCode, ReferencedChunks: refs, CreatedAt: time.Now()}
+func (m *memSessionStore) SaveAssistant(
+	ctx context.Context, content, resultCode string, refs []entity.Reference,
+) error {
+	mf := &entity.Message{
+		ID:               uuid.New(),
+		Role:             constants.MessageRoleAssistant,
+		Content:          content,
+		ResultCode:       resultCode,
+		ReferencedChunks: refs,
+		CreatedAt:        time.Now(),
+	}
 	return m.push(ctx, mf)
 }
 
@@ -229,7 +240,9 @@ func (m *memSessionStore) SaveAssistantPlaceholder(ctx context.Context) (*entity
 	return &entity.Message{ID: uuid.New(), Role: constants.MessageRoleAssistant, CreatedAt: time.Now()}, nil
 }
 
-func (m *memSessionStore) FinalizeAssistant(ctx context.Context, id uuid.UUID, content, resultCode string, refs []entity.Reference) error {
+func (m *memSessionStore) FinalizeAssistant(
+	ctx context.Context, id uuid.UUID, content, resultCode string, refs []entity.Reference,
+) error {
 	return m.SaveAssistant(ctx, content, resultCode, refs)
 }
 
