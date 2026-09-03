@@ -34,7 +34,7 @@ owner: backend-team
 - **状态常量**：`<Entity>Status<State>`，如 `ArticleStatusPublished`、`ReferenceStatusApproved`。
 - **Redis key 前缀**：`<feature>:` 小写，如 `blacklist:refresh:`、`password_reset:`。
 
-## 数据库命名（migrations/*.sql）
+## 数据库命名（internal/di/schema.sql）
 - 表名：snake_case 复数（`users`、`article_chunks`、`crisis_events`）。
 - 字段名：snake_case（`created_at`、`user_id`、`is_active`）。
 - 主键：`id`（BIGSERIAL 或 UUID）。

@@ -28,7 +28,6 @@ const form = reactive({
  similarity_threshold: 0.75,
  rerank_enabled: true,
  rerank_threshold: 0.5,
- ood_threshold: 0.3,
 })
 
 const chunkFields: { key: keyof Pick<RAGConfigUpdateRequest, 'chunk_size' | 'chunk_overlap' | 'max_chunks'>; label: string; step: number; isFloat: boolean; hint: string }[] = [
@@ -37,11 +36,10 @@ const chunkFields: { key: keyof Pick<RAGConfigUpdateRequest, 'chunk_size' | 'chu
  { key: 'max_chunks', label: '最大切片数', step: 1, isFloat: false, hint: '单次检索返回的最大切片数。推荐 10。医疗场景建议 5-15，过多引入噪声，过少遗漏信息。' },
 ]
 
-const retrievalFields: { key: keyof Pick<RAGConfigUpdateRequest, 'top_k' | 'similarity_threshold' | 'rerank_threshold' | 'ood_threshold'>; label: string; step: number; isFloat: boolean; hint: string }[] = [
- { key: 'top_k', label: '检索数量 (top_k)', step: 1, isFloat: false, hint: '向量+BM25 混合检索的候选数。推荐 5。医疗场景建议 3-10，影响召回率和性能。' },
- { key: 'similarity_threshold', label: '相似度阈值', step: 0.05, isFloat: true, hint: '向量相似度过滤阈值 (0-1)。推荐 0.75。低于此值的切片不被采用。医疗场景建议 0.7-0.85，过高导致漏答，过低导致误答。设为 0 表示不过滤（不推荐）。' },
+const retrievalFields: { key: keyof Pick<RAGConfigUpdateRequest, 'top_k' | 'similarity_threshold' | 'rerank_threshold'>; label: string; step: number; isFloat: boolean; hint: string }[] = [
+ { key: 'top_k', label: '检索数量 (top_k)', step: 1, isFloat: false, hint: '纯向量检索（pgvector ANN）的候选数。推荐 5。医疗场景建议 3-10，影响召回率和性能。' },
+ { key: 'similarity_threshold', label: '相似度阈值', step: 0.05, isFloat: true, hint: '向量相似度过滤阈值 (0-1)。推荐 0.75。低于此值的切片不被采用。医疗场景建议 0.7-0.85，过高导致漏答，过低导致误答。设为 0 视作未配置，回退默认 0.75（不推荐）。' },
  { key: 'rerank_threshold', label: 'Rerank 阈值', step: 0.05, isFloat: true, hint: 'Rerank 重排后的过滤阈值。推荐 0.5。低于此值的切片在 rerank 后被剔除。仅在启用 Rerank 时生效。' },
- { key: 'ood_threshold', label: 'OOD 阈值', step: 0.05, isFloat: true, hint: '知识库外检测阈值 (0-0.5)。所有切片最大向量相似度低于此值时系统拒答。推荐 0.3。设为 0 关闭检测。注意：当相似度阈值 (similarity_threshold) 大于 0 时已在此处过滤掉低相关切片，OOD 仅在 similarity_threshold=0（不过滤）时才实际生效。' },
 ]
 
 const allNumericFields = [...chunkFields, ...retrievalFields]
@@ -89,7 +87,6 @@ async function load() {
  form.similarity_threshold = c.similarity_threshold
  form.rerank_enabled = c.rerank_enabled
  form.rerank_threshold = c.rerank_threshold
- form.ood_threshold = c.ood_threshold
  updated_at.value = c.updated_at
  } catch (e) {
  showFailToast(errmsg(e, '加载失败'))

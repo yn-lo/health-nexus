@@ -70,9 +70,9 @@ func recordChat(endpoint, testCase string, pass bool, detail string) {
 	})
 }
 
-// setupChatSeed 确保 SSE happy path 有可被 BM25 命中的切片。
+// setupChatSeed 确保 SSE happy path 有可被向量检索命中的切片。
 // 关键发现：article 1 的 status 在前序测试中被改为 'deleted'，
-// 而 SearchByFullText 的 SQL WHERE 子句要求 a.status='published' AND a.is_deleted=false，
+// 而 SearchByVector 的 SQL WHERE 子句要求 a.status='published' AND a.is_deleted=false，
 // 故 seed chunk 必须关联到一个 published + 未删除的 article。
 //
 // 策略：动态查找第一个 published 且 dept_id=1 且 is_deleted=false 的 article_id，
@@ -105,10 +105,8 @@ func setupChatSeed(t *testing.T) int64 {
 	}
 	t.Logf("setupChatSeed: using published article_id=%d for seed chunk", articleID)
 
-	// 3. 注入 seed chunk（content 同时覆盖原查询与 split-token 改写后查询）
-	//    bigram_tsvector(content) 使用 unigram + bigram 分词，中文召回率显著提升。
-	//    同时生成真实 embedding 向量写入——SearchService 的 filterBySimilarity(threshold>0)
-	//    会过滤 VecScore==0 的 BM25-only 命中，无向量 chunk 必然被拒答。
+	// 3. 注入 seed chunk（纯向量检索）
+	//    生成真实 embedding 向量写入——纯向量检索按 cosine 相似度召回，硬匹配内容无需命中字样。
 	content := "高血压患者日常管理要点有哪些 高血压 日常 管理 要点 患者 用药 监测 饮食 运动"
 
 	// 从环境变量构造 embedding 客户端（与后端同款子配置：硅基流动 BAAI/bge-m3）。
@@ -149,24 +147,8 @@ func setupChatSeed(t *testing.T) int64 {
 		UPDATE safety_messages SET content = '抱歉，我无法回答这个问题，建议您咨询您的主治医生。'
 		WHERE type = 'rejection'`)
 
-	// 5. 验证 BM25 命中（带 dept 过滤，模拟 SearchService 实际调用路径）
-	var matchCount int
-	err = e2ePool.QueryRow(ctx, `
-		SELECT count(*) FROM article_chunks c
-		JOIN articles a ON a.id = c.article_id
-		WHERE c.is_active = true AND a.is_deleted = false AND a.status = 'published'
-		  AND (a.department_id = ANY(ARRAY[1]::bigint[]) OR EXISTS (
-		    SELECT 1 FROM article_references r
-		    WHERE r.article_id = c.article_id AND r.target_dept_id = ANY(ARRAY[1]::bigint[])
-		      AND r.status = 'approved'))
-		  AND c.tsv @@ bigram_tsquery('高血压患者日常管理要点有哪些？')`).Scan(&matchCount)
-	if err != nil {
-		t.Fatalf("verify bm25: %v", err)
-	}
-	if matchCount == 0 {
-		t.Fatal("BM25 match count = 0 after seeding with dept filter; chunk tsv may not contain the query token")
-	}
-	t.Logf("setupChatSeed: seeded chunk for article %d, BM25 match count = %d", articleID, matchCount)
+	// 5. 清理注释：seed chunk 已写入 embedding，纯向量检索可直接命中（见 EP23 其后的 happy-path 用例）。
+	t.Logf("setupChatSeed: seeded chunk for article %d", articleID)
 	return articleID
 }
 

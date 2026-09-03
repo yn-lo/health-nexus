@@ -10,7 +10,7 @@ import (
 	"health-nexus/internal/platform/postgres"
 )
 
-// SafetyMessageRepo 对应 safety_messages 表。表 UNIQUE(type) 约束由 migration 00011 建立。
+// SafetyMessageRepo 对应 safety_messages 表。表 UNIQUE(type) 约束由 schema.sql 建立。
 type SafetyMessageRepo struct {
 	pool *pgxpool.Pool
 }
@@ -40,7 +40,7 @@ func (r *SafetyMessageRepo) ListAll(ctx context.Context) ([]*entity.SafetyMessag
 	return out, rows.Err()
 }
 
-// Upsert 按 type 更新或插入。依赖 migration 00011 的 UNIQUE(type) 索引，
+// Upsert 按 type 更新或插入。依赖 schema.sql 的 UNIQUE(type) 索引，
 // 单条 INSERT ... ON CONFLICT 原子完成，消除 UPDATE-then-INSERT 的并发竞态（FIX-7）。
 // 感知 ctx 内事务：UpdateSafetyMessages 在事务内批量调用时复用同一连接（Medium 1）。
 func (r *SafetyMessageRepo) Upsert(ctx context.Context, msgType, content string) error {

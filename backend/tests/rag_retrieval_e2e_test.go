@@ -286,34 +286,27 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 	})
 }
 
-// TestRAGRetrieval_BM25Hybrid 验证 BM25 全文检索通道。
-func TestRAGRetrieval_BM25Hybrid(t *testing.T) {
+// TestRAGRetrieval_VectorOnly 验证纯向量检索通道（BM25 全文检索已移除，检索仅依赖向量路）。
+func TestRAGRetrieval_VectorOnly(t *testing.T) {
 	setupRAGRetrievalTest(t)
 	repo := repository.NewChunkRepo(ragTestPool)
 
 	ctx := context.Background()
 
-	t.Run("BM25关键词匹配", func(t *testing.T) {
-		// bigram_tsquery 不接受空白字符，查询需为连续字符串。
-		hits, err := repo.SearchByFullText(ctx, "术后注意事项", 5, nil)
+	t.Run("向量检索命中", func(t *testing.T) {
+		// 直接用既有切片向量作为查询，验证 ANN 检索返回结果。
+		var vec pgvector.Vector
+		err := ragTestPool.QueryRow(ctx,
+			`SELECT embedding FROM article_chunks WHERE is_active = true AND embedding IS NOT NULL LIMIT 1`,
+		).Scan(&vec)
 		if err != nil {
-			t.Fatalf("BM25 检索失败: %v", err)
+			t.Skipf("无向量数据，跳过: %v", err)
 		}
-		t.Logf("BM25 hits=%d", len(hits))
-		if len(hits) > 0 {
-			t.Logf("top1: chunk_id=%d, article=%s, bm25_score=%.4f",
-				hits[0].ID, hits[0].ArticleTitle, hits[0].Score)
-		}
-	})
-
-	t.Run("BM25空查询", func(t *testing.T) {
-		hits, err := repo.SearchByFullText(ctx, "", 5, nil)
+		hits, err := repo.SearchByVector(ctx, vec.Slice(), 5, nil, 0)
 		if err != nil {
-			t.Fatalf("BM25 空查询失败: %v", err)
+			t.Fatalf("向量检索失败: %v", err)
 		}
-		if len(hits) != 0 {
-			t.Errorf("空查询应返回 0 条，实际 %d", len(hits))
-		}
+		t.Logf("vector hits=%d", len(hits))
 	})
 }
 

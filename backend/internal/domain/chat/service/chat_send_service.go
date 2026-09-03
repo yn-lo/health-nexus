@@ -62,8 +62,7 @@ type ChatSendService struct {
 	crisisNotifier   CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
 	locker           LockProvider
 	tx               TxRunner
-	ring             ringStore                         // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
-	oodThreshold     func(ctx context.Context) float64 // 知识库外检测阈值（动态读取 DB 配置，热生效）
+	ring             ringStore // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
 }
 
 // CrisisNotifier 危机事件主动通知接口（入队 asynq 任务，由 worker 落库站内通知）。
@@ -90,7 +89,6 @@ func NewChatSendService(
 	tx TxRunner,
 	ring ringStore,
 	promptProvider rag.SystemPromptProvider,
-	oodThreshold func(ctx context.Context) float64,
 ) *ChatSendService {
 	return &ChatSendService{
 		dept: dept, safetyIn: safetyIn, safetyOut: safetyOut, knowledge: knowledge,
@@ -98,7 +96,6 @@ func NewChatSendService(
 		conv: conv, msg: msg, crisis: crisis, crisisNotifier: crisisNotifier,
 		locker: locker, tx: tx, ring: ring,
 		promptProvider: promptProvider,
-		oodThreshold:   oodThreshold,
 	}
 }
 
@@ -545,16 +542,6 @@ func (s *ChatSendService) prepareRAGContext(
 		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
 	}
 
-	// 阶段 2.4b：OOD 检测 - 所有切片向量相似度都很低时拒答（医疗场景严肃化）
-	// oodThreshold 动态读取 DB rag_configs.ood_threshold，热生效。
-	// 当 similarity_threshold=0（管理员要求不过滤）时，VecScore=0.445 等相关切片仍可通过 OOD。
-	threshold := s.oodThreshold(ctx)
-	if isOutOfDomain(chunks, threshold) {
-		slog.WarnContext(ctx, "chat: OOD detected, all chunks below threshold",
-			"chunk_count", len(chunks), "ood_threshold", threshold)
-		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
-	}
-
 	slog.InfoContext(ctx, "chat: RAG search completed",
 		"chunks", len(chunks), "query_len", len(rewrittenQuery))
 	// 生成侧返回用户原话（in.Message），改写仅用于检索；
@@ -870,21 +857,6 @@ func toEntityRefs(chunks []rag.Chunk) []entity.Reference {
 		})
 	}
 	return out
-}
-
-// isOutOfDomain 判断所有检索切片的向量相似度是否都低于 OOD 阈值。
-// 医疗场景：语义不相关时拒答，而非让 AI 硬凑。
-func isOutOfDomain(chunks []rag.Chunk, threshold float64) bool {
-	if len(chunks) == 0 {
-		return true
-	}
-	maxVecScore := 0.0
-	for _, c := range chunks {
-		if c.VecScore > maxVecScore {
-			maxVecScore = c.VecScore
-		}
-	}
-	return maxVecScore < threshold
 }
 
 // deptIDPtr 取检索使用的 deptID。用户显式选择"全部科室"（selectedDeptID=0）时返回 nil。

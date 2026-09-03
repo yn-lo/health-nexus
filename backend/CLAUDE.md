@@ -15,7 +15,7 @@
 | 端点注册（代码即文档） | 各域 `handler/router.go` |
 | 架构约束规则（AC-ARCH-*） | `internal/harness/arch/arch_test.go` |
 | lint 配置 | `.golangci.yml` |
-| 数据模型 | `migrations/` |
+| 数据模型 | `internal/di/schema.sql`（幂等，启动自动应用） |
 
 ## 构建与验证
 

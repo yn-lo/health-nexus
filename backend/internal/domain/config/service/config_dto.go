@@ -180,7 +180,6 @@ type UpdateRAGConfigRequest struct {
 	SimilarityThreshold *float64 `json:"similarity_threshold,omitempty"`
 	RerankEnabled       *bool    `json:"rerank_enabled,omitempty"`
 	RerankThreshold     *float64 `json:"rerank_threshold,omitempty"`
-	OODThreshold        *float64 `json:"ood_threshold,omitempty"`
 }
 
 // RAGConfigResponse RAG 配置响应。
@@ -192,7 +191,6 @@ type RAGConfigResponse struct {
 	SimilarityThreshold float64   `json:"similarity_threshold"`
 	RerankEnabled       bool      `json:"rerank_enabled"`
 	RerankThreshold     float64   `json:"rerank_threshold"`
-	OODThreshold        float64   `json:"ood_threshold"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
@@ -208,7 +206,6 @@ func toRAGConfigResponse(c *entity.RAGConfig) RAGConfigResponse {
 		SimilarityThreshold: c.SimilarityThreshold,
 		RerankEnabled:       c.RerankEnabled,
 		RerankThreshold:     c.RerankThreshold,
-		OODThreshold:        c.OODThreshold,
 		UpdatedAt:           c.UpdatedAt,
 	}
 }

@@ -111,7 +111,6 @@ func (p *ConfigRAGConfigProvider) GetRAGConfig(ctx context.Context) (*wikiservic
 		MaxChunks:           resp.MaxChunks,
 		ChunkSize:           resp.ChunkSize,
 		ChunkOverlap:        resp.ChunkOverlap,
-		OODThreshold:        resp.OODThreshold,
 	}, nil
 }
 

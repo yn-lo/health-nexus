@@ -98,32 +98,6 @@ CREATE TABLE IF NOT EXISTS articles (
     CONSTRAINT articles_featured_rank_check CHECK (featured_rank BETWEEN 0 AND 3)
 );
 
--- bigram 中文分词函数（二元字符组，提升 CJK 全文检索召回率）
-CREATE OR REPLACE FUNCTION bigram_array(input text)
-RETURNS text[] LANGUAGE sql IMMUTABLE STRICT AS $$
-  WITH chars AS (
-    SELECT array_agg(substring(input, i, 1)) AS arr
-    FROM generate_series(1, char_length(input)) AS i
-  ),
-  unigrams AS (SELECT arr FROM chars),
-  bigrams AS (
-    SELECT array_agg(arr[i] || arr[i+1]) AS arr
-    FROM chars, generate_series(1, array_length(chars.arr, 1) - 1) AS i
-  )
-  SELECT unigrams.arr || COALESCE(bigrams.arr, '{}'::text[])
-  FROM unigrams, bigrams;
-$$;
-
-CREATE OR REPLACE FUNCTION bigram_tsvector(input text)
-RETURNS tsvector LANGUAGE sql IMMUTABLE STRICT AS $$
-  SELECT to_tsvector('simple', array_to_string(bigram_array(input), ' '));
-$$;
-
-CREATE OR REPLACE FUNCTION bigram_tsquery(input text)
-RETURNS tsquery LANGUAGE sql IMMUTABLE STRICT AS $$
-  SELECT to_tsquery('simple', array_to_string(bigram_array(input), '|'));
-$$;
-
 CREATE TABLE IF NOT EXISTS article_chunks (
     id            BIGSERIAL   PRIMARY KEY,
     article_id    BIGINT      NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
@@ -131,33 +105,22 @@ CREATE TABLE IF NOT EXISTS article_chunks (
     content       TEXT        NOT NULL,
     content_hash  CHAR(64)    NOT NULL DEFAULT '',
     embedding     vector(1024),
-    tsv           tsvector,
     is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
     version       INT         NOT NULL DEFAULT 1,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE OR REPLACE FUNCTION article_chunks_tsv_update() RETURNS trigger AS $$
-BEGIN
-    NEW.tsv := bigram_tsvector(NEW.content);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- 触发器无 IF NOT EXISTS，用 DO 块守卫保证幂等。
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_article_chunks_tsv') THEN
-        EXECUTE 'CREATE TRIGGER trg_article_chunks_tsv
-                 BEFORE INSERT OR UPDATE OF content ON article_chunks
-                 FOR EACH ROW EXECUTE FUNCTION article_chunks_tsv_update()';
-    END IF;
-END
-$$;
+-- 对已有库的增量同步：移除已废弃的 BM25 全文检索链路（纯向量检索，幂等）。
+DROP TRIGGER IF EXISTS trg_article_chunks_tsv ON article_chunks;
+ALTER TABLE article_chunks DROP COLUMN IF EXISTS tsv;
+DROP INDEX IF EXISTS idx_article_chunks_tsv;
+DROP FUNCTION IF EXISTS article_chunks_tsv_update();
+DROP FUNCTION IF EXISTS bigram_tsvector(text);
+DROP FUNCTION IF EXISTS bigram_tsquery(text);
+DROP FUNCTION IF EXISTS bigram_array(text);
 
 CREATE INDEX IF NOT EXISTS idx_article_chunks_embedding
     ON article_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-CREATE INDEX IF NOT EXISTS idx_article_chunks_tsv     ON article_chunks USING gin (tsv);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article ON article_chunks (article_id);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_active  ON article_chunks (article_id, is_active);
 
@@ -286,7 +249,7 @@ CREATE TABLE IF NOT EXISTS ai_providers (
     CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank','rewrite'))
 );
 
--- 对已有库的增量同步：补齐 is_full_url（新增于 00003，幂等）。
+-- 对已有库的增量同步：补齐 is_full_url（幂等）。
 ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS is_full_url BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_ai_providers_type_active ON ai_providers (provider_type, is_active);
@@ -329,7 +292,6 @@ CREATE TABLE IF NOT EXISTS rag_configs (
     similarity_threshold  NUMERIC(4,3) NOT NULL DEFAULT 0.750,
     rerank_enabled        BOOLEAN      NOT NULL DEFAULT FALSE,
     rerank_threshold      NUMERIC(4,3) NOT NULL DEFAULT 0.500,
-    ood_threshold         NUMERIC(4,3) NOT NULL DEFAULT 0.300,
     updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT rag_configs_singleton CHECK (id = 1),
     CONSTRAINT rag_chunk_size_chk CHECK (chunk_size BETWEEN 200 AND 2000),
@@ -337,12 +299,13 @@ CREATE TABLE IF NOT EXISTS rag_configs (
     CONSTRAINT rag_max_chunks_chk CHECK (max_chunks BETWEEN 1 AND 50),
     CONSTRAINT rag_top_k_chk CHECK (top_k BETWEEN 1 AND 50),
     CONSTRAINT rag_similarity_chk CHECK (similarity_threshold BETWEEN 0 AND 1),
-    CONSTRAINT rag_rerank_threshold_chk CHECK (rerank_threshold BETWEEN 0 AND 1),
-    CONSTRAINT rag_ood_chk CHECK (ood_threshold BETWEEN 0 AND 0.5)
+    CONSTRAINT rag_rerank_threshold_chk CHECK (rerank_threshold BETWEEN 0 AND 1)
 );
 
--- 对已有库的增量同步：移除已废弃的 diversity_factor（00004，幂等）。
+-- 对已有库的增量同步：移除已废弃的 diversity_factor（幂等）。
 ALTER TABLE rag_configs DROP COLUMN IF EXISTS diversity_factor;
+-- 对已有库的增量同步：移除已废弃的 ood_threshold（纯向量单闸后不再需要 OOD 检测，幂等）。
+ALTER TABLE rag_configs DROP COLUMN IF EXISTS ood_threshold;
 
 CREATE TABLE IF NOT EXISTS prompt_templates (
     id            BIGSERIAL   PRIMARY KEY,

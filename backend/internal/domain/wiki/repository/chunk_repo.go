@@ -26,11 +26,11 @@ func NewChunkRepo(pool *pgxpool.Pool) *ChunkRepo {
 }
 
 // Create 插入切片。c.ID/c.CreatedAt 由 RETURNING 回填。
-// embedding 与 tsv 由 Worker 生成后传入；tsvector 通过 bigram_tsvector(content) 计算（中文 bigram 分词）。
+// 仅写入向量（embedding）；BM25(tv) 检索链路已移除，纯向量检索（REQ-WIKI-013）。
 func (r *ChunkRepo) Create(ctx context.Context, c *entity.ArticleChunk) error {
 	const sql = `INSERT INTO article_chunks
-		(article_id, chunk_index, content, content_hash, embedding, tsv, is_active, version)
-		VALUES ($1, $2, $3, $4, $5, bigram_tsvector($3), $6, $7)
+		(article_id, chunk_index, content, content_hash, embedding, is_active, version)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at`
 	return postgres.Q(ctx, r.pool).QueryRow(ctx, sql,
 		c.ArticleID, c.ChunkIndex, c.Content, c.ContentHash, c.Embedding, c.IsActive, c.Version,
@@ -87,7 +87,7 @@ func (r *ChunkRepo) DeleteInactiveByArticle(ctx context.Context, articleID int64
 }
 
 // ChunkSearchHit 检索命中结果（含文章标题与相关性分数）。
-// ArticleTitle 由 JOIN articles 填充；Score 为该路检索的原始分数（向量=1-cosine_distance，BM25=ts_rank）。
+// ArticleTitle 由 JOIN articles 填充；Score 为向量相似度（1-cosine_distance）。
 type ChunkSearchHit struct {
 	entity.ArticleChunk
 	ArticleTitle string
@@ -157,40 +157,6 @@ func (r *ChunkRepo) SearchByVector(
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search chunks by vector: %w", err)
-	}
-	defer rows.Close()
-	return scanChunkSearchHits(rows)
-}
-
-// SearchByFullText BM25 全文检索 topK 候选（REQ-WIKI-013）。
-// query 为 bigram_tsquery 输入（中文 bigram 分词 + OR 语义）；deptIDs 为 nil 时不限制科室可见性。
-// Score 为 ts_rank（PostgreSQL 全文检索相关性，量纲与向量相似度不同，由调用方在 RRF 融合时归一化）。
-func (r *ChunkRepo) SearchByFullText(
-	ctx context.Context, query string, topK int, deptIDs []int64,
-) ([]ChunkSearchHit, error) {
-	if topK <= 0 || query == "" {
-		return nil, nil
-	}
-	args := make([]any, 0, 3)
-	args = append(args, query, topK)
-	visSQL, nextArg := deptVisibilitySQL(deptIDs, len(args)+1, &args)
-	args = append(args, constants.ArticleStatusPublished)
-
-	sql := fmt.Sprintf(`SELECT %s,
-		ts_rank(c.tsv, bigram_tsquery($1)) AS score
-		FROM article_chunks c
-		JOIN articles a ON a.id = c.article_id
-		WHERE c.is_active = true
-		  AND a.is_deleted = false
-		  AND a.status = $%d
-		  AND %s
-		  AND c.tsv @@ bigram_tsquery($1)
-		ORDER BY ts_rank(c.tsv, bigram_tsquery($1)) DESC
-		LIMIT $2`, chunkSearchColumns, nextArg, visSQL)
-
-	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("search chunks by fulltext: %w", err)
 	}
 	defer rows.Close()
 	return scanChunkSearchHits(rows)

@@ -16,13 +16,8 @@ BACKEND_GO := $(ROOT_DIR)/backend
 
 # 工具版本（与 go.mod 对齐或固定）
 GOLANGCI_VERSION := v1.62.0
-GOOSE_VERSION := v3.22.1
 WIRE_VERSION := v0.6.0
 SQLC_VERSION := v1.27.0
-
-# 数据库
-DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/health_nexus?sslmode=disable
-GOOSE_DRIVER := postgres
 
 # ============================================================================
 # 帮助
@@ -112,31 +107,11 @@ sqlc: ## sqlc 生成类型安全 SQL 代码
 	cd $(BACKEND_GO) && sqlc generate
 
 # ============================================================================
-# 数据库迁移
-# ============================================================================
-.PHONY: migrate-up
-migrate-up: ## 应用所有未执行的迁移
-	goose -dir $(BACKEND_GO)/migrations $(GOOSE_DRIVER) "$(DATABASE_URL)" up
-
-.PHONY: migrate-down
-migrate-down: ## 回滚最近一次迁移
-	goose -dir $(BACKEND_GO)/migrations $(GOOSE_DRIVER) "$(DATABASE_URL)" down
-
-.PHONY: migrate-status
-migrate-status: ## 查看迁移状态
-	goose -dir $(BACKEND_GO)/migrations $(GOOSE_DRIVER) "$(DATABASE_URL)" status
-
-.PHONY: migrate-create
-migrate-create: ## 创建新迁移: make migrate-create name=add_xxx
-	goose -dir $(BACKEND_GO)/migrations create $(name) sql
-
-# ============================================================================
 # 工具安装（一次性）
 # ============================================================================
 .PHONY: tools
-tools: ## 安装开发工具（golangci-lint / goose / wire / sqlc）
+tools: ## 安装开发工具（golangci-lint / wire / sqlc）
 	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
-	$(GO) install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 	$(GO) install github.com/google/wire/cmd/wire@$(WIRE_VERSION)
 	$(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 

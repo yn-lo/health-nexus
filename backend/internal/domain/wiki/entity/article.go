@@ -35,7 +35,7 @@ type Article struct {
 }
 
 // 审计动作常量（article_audit_logs.action），避免魔法值。
-// article_audit_logs.action 列无 CHECK 约束（见 00001_init.sql），新增动作无需迁移。
+// article_audit_logs.action 列无 CHECK 约束（见 schema.sql），新增动作无需迁移。
 const (
 	AuditActionCreate    = "create"
 	AuditActionUpdate    = "update"

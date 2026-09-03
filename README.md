@@ -10,7 +10,7 @@ AI 驱动的医院健康宣教平台，基于 RAG（检索增强生成）技术�
 | ---- | ---------------------------------------------------------------------------------------------- |
 | 后端   | Go 1.25 · Chi v5 · PostgreSQL 16 (pgvector) · Redis 7 · asynq · JWT HS256 · argon2id · AES-GCM |
 | 前端   | Vue 3 · TypeScript (strict) · Vite 6 · Tailwind CSS v4 · Pinia · ECharts · 自研 Ds UI 组件      |
-| 基础设施 | Docker Compose · goose 迁移 · golangci-lint · Vitest · Playwright                                |
+| 基础设施 | Docker Compose · 幂等 schema 迁移(schema.sql) · golangci-lint · Vitest · Playwright                                |
 
 ## 架构概览
 
@@ -32,8 +32,7 @@ backend/                   DDD 限界上下文 + 三层分离
   internal/platform/       postgres · redis · asynq · llm · crypto · logger
   internal/shared/         常量 · 错误 · 响应 · 分页 · 掩码
   internal/middleware/     JWT · CORS · 限流 · 数据隔离 · 角色校验
-  internal/di/             手写 DI (InitializeApp)
-  migrations/              goose SQL 迁移
+  internal/di/             手写 DI (InitializeApp) + 幂等 schema.sql
 ```
 
 ## 核心功能
@@ -72,11 +71,9 @@ cp .env.example .env
 # 编辑 .env，填入 LLM API Key、JWT secret（HEALTH_NEXUS_JWT_SECRET）等
 ```
 
-### 3. 数据库迁移
+### 3. 数据库 schema（幂等，启动时自动应用）
 
-```bash
-goose -dir backend/migrations postgres "$DATABASE_URL" up
-```
+后端启动时自动应用 `backend/internal/di/schema.sql`（`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ... IF EXISTS` 增量同步，无独立迁移工具）。
 
 ### 4. 启动后端
 

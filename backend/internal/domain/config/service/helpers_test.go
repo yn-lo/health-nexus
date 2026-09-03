@@ -93,7 +93,6 @@ func TestValidateRAGConfig(t *testing.T) {
 			SimilarityThreshold: float64Ptr(0.75),
 			RerankEnabled:       boolPtr(true),
 			RerankThreshold:     float64Ptr(0.5),
-			OODThreshold:        float64Ptr(0.3),
 		}
 		err := validateRAGConfig(req)
 		if err != nil {
@@ -185,30 +184,6 @@ func TestValidateRAGConfig(t *testing.T) {
 		assertAppErrCode(t, err, "CONFIG_RAG_RERANK_THRESHOLD_RANGE")
 	})
 
-	// OODThreshold 范围测试
-	t.Run("OODThreshold低于下限", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{OODThreshold: float64Ptr(entity.OODThresholdMin - 0.1)}
-		err := validateRAGConfig(req)
-		assertAppErrCode(t, err, "CONFIG_RAG_OOD_THRESHOLD_RANGE")
-	})
-	t.Run("OODThreshold高于上限", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{OODThreshold: float64Ptr(entity.OODThresholdMax + 0.1)}
-		err := validateRAGConfig(req)
-		assertAppErrCode(t, err, "CONFIG_RAG_OOD_THRESHOLD_RANGE")
-	})
-	t.Run("OODThreshold等于下限_通过", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{OODThreshold: float64Ptr(entity.OODThresholdMin)}
-		if err := validateRAGConfig(req); err != nil {
-			t.Errorf("期望 nil，实际 %v", err)
-		}
-	})
-	t.Run("OODThreshold等于上限_通过", func(t *testing.T) {
-		req := UpdateRAGConfigRequest{OODThreshold: float64Ptr(entity.OODThresholdMax)}
-		if err := validateRAGConfig(req); err != nil {
-			t.Errorf("期望 nil，实际 %v", err)
-		}
-	})
-
 	// nil 字段不参与校验
 	t.Run("nil字段不参与校验", func(t *testing.T) {
 		req := UpdateRAGConfigRequest{} // 全部 nil
@@ -232,7 +207,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			OODThreshold:        0.3,
 		}
 		// 空 patch：所有字段 nil
 		applyRAGPatch(original, UpdateRAGConfigRequest{})
@@ -258,9 +232,6 @@ func TestApplyRAGPatch(t *testing.T) {
 		if original.RerankThreshold != 0.5 {
 			t.Errorf("RerankThreshold 期望保持 0.5，实际 %v", original.RerankThreshold)
 		}
-		if original.OODThreshold != 0.3 {
-			t.Errorf("OODThreshold 期望保持 0.3，实际 %v", original.OODThreshold)
-		}
 	})
 
 	t.Run("非nil字段_覆盖原值", func(t *testing.T) {
@@ -272,7 +243,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: 0.75,
 			RerankEnabled:       false,
 			RerankThreshold:     0.5,
-			OODThreshold:        0.3,
 		}
 		patch := UpdateRAGConfigRequest{
 			ChunkSize:           intPtr(1000),
@@ -282,7 +252,6 @@ func TestApplyRAGPatch(t *testing.T) {
 			SimilarityThreshold: float64Ptr(0.9),
 			RerankEnabled:       boolPtr(true),
 			RerankThreshold:     float64Ptr(0.8),
-			OODThreshold:        float64Ptr(0.4),
 		}
 		applyRAGPatch(original, patch)
 
@@ -306,9 +275,6 @@ func TestApplyRAGPatch(t *testing.T) {
 		}
 		if original.RerankThreshold != 0.8 {
 			t.Errorf("RerankThreshold 期望 0.8，实际 %v", original.RerankThreshold)
-		}
-		if original.OODThreshold != 0.4 {
-			t.Errorf("OODThreshold 期望 0.4，实际 %v", original.OODThreshold)
 		}
 	})
 

@@ -116,7 +116,7 @@ LIMIT 1
 
 // GetPrimaryForUser 返回患者主科室（user_departments.is_primary = TRUE 且科室启用）。
 // ponytail: LIMIT 1 兜底——历史上 schema 未对 (user_id, is_primary=true) 加部分唯一索引，折中；
-// 若数据异常出现多个主科室，取其一；migration 00013 已加 partial unique index，
+// 若数据异常出现多个主科室，取其一；schema.sql 已加 partial unique index，
 // LIMIT 1 作为防御性编程保留，升级路径：完全信任索引后可去掉。
 // 未绑定主科室或主科室已禁用时返回 (nil, nil)。
 func (r *DepartmentRepo) GetPrimaryForUser(ctx context.Context, userID int64) (*entity.Department, error) {

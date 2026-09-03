@@ -116,9 +116,6 @@ func (i *Infrastructure) Close() {
 	}
 }
 
-// defaultOODThreshold OOD 判定阈值兜底值：RAG 配置读取失败时使用。
-const defaultOODThreshold = 0.3
-
 // NewApp 装配完整应用：基础设施 + 5 个域。
 func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 	infra, err := NewInfrastructure(ctx, cfg)
@@ -279,13 +276,6 @@ func buildChatRouter(
 	knowledgeSearcher := wikiservice.NewSearchService(
 		chunkRepo, embedClient, rerankClient, ragConfigProvider,
 	)
-	// OOD 阈值动态读取：每次请求从 DB 配置获取，热生效；失败时兜底 defaultOODThreshold。
-	oodThresholdFn := func(ctx context.Context) float64 {
-		if cfg, err := ragConfigProvider.GetRAGConfig(ctx); err == nil && cfg != nil {
-			return cfg.OODThreshold
-		}
-		return defaultOODThreshold
-	}
 	// rewriter 直接注入动态的 swappable.Rewrite / swappable.Chat：
 	// 依赖 SwappableClient 原子取当前 Client，管理员后续配置专用改写模型时热切换即生效，
 	// 无需启动时快照决定（此前 `if !IsReady() 回退主 chat` 使专用模型后配置永不生效）。
@@ -297,7 +287,6 @@ func buildChatRouter(
 		rewriteClient, llmClient, llmClient,
 		conversationRepo, messageRepo, crisisRepo, crisisNotifier,
 		infra.Locker, infra.TxMgr, ring, promptProvider,
-		oodThresholdFn,
 	)
 	convSvc := chatservice.NewConversationService(conversationRepo, messageRepo)
 	crisisSvc := chatservice.NewCrisisService(crisisRepo)

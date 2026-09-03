@@ -89,7 +89,7 @@ const (
 	SensitiveCategoryInjection = "injection"
 )
 
-// 安全规则类别（与 00008 migration 的 CHECK 约束对齐）。
+// 安全规则类别（与 internal/di/schema.sql 的 CHECK 约束对齐）。
 const (
 	SafetyCategoryDiagnosis      = "diagnosis"
 	SafetyCategoryPrescription   = "prescription"
@@ -139,9 +139,3 @@ const (
 	TokenBudgetRewrite  = 4000  // 改写场景 token 上限
 	TokenBudgetGenerate = 16000 // 生成场景 token 上限
 )
-
-// OOD 检测阈值：所有切片的 VecScore 都低于此值时，判定为知识库外问题，拒答。
-// 与 similarity_threshold（0.75）不同，OOD 阈值更低（0.3），作为"完全无相关内容"的安全网。
-// 设为 0.3 而非 0.5：避免误杀 VecScore=0.445 这种在 similarity_threshold=0（管理员要求不过滤）时
-// 被 filterBySimilarity 放行的相关切片，OOD 不应覆盖管理员"不过滤"的明确意图。
-const DefaultOODThreshold = 0.3

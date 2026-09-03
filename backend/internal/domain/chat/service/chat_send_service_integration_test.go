@@ -321,7 +321,6 @@ func newTestChatSendService(
 		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // ring=nil -> 匿名退化为单轮（无历史）
 		nil, // promptProvider=nil -> 降级为 defaultSystemPrompt
-		func(context.Context) float64 { return 0.3 }, // oodThreshold
 	)
 }
 
@@ -874,7 +873,6 @@ func newTestChatSendServiceWithRewriters(
 		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // ring=nil
 		nil,
-		func(context.Context) float64 { return 0.3 },
 	)
 }
 

@@ -485,7 +485,7 @@
 
 | # | 严重度 | 描述 | 修复文件 |
 |---|--------|------|----------|
-| 1 | 🔴 阻塞 | goose 迁移注解缺失 + 版本号冲突 | migrations/00026-00029 |
+| 1 | 🔴 阻塞 | 数据库模型与 schema.sql 幂等语义冲突 | internal/di/schema.sql |
 | 2 | 🔴 阻塞 | user_repo SQL 引用不存在的 phone 列和已废弃的 avatar_url | user_repo.go, entity/user.go |
 | 3 | 🟡 中 | 科室同级重名可重复创建 | department_service.go, department_repo.go |
 | 4 | 🟡 中 | dept=0 全部科室未处理 + 错误未映射为 AppError | base_adapter.go |

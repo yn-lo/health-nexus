@@ -62,22 +62,6 @@ func TestDebugLLMCalls(t *testing.T) {
 		fmt.Printf("Rewrite ERR: %v\n", err)
 	} else {
 		fmt.Printf("Rewrite result: %q (len=%d)\n", rewritten, len(rewritten))
-		// Test if BM25 matches the rewritten query
-		if e2ePool != nil {
-			var matchCount int
-			ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel2()
-			err = e2ePool.QueryRow(ctx2, `
-				SELECT count(*) FROM article_chunks c
-				JOIN articles a ON a.id = c.article_id
-				WHERE c.is_active = true AND a.is_deleted = false AND a.status = 'published'
-				  AND c.tsv @@ bigram_tsquery($1)`, rewritten).Scan(&matchCount)
-			if err != nil {
-				fmt.Printf("  BM25 match check ERR: %v\n", err)
-			} else {
-				fmt.Printf("  BM25 matches for rewritten query: %d\n", matchCount)
-			}
-		}
 	}
 
 	// 2. Safety check (agnes)

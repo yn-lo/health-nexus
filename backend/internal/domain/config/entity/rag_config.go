@@ -12,7 +12,6 @@ type RAGConfig struct {
 	SimilarityThreshold float64
 	RerankEnabled       bool
 	RerankThreshold     float64
-	OODThreshold        float64
 	UpdatedAt           time.Time
 }
 
@@ -30,8 +29,6 @@ const (
 	SimilarityThresholdMax = 1.0
 	RerankThresholdMin     = 0.0
 	RerankThresholdMax     = 1.0
-	OODThresholdMin        = 0.0
-	OODThresholdMax        = 0.5
 )
 
 // RAG 配置默认值（与 SQL DEFAULT 对齐）。
@@ -42,7 +39,6 @@ const (
 	DefaultTopK                = 5
 	DefaultSimilarityThreshold = 0.75
 	DefaultRerankThreshold     = 0.5
-	DefaultOODThreshold        = 0.3
 )
 
 // DefaultRAGConfig 是 RAG 配置缺失时的默认值（与 SQL DEFAULT 对齐）。
@@ -55,5 +51,4 @@ var DefaultRAGConfig = RAGConfig{
 	SimilarityThreshold: DefaultSimilarityThreshold,
 	RerankEnabled:       false,
 	RerankThreshold:     DefaultRerankThreshold,
-	OODThreshold:        DefaultOODThreshold,
 }

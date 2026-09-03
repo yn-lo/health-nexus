@@ -334,60 +334,6 @@ func TestToLLMMessages(t *testing.T) {
 }
 
 // ============================================================================
-// isOutOfDomain：OOD 检测 - 所有切片向量相似度都低于阈值时判定为知识库外问题
-// ============================================================================
-
-func TestIsOutOfDomain(t *testing.T) {
-	t.Run("所有VecScore低于阈值_判定OOD", func(t *testing.T) {
-		chunks := []rag.Chunk{
-			{VecScore: 0.1},
-			{VecScore: 0.2},
-			{VecScore: 0.29},
-		}
-		if !isOutOfDomain(chunks, constants.DefaultOODThreshold) {
-			t.Error("期望 true（所有 VecScore < 0.3，OOD）")
-		}
-	})
-
-	t.Run("有一个VecScore等于阈值_非OOD", func(t *testing.T) {
-		chunks := []rag.Chunk{
-			{VecScore: 0.1},
-			{VecScore: 0.3}, // 等于阈值，不算 OOD
-			{VecScore: 0.2},
-		}
-		if isOutOfDomain(chunks, constants.DefaultOODThreshold) {
-			t.Error("期望 false（有一个 VecScore >= 0.3，非 OOD）")
-		}
-	})
-
-	t.Run("有一个VecScore大于阈值_非OOD", func(t *testing.T) {
-		chunks := []rag.Chunk{
-			{VecScore: 0.1},
-			{VecScore: 0.8},
-		}
-		if isOutOfDomain(chunks, constants.DefaultOODThreshold) {
-			t.Error("期望 false（有一个 VecScore > 0.3，非 OOD）")
-		}
-	})
-
-	t.Run("空切片_判定OOD", func(t *testing.T) {
-		if !isOutOfDomain(nil, constants.DefaultOODThreshold) {
-			t.Error("期望 true（空切片，OOD）")
-		}
-	})
-
-	t.Run("阈值为0_不检测_非OOD", func(t *testing.T) {
-		// threshold=0 时 maxVecScore < 0 恒为 false，不判定 OOD
-		chunks := []rag.Chunk{
-			{VecScore: 0.1},
-		}
-		if isOutOfDomain(chunks, 0) {
-			t.Error("期望 false（阈值为 0，不检测）")
-		}
-	})
-}
-
-// ============================================================================
 // validateStreamInput：消息长度校验（覆盖 Stream 入口的纯校验函数）
 // ============================================================================
 

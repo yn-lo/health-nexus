@@ -75,7 +75,7 @@ POST /api/chat/stream  {message, conversation_id, selected_dept_id?}
        │    ├─ llm.IsReady()                       LLM 就绪性预检
        │    ├─ LLMCheck(content)                   LLM 深度审查（疑似复核）
        │    ├─ rewriter.Rewrite(query)             查询改写（可选，降级为原始查询）
-       │    ├─ knowledgeSearcher.Search(ctx, q)    向量(pgvector) + BM25(tsvector) 混合 + 可选 rerank
+       │    ├─ knowledgeSearcher.Search(ctx, q)    纯向量(pgvector ANN) 检索 + SimilarityThreshold 过滤 + 可选 rerank
        │    ├─ promptProvider.GetSystemPrompt(ctx)  系统提示词（DB 配置 → 硬编码兜底）
        │    ├─ llmClient.Stream(ctx, msgs, chunks) SSE 流式生成
        │    ├─ outputSafety.Validate(assistant)    输出安全审查（replace/append；diagnosisRe 豁免「诊断为准」）

@@ -160,12 +160,6 @@ func validateRAGConfig(req UpdateRAGConfigRequest) error {
 	); err != nil {
 		return err
 	}
-	if err := checkFloatRange(
-		req.OODThreshold, entity.OODThresholdMax,
-		"CONFIG_RAG_OOD_THRESHOLD_RANGE", "ood_threshold 范围 0.0-0.5",
-	); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -204,9 +198,6 @@ func applyRAGPatch(c *entity.RAGConfig, req UpdateRAGConfigRequest) {
 	}
 	if req.RerankThreshold != nil {
 		c.RerankThreshold = *req.RerankThreshold
-	}
-	if req.OODThreshold != nil {
-		c.OODThreshold = *req.OODThreshold
 	}
 }
 

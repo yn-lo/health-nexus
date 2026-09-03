@@ -16,7 +16,7 @@ owner: backend-team
 - **配置**：viper（`config.yaml` + `HEALTH_NEXUS_*` 环境变量自动绑定）
 - **日志**：`log/slog`（标准库，结构化日志）
 - **密码学**：argon2id（密码哈希）+ AES-GCM（API Key 字段级加密）
-- **迁移**：goose（`migrations/*.sql`，Up/Down 对称）
+- **迁移**：无独立迁移工具，schema 幂等应用（`internal/di/schema.sql`，`CREATE ... IF NOT EXISTS` + `ALTER ... IF EXISTS`）
 
 ## 模块划分
 
@@ -38,7 +38,7 @@ internal/
     ├── config/               配置管理：AI provider/敏感词/安全规则/RAG/Prompt
     └── wiki/                 知识库：文章 5 态状态机 + 引用授权 + 向量检索
 tests/                        跨域测试（API 契约 + e2e + schema）
-migrations/                   SQL 迁移（数据模型唯一真源）
+internal/di/schema.sql        数据模型唯一真源（幂等，启动自动应用）
 ```
 
 ### 域内分层（每个 domain/<name>/ 下）
@@ -62,10 +62,9 @@ migrations/                   SQL 迁移（数据模型唯一真源）
 
 > 来源：`tests/e2e_api/` 端到端回归。下列为已修复并固化为约束的问题，记录以防回归。chat 域请求流相关修复见 `architecture/data-flow.md` 第 4 节。
 
-### 迁移系统（goose）
-- **goose 注解缺失**：`00003`/`00004`/`00006` 早期迁移缺少 `-- +goose Up`/`-- +goose Down` 注解，goose 无法解析方向，已补齐（遵循 Up/Down 对称约定）。
-- **版本号冲突**：新增迁移与已发布版本撞号，重命名为 `00026`–`00029`，保证版本号单调递增、全局唯一。
-- **幂等性**：`00028` 的 Down 使用 `DROP CONSTRAINT IF EXISTS`，重复执行/回滚不报错。
+### 迁移系统（已并入幂等 schema.sql）
+- **goose 编号迁移已弃用**：原 `migrations/*.sql`（goose Up/Down）已全部并入 `internal/di/schema.sql`，启动时幂等应用（`CREATE ... IF NOT EXISTS` / `ALTER ... IF EXISTS`），不再使用独立迁移工具。
+- **幂等性**：历史迁移中 `DROP ... IF EXISTS`、`ADD COLUMN IF NOT EXISTS` 等语义保留在 schema.sql 的增量同步段中，重复执行/回滚不报错。
 
 ### 数据模型一致性（auth 域 user_repo）
 - repository SQL 与迁移 schema 对齐：移除已废弃的 `avatar_url` 列引用；补齐 `phone`/`date_of_birth`/`gender`/`emergency_contact`/`emergency_phone` 列读写，消除 schema 不匹配导致的扫描错误。

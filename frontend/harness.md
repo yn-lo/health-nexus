@@ -406,7 +406,7 @@ paths:
 
 ## 原则
 - 数据库模型使用 `.sql` 文件定义，作为数据模型的唯一真源
-- SQL 文件位置：`database/migrations/` 或 `database/schema/`
+- SQL 文件位置：`backend/internal/di/schema.sql`（后端启动时幂等应用，数据模型唯一真源）
 - 所有表结构变更必须通过 SQL 迁移文件，禁止直接修改数据库
 
 ## 命名规范

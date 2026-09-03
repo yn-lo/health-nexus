@@ -123,7 +123,7 @@ curl -N ... 2>/dev/null | grep "^event:" | sort | uniq -c
 |------|------|
 | 连接数据库 | `psql postgres://user:pass@localhost:5432/dbname` |
 | 验证数据写入 | `SELECT id, feedback, created_at FROM messages WHERE conversation_id = 'xxx' ORDER BY created_at;` |
-| 检查迁移状态 | `goose -dir migrations postgres "$DSN" status` |
+| 检查 schema 版本 | 参照 `internal/di/schema.sql`（幂等，无独立迁移工具） |
 | 查看表结构 | `\d table_name` |
 | 检查索引 | `\di` |
 | 查看锁 | `SELECT * FROM pg_locks WHERE NOT granted;` |

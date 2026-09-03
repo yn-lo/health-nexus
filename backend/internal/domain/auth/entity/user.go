@@ -24,7 +24,7 @@ type User struct {
 }
 
 // IsLocked 账户是否被禁用：is_active=false 表示管理员手动禁用。
-// ponytail: 已删除 login_fail_count/locked_until 死字段（见 migration 00017），简化。
+// ponytail: 已删除 login_fail_count/locked_until 死字段（schema.sql 亦已移除），简化。
 // 自动账户锁定由限流中间件兜底——重复暴力破解在 IP 维度已被限流，
 // 应用层再做 N 次失败锁定是重复防御且实现复杂度高于收益。
 // 升级路径：若需 per-account 锁定，重新加 locked_until 列 + repo.LockAccount(ctx, id, dur)。

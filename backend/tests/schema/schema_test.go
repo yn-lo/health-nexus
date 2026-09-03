@@ -42,7 +42,7 @@ var specs = []tableSpec{
 		viewFields: map[string]bool{"DepartmentName": true, "AuthorName": true},
 	},
 	{table: "article_chunks", entityType: wikientity.ArticleChunk{},
-		dbOnlyCols: map[string]bool{"tsv": true},
+		dbOnlyCols: map[string]bool{},
 	},
 	{table: "article_references", entityType: wikientity.ArticleReference{},
 		viewFields: map[string]bool{

@@ -128,7 +128,6 @@ export interface RAGConfig {
   similarity_threshold: number;
   rerank_enabled: boolean;
   rerank_threshold: number;
-  ood_threshold: number;
   updated_at: string;
 }
 
@@ -141,7 +140,6 @@ export interface RAGConfigUpdateRequest {
   similarity_threshold?: number;
   rerank_enabled?: boolean;
   rerank_threshold?: number;
-  ood_threshold?: number;
 }
 
 /** RAG 参数范围（与后端 entity.go 一致，用于前端校验提示） */
@@ -152,7 +150,6 @@ export const RAG_LIMITS = {
   top_k: { min: 1, max: 50 },
   similarity_threshold: { min: 0, max: 1 },
   rerank_threshold: { min: 0, max: 1 },
-  ood_threshold: { min: 0, max: 0.5 },
 } as const;
 
 /** 安全话术响应（聚合单例，crisis_hotline 已合并到 crisis_response，medication_disclaimer 已合并到 safety_warning_message） */

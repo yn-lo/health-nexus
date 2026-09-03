@@ -174,7 +174,6 @@ owner: backend-team
 | `CONFIG_RAG_TOP_K_RANGE` | 422 | top_k 范围 1-50 |
 | `CONFIG_RAG_SIMILARITY_RANGE` | 422 | similarity_threshold 范围 0.0-1.0 |
 | `CONFIG_RAG_RERANK_THRESHOLD_RANGE` | 422 | rerank_threshold 范围 0.0-1.0 |
-| `CONFIG_RAG_OOD_THRESHOLD_RANGE` | 422 | ood_threshold 范围 0.0-0.5 |
 
 ### Prompt 模板
 | 错误码 | HTTP | 说明 |

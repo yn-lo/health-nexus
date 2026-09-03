@@ -185,9 +185,6 @@ linters:
           - revive
           - unparam
         path: internal/platform/postgres/sqlc/
-      - linters:
-          - all
-        path: migrations/
     paths:
       - third_party$
       - builtin$
