@@ -98,6 +98,18 @@ const (
 	SafetyCategoryOther          = "other"
 )
 
+// LLM 输入安全审查分类（platform/llm 输出，shared/rag 与 chat 域消费）。
+// 布尔值不足以表达这条链路：自伤风险必须能触发危机记录与热线流程，
+// 不能被压平成"普通拒答"。分类同时写入危机事件的命中关键词，供医护端追溯判定来源。
+const (
+	SafetyClassSafe            = "SAFE"             // 放行
+	SafetyClassSelfHarm        = "SELF_HARM"        // 自伤/自杀倾向（→ 危机链路）
+	SafetyClassPromptInjection = "PROMPT_INJECTION" // 越狱/注入
+	SafetyClassMedicalAbuse    = "MEDICAL_ABUSE"    // 滥用剂量/违禁药物等有害医疗请求
+	SafetyClassAbusive         = "ABUSIVE"          // 攻击性/辱骂/歧视
+	SafetyClassUnsafe          = "UNSAFE"           // 无法细分类的兜底拦截
+)
+
 // Prompt 模板类型。仅 system 类型在运行时被注入 LLM 调用；
 // rejection/emergency/safety_warning 话术由 safety_messages 表管理。
 const (

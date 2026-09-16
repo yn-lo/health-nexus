@@ -1,6 +1,6 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
 import { clearTokens, getAccessToken, getDeviceId, tryRefreshToken } from '@/shared/api/client'
-import type { Reference, SSEEvent } from '@/shared/types/chat'
+import { type NoticeKind, type Reference, type SSEEvent, type TurnResult } from '@/shared/types/chat'
 import { parseSSELine } from './sseParse'
 
 interface UseSSEChatOptions {
@@ -10,7 +10,13 @@ interface UseSSEChatOptions {
 
 /**
  * SSE 流式问答 — POST + JSON body，解析后端标准 SSE 帧（event: <type>\ndata: <payload>\n\n）。
- * 后端事件：conversation / token / references / safety_warning / crisis / error / done。
+ * 后端事件：conversation / token / references / answer_replaced / notice / crisis / result / error / done。
+ *
+ * 语义约定：
+ *   - token + answer_replaced 构成**答案正文**（与持久化内容一致）；
+ *   - notice 是面向用户的独立提示（紧急就医 / 超时），不混入正文；
+ *   - result 是本轮权威结果（真实消息 ID / 最终 result_code / 最终引用），
+ *     前端据此替换本地乐观消息，无需按内容猜测或整页回拉。
  *
  * token 刷新复用 shared/api/client 的全局刷新锁：SSE 与普通 API 并发 401 时共享同一次
  * refresh 请求，避免两处各自携带同一 refresh token 触发后端轮换竞态（败者被误判会话失效）。
@@ -23,19 +29,22 @@ const RETRY_BASE_DELAY = 1000
 /** 流式读取超时（ms）：超过此时间未收到任何数据则判定连接中断 */
 const STREAM_IDLE_TIMEOUT = 60_000
 
-/** safety_warning 解析结果 — 裸字符串无 mode，JSON 载荷含 replace/append */
-interface SafetyWarningInfo {
+/** 独立提示（notice 事件） */
+interface ChatNotice {
+  kind: NoticeKind
   text: string
-  mode?: 'replace' | 'append'
 }
 
 export function useSSEChat(options: UseSSEChatOptions) {
   const isStreaming = ref(false)
   const currentContent = ref('')
   const references = ref<Reference[]>([])
-  const safetyWarning = ref<SafetyWarningInfo | null>(null)
+  /** 独立提示（紧急就医 / 超时），不进入答案正文 */
+  const notices = ref<ChatNotice[]>([])
   const crisis = ref<{ answer: string } | null>(null)
   const error = ref<string | null>(null)
+  /** 本轮权威结果（result 事件）：真实消息 ID / 最终 result_code / 最终引用 */
+  const result = ref<TurnResult | null>(null)
   /** 用户主动中止标记 — 用于上层区分"完整回答"与"被截断" */
   const aborted = ref(false)
   const controller = shallowRef<AbortController | null>(null)
@@ -48,11 +57,14 @@ export function useSSEChat(options: UseSSEChatOptions) {
     isStreaming.value = true
     currentContent.value = ''
     references.value = []
-    safetyWarning.value = null
+    notices.value = []
     crisis.value = null
+    result.value = null
     error.value = null
     aborted.value = false
     retryCount = MAX_RETRIES
+    // 幂等标识：一次发送的多次自动重试复用同一值，服务端据此回放而非重复生成。
+    const requestId = crypto.randomUUID()
 
     let idleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -76,10 +88,12 @@ export function useSSEChat(options: UseSSEChatOptions) {
           const body: Record<string, unknown> = {
             message: question,
             conversation_id: conversationId.value,
+            request_id: requestId,
           }
-          // 科室选择始终携带：0=全部科室，具体 id=锁定科室。
-          // 修复：旧逻辑过滤掉 0，导致后端收到 nil（未指定）而把会话误锁到解析科室。
-          if (options.selectedDeptId != null) {
+          // 科室仅在开启新会话时携带（0=全部科室，具体 id=锁定科室）。
+          // 已有会话的科室由服务端按会话锁定值决定：继续携带前端的默认值 0 会被后端判为
+          // "会话中切换知识库"（CHAT_DEPT_LOCKED 409），导致历史会话无法续聊。
+          if (!conversationId.value && options.selectedDeptId != null) {
             body.selected_dept_id = options.selectedDeptId
           }
 
@@ -153,12 +167,16 @@ export function useSSEChat(options: UseSSEChatOptions) {
             if (eventName === 'token') evt = { type: 'token', data: raw }
             else if (eventName === 'conversation') {
               try { evt = { type: 'conversation', data: JSON.parse(raw) as { conversation_id: string } } } catch { /* ignore */ }
-            } else if (eventName === 'safety_warning') {
-              evt = parseSafetyWarning(raw)
+            } else if (eventName === 'answer_replaced') {
+              try { evt = { type: 'answer_replaced', data: JSON.parse(raw) as { mode: 'replace' | 'append'; text: string } } } catch { /* ignore */ }
+            } else if (eventName === 'notice') {
+              try { evt = { type: 'notice', data: JSON.parse(raw) as ChatNotice } } catch { /* ignore */ }
             } else if (eventName === 'references') {
               try { evt = { type: 'references', data: JSON.parse(raw) as Reference[] } } catch { /* ignore */ }
             } else if (eventName === 'crisis') {
               try { evt = { type: 'crisis', data: JSON.parse(raw) as { answer: string } } } catch { /* ignore */ }
+            } else if (eventName === 'result') {
+              try { evt = { type: 'result', data: JSON.parse(raw) as TurnResult } } catch { /* ignore */ }
             } else if (eventName === 'error') {
               try { evt = { type: 'error', data: JSON.parse(raw) as { message: string } } } catch { /* ignore */ }
             }
@@ -179,16 +197,21 @@ export function useSSEChat(options: UseSSEChatOptions) {
               case 'references':
                 references.value = e.data
                 break
-              case 'safety_warning':
-                safetyWarning.value = { text: e.data, mode: e.mode }
-                if (e.mode === 'replace') currentContent.value = e.data
-                else if (e.mode === 'append') currentContent.value += e.data
-                else {
-                  currentContent.value += currentContent.value ? '\n\n' + e.data : e.data
-                }
+              case 'answer_replaced':
+                // 正文修正：与持久化内容保持一致
+                if (e.data.mode === 'replace') currentContent.value = e.data.text
+                else currentContent.value += e.data.text
+                break
+              case 'notice':
+                // 独立提示：不进入答案正文
+                notices.value = [...notices.value, e.data]
                 break
               case 'crisis':
                 crisis.value = e.data
+                break
+              case 'result':
+                result.value = e.data
+                if (e.data.references?.length) references.value = e.data.references
                 break
               case 'error':
                 error.value = e.data.message
@@ -272,6 +295,11 @@ export function useSSEChat(options: UseSSEChatOptions) {
     controller.value?.abort()
   }
 
+  /** 关闭一条独立提示（仅本地展示层面移除） */
+  function dismissNotice(index: number) {
+    notices.value = notices.value.filter((_, i) => i !== index)
+  }
+
   onUnmounted(() => {
     if (controller.value) {
       aborted.value = true
@@ -279,21 +307,18 @@ export function useSSEChat(options: UseSSEChatOptions) {
     }
   })
 
-  return { isStreaming, currentContent, references, safetyWarning, crisis, error, aborted, conversationId, sendQuestion, abort }
-}
-
-/**
- * 解析 safety_warning 载荷 — 兼容两种后端格式：
- * 1. 裸字符串（紧急就医提醒 / 拒答话术 / 超时提示）→ { text, mode: undefined }
- * 2. JSON {"mode":"replace"|"append","text":"..."}（输出安全审查）→ { text, mode }
- */
-function parseSafetyWarning(raw: string): SSEEvent {
-  try {
-    const parsed = JSON.parse(raw) as { mode?: string; text?: string }
-    if (typeof parsed.text === 'string') {
-      const mode = parsed.mode === 'replace' || parsed.mode === 'append' ? parsed.mode : undefined
-      return { type: 'safety_warning', data: parsed.text, mode }
-    }
-  } catch { /* 非 JSON，按裸字符串处理 */ }
-  return { type: 'safety_warning', data: raw }
+  return {
+    isStreaming,
+    currentContent,
+    references,
+    notices,
+    crisis,
+    error,
+    result,
+    aborted,
+    conversationId,
+    sendQuestion,
+    abort,
+    dismissNotice,
+  }
 }

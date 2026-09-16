@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,6 +25,58 @@ import (
 	"health-nexus/internal/shared/rag"
 )
 
+// SSE 事件名（spec §3.1）。语义拆分：正文修正（answer_replaced）与独立提示（notice）
+// 不再共用一个事件，避免"提示被拼进答案正文"导致实时展示与持久化内容不一致。
+const (
+	EventConversation = "conversation"
+	EventToken        = "token"
+	EventReferences   = "references"
+	EventCrisis       = "crisis"
+	EventDone         = "done"
+	EventError        = "error"
+	// EventAnswer 正文修正：mode=replace 覆盖已累积正文；mode=append 追加到正文末尾。
+	// 生命周期与答案一致——修正后的正文即持久化内容。
+	EventAnswer = "answer_replaced"
+	// EventNotice 面向用户的独立提示（紧急就医提醒 / 超时提示）：不进入答案正文，仅作 UI 提示。
+	EventNotice = "notice"
+	// EventResult 本轮权威结果：真实消息 ID、最终 result_code、最终引用。
+	// 前端据此替换本地乐观消息，无需"猜结果码 + 整页回拉"。
+	EventResult = "result"
+)
+
+// notice 事件的 kind（前端据此选择展示样式）。
+const (
+	NoticeEmergency = "emergency"
+	NoticeTimeout   = "timeout"
+)
+
+// 正文修正模式（answer_replaced 事件 mode 字段）。
+const (
+	answerModeReplace = "replace"
+	answerModeAppend  = "append"
+)
+
+// noticePayload 独立提示载荷。
+type noticePayload struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+// answerPayload 正文修正载荷。
+type answerPayload struct {
+	Mode string `json:"mode"`
+	Text string `json:"text"`
+}
+
+// turnResultPayload 本轮权威结果载荷。
+type turnResultPayload struct {
+	TurnID             string             `json:"turn_id"`
+	UserMessageID      string             `json:"user_message_id"`
+	AssistantMessageID string             `json:"assistant_message_id"`
+	ResultCode         string             `json:"result_code"`
+	References         []entity.Reference `json:"references"`
+}
+
 // SSEWriter SSE 事件写入接口，由 handler 层实现（消费者定义在 service 端）。
 // 每个 token / 引用 / 危机事件通过 Write 推送给客户端并立即 flush。
 type SSEWriter interface {
@@ -36,6 +89,9 @@ type StreamInput struct {
 	ConversationID *uuid.UUID        // nil = 新建会话
 	SelectedDeptID *int64            // nil = 不限定；会话已锁定时必须与锁定值一致
 	Message        string
+	// RequestID 客户端生成的幂等标识（本次发送的多次重试复用同一值）：
+	// 同一 request_id 已完成 → 回放权威结果；进行中 → 409；为空则不启用幂等。
+	RequestID string
 }
 
 // chatPendingLockTTL 会话并发锁 TTL：5 分钟覆盖单次 LLM 流式生成最坏时长。
@@ -44,6 +100,10 @@ const chatPendingLockTTL = 5 * time.Minute
 // llmStreamTimeout LLM 流式调用硬 deadline：4 分钟，留 1 分钟余量给收尾事务 + SSE flush。
 // 与 chatPendingLockTTL 对齐，覆盖 LLM 服务 stall（首字节后中途 hang）场景，避免 goroutine 泄漏。
 const llmStreamTimeout = 4 * time.Minute
+
+// idempotencyTTL 幂等登记保留时长：覆盖客户端自动重试与短时断线重连窗口。
+// 过期后同一 request_id 视为新请求（前端每次发送都会生成新的 request_id）。
+const idempotencyTTL = 15 * time.Minute
 
 // ChatSendService RAG 核心服务，编排阶段 1（输入安全 + 用户消息持久化）、
 // 阶段 2（检索 + 流式生成）、阶段 3（AI 消息持久化 + SSE 结束事件）。
@@ -62,7 +122,8 @@ type ChatSendService struct {
 	crisisNotifier   CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
 	locker           LockProvider
 	tx               TxRunner
-	ring             ringStore // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
+	ring             ringStore    // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
+	turns            TurnRegistry // 请求幂等登记；nil 时不启用幂等（重复提交会重复生成）
 }
 
 // CrisisNotifier 危机事件主动通知接口（入队 asynq 任务，由 worker 落库站内通知）。
@@ -73,6 +134,7 @@ type CrisisNotifier interface {
 // NewChatSendService 构造 RAG 服务。
 // 跨域依赖（dept/knowledge/safetyIn/safetyOut/promptProvider）通过 interface 注入；阶段 2 由对应域实现。
 // promptProvider 可为 nil：降级为 defaultSystemPrompt（保持修复前行为，便于测试与渐进接入）。
+// turns 可为 nil：不启用请求幂等（重复提交会重复生成，行为与修复前一致）。
 func NewChatSendService(
 	dept rag.DepartmentResolver,
 	safetyIn rag.InputSafetyFilter,
@@ -88,13 +150,14 @@ func NewChatSendService(
 	locker LockProvider,
 	tx TxRunner,
 	ring ringStore,
+	turns TurnRegistry,
 	promptProvider rag.SystemPromptProvider,
 ) *ChatSendService {
 	return &ChatSendService{
 		dept: dept, safetyIn: safetyIn, safetyOut: safetyOut, knowledge: knowledge,
 		rewriter: rewriter, fallbackRewriter: fallbackRewriter, llm: llmStreamer,
 		conv: conv, msg: msg, crisis: crisis, crisisNotifier: crisisNotifier,
-		locker: locker, tx: tx, ring: ring,
+		locker: locker, tx: tx, ring: ring, turns: turns,
 		promptProvider: promptProvider,
 	}
 }
@@ -109,16 +172,24 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		return err
 	}
 
+	// (0) 请求幂等（重复提交）：同一 request_id 已完成 → 回放权威结果；进行中 → 409。
+	// 须在会话准备之前：重复请求不应再次创建会话或再次生成。
+	if handled, err := s.replayTurn(ctx, in, out); err != nil || handled {
+		return err
+	}
+
 	// (1)~(2) 会话准备（REQ-CHAT-019）：统一构建 Session（认证=DB 会话+科室锁定；匿名=Redis 瞬态会话，不限科室）。
 	sess, err := s.buildSession(ctx, in)
 	if err != nil {
 		return err
 	}
 
-	// (3) 防并发锁（REQ-NFR-012）——key 随身份（认证=user+conv；匿名=device）。
+	// (3) 防并发锁（REQ-NFR-012）——key 随身份（认证=user+conv；匿名=device 会话）。
 	// 须在 conversation 事件之前获取：锁失败（并发生成）时 wroteAny=false，handler 回退 HTTP 409
 	// （符合 Conflict 语义，客户端可据此重试）；若先发 conversation 事件，错误会降级为 SSE error 事件（HTTP 200）。
-	lockKey := buildLockKey(in)
+	// key 必须基于已解析的 sess.ID()：新会话首轮请求未携带 conversation_id，
+	// 若沿用请求中的原始 ID（"new" 占位），前端拿到会话 ID 后的第二个请求会落到另一个 key，同会话互斥失效。
+	lockKey := buildLockKey(in, sess)
 	unlock, err := s.locker.Lock(ctx, lockKey, chatPendingLockTTL)
 	if err != nil {
 		if errors.Is(err, redis.ErrLockNotAcquired) {
@@ -135,25 +206,23 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		}
 	}()
 
-	// (2.5) 回传会话 ID（升级/已有均下发，锁获取成功后首个 SSE 事件）：认证为会话 UUID，匿名为 device 派生 id。
+	// 本轮状态（幂等登记与权威结果共用同一 turn_id）。
+	st := &ragStreamState{turnID: uuid.New()}
+
+	// (2.5) 回传会话 ID（升级/已有均下发，锁获取成功后首个 SSE 事件）：认证为会话 UUID，匿名为设备内会话 id。
 	// 前端据此更新 URL 与后续请求的 conversation_id，匿名用户据此维持多轮上下文标识。
-	if err := out.Write("conversation", map[string]string{"conversation_id": sess.ID()}); err != nil {
+	if err := out.Write(EventConversation, map[string]string{"conversation_id": sess.ID()}); err != nil {
 		return err
 	}
 
-	// (4) 紧急症状预提醒（REQ-CHAT-010，spec §3.1 safety_warning 事件）
-	emergencyWarned, err := s.writeEmergencyWarning(ctx, in, out)
-	if err != nil {
+	// (4) 紧急症状预提醒（REQ-CHAT-010）：独立提示事件，不进入答案正文。
+	if err := s.writeEmergencyNotice(ctx, in, out); err != nil {
 		return err
 	}
 
 	// (5) 规则层安全审查（零延迟，REQ-NFR-005/007）
-	decision, crisis := s.safetyIn.CheckRules(ctx, in.Message)
-	if decision == rag.DecisionBlock {
-		if crisis != nil {
-			return s.handleCrisis(ctx, in, sess, crisis, out)
-		}
-		return s.handleInjection(ctx, in, sess, out, constants.ResultRejected, emergencyWarned)
+	if decision, crisis := s.safetyIn.CheckRules(ctx, in.Message); decision == rag.DecisionBlock {
+		return s.handleRuleBlocked(ctx, in, sess, out, crisis, st)
 	}
 
 	// (6) LLM 就绪性预检
@@ -161,14 +230,204 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
 	}
 
-	// (7) LLM 层深度审查（疑似复核，REQ-CHAT-007）
-	if !s.safetyIn.LLMCheck(ctx, in.Message) {
-		slog.InfoContext(ctx, "chat: input blocked by LLM safety check")
-		return s.handleInjection(ctx, in, sess, out, constants.ResultIntercepted, emergencyWarned)
+	// (7) LLM 层深度审查（疑似复核，REQ-CHAT-007）。
+	// 分类不可退化为布尔：模型判定的自伤风险必须走危机链路（记录危机事件 + 通知医护 + 推热线），
+	// 否则非关键词表述的自伤倾向只会得到一句普通拒答。
+	if allow, class := s.safetyIn.LLMCheck(ctx, in.Message); !allow {
+		slog.InfoContext(ctx, "chat: input blocked by LLM safety check", "class", class)
+		return s.handleLLMBlocked(ctx, in, sess, out, class, st)
 	}
 
 	slog.InfoContext(ctx, "chat: input safety passed")
-	return s.stageRAG(ctx, in, sess, out, emergencyWarned)
+	if err := s.registerTurn(ctx, in, sess, st.turnID); err != nil {
+		return err
+	}
+	return s.stageRAG(ctx, in, sess, out, st)
+}
+
+// handleRuleBlocked 规则层命中后的分流：危机关键词 → 危机链路；注入 → 拒答。
+// 两者都先登记本轮（结果可被重复提交回放）。
+func (s *ChatSendService) handleRuleBlocked(
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, c *rag.Crisis, st *ragStreamState,
+) error {
+	if err := s.registerTurn(ctx, in, sess, st.turnID); err != nil {
+		return err
+	}
+	if c != nil {
+		return s.handleCrisis(ctx, in, sess, c, out, st)
+	}
+	return s.handleInjection(ctx, in, sess, out, constants.ResultRejected, st)
+}
+
+// handleLLMBlocked LLM 层判定风险后的分流：自伤风险 → 危机链路；其余 → 拒答。
+// 两者都先登记本轮（结果可被重复提交回放）。
+func (s *ChatSendService) handleLLMBlocked(
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, class string, st *ragStreamState,
+) error {
+	if err := s.registerTurn(ctx, in, sess, st.turnID); err != nil {
+		return err
+	}
+	if class == constants.SafetyClassSelfHarm {
+		return s.handleCrisis(ctx, in, sess, &rag.Crisis{
+			Keywords: []string{llmSelfHarmMarker},
+			Level:    constants.CrisisLevelHigh,
+		}, out, st)
+	}
+	return s.handleInjection(ctx, in, sess, out, constants.ResultIntercepted, st)
+}
+
+// llmSelfHarmMarker LLM 层判定自伤风险时写入危机事件的命中关键词（供医护端区分判定来源）。
+const llmSelfHarmMarker = "llm_self_harm"
+
+// turnRef 幂等登记值：本轮所属会话 + 轮次标识（uuid.UUID 按文本序列化）。
+type turnRef struct {
+	SID    string    `json:"sid"`
+	TurnID uuid.UUID `json:"turn_id"`
+}
+
+// idempotencyKey 身份作用域 + request_id：跨身份无法命中他人的登记，
+// 避免伪造 request_id 读取他人本轮结果。
+func idempotencyKey(in StreamInput, requestID string) string {
+	if in.Identity.Anon() {
+		return "chat_turn:anon:" + in.Identity.DeviceID + ":" + requestID
+	}
+	return fmt.Sprintf("chat_turn:user:%d:%s", in.Identity.UserID, requestID)
+}
+
+// registerTurn 登记本轮（request_id → 会话 + 轮次），使重复提交可回放或拒绝。
+// 在开始落库前调用：登记成功的 request_id 再次到达时不会重复生成。
+// 未携带 request_id 或登记能力不可用时跳过（幂等降级，不阻断问答）。
+func (s *ChatSendService) registerTurn(ctx context.Context, in StreamInput, sess *Session, turnID uuid.UUID) error {
+	if s.turns == nil || in.RequestID == "" {
+		return nil
+	}
+	payload, err := json.Marshal(turnRef{SID: sess.ID(), TurnID: turnID})
+	if err != nil {
+		return fmt.Errorf("marshal turn ref: %w", err)
+	}
+	if err := s.turns.Put(ctx, idempotencyKey(in, in.RequestID), string(payload), idempotencyTTL); err != nil {
+		// 登记失败不阻断问答：降级为不幂等（重试可能重复生成），与未启用幂等一致。
+		slog.WarnContext(ctx, "chat: idempotency register failed, continue without it", "err", err)
+	}
+	return nil
+}
+
+// replayTurn 处理重复提交（幂等重放）：
+//   - 本轮已产生终态 → 回放权威结果（conversation + token + result + done），不重复生成；
+//   - 本轮尚无终态（仍在生成中）→ 409，由客户端稍后重试。
+//
+// 返回 handled=true 表示请求已由幂等逻辑处理完毕（无需继续走生成链路）。
+// 登记不可用/损坏时降级为不幂等（handled=false，继续生成）。
+func (s *ChatSendService) replayTurn(ctx context.Context, in StreamInput, out SSEWriter) (bool, error) {
+	ref := s.lookupTurnRef(ctx, in)
+	if ref == nil {
+		return false, nil
+	}
+	sess, err := s.sessionByID(ctx, in, ref.SID)
+	if err != nil {
+		return false, err
+	}
+	turn, err := sess.store.TurnByID(ctx, ref.TurnID)
+	if err != nil {
+		return false, fmt.Errorf("load turn: %w", err)
+	}
+	if turn == nil || turn.Assistant == nil || turn.Assistant.ResultCode == "" {
+		return true, apperrors.Conflict("CHAT_TURN_IN_PROGRESS", "会话正在生成中，请稍后重试")
+	}
+	slog.InfoContext(ctx, "chat: replayed completed turn", "turn_id", ref.TurnID.String())
+	if err := out.Write(EventConversation, map[string]string{"conversation_id": sess.ID()}); err != nil {
+		return false, err
+	}
+	if err := out.Write(EventToken, turn.Assistant.Content); err != nil {
+		return false, err
+	}
+	st := &ragStreamState{turnID: ref.TurnID, aiMsgID: turn.Assistant.ID}
+	if turn.User != nil {
+		st.userMsgID = turn.User.ID
+	}
+	if err := writeTurnResult(out, st, turn.Assistant.ResultCode, turn.Assistant.ReferencedChunks); err != nil {
+		return false, err
+	}
+	return true, out.Write(EventDone, donePayload())
+}
+
+// lookupTurnRef 读取并解析本轮登记。未携带 request_id、登记能力不可用、登记缺失或内容损坏时返回 nil
+// （调用方据此降级为不幂等，继续生成）。
+func (s *ChatSendService) lookupTurnRef(ctx context.Context, in StreamInput) *turnRef {
+	if s.turns == nil || in.RequestID == "" {
+		return nil
+	}
+	raw, ok, err := s.turns.Lookup(ctx, idempotencyKey(in, in.RequestID))
+	if err != nil {
+		slog.WarnContext(ctx, "chat: idempotency lookup failed, degrade to non-idempotent", "err", err)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	var ref turnRef
+	if jerr := json.Unmarshal([]byte(raw), &ref); jerr != nil || ref.TurnID == uuid.Nil {
+		slog.WarnContext(ctx, "chat: corrupt idempotency record, degrade to non-idempotent", "err", jerr)
+		return nil
+	}
+	return &ref
+}
+
+// sessionByID 按会话标识重建 Session（幂等重放用）：认证=加载自己的会话；匿名=设备命名空间下的会话。
+func (s *ChatSendService) sessionByID(ctx context.Context, in StreamInput, sid string) (*Session, error) {
+	if in.Identity.Anon() {
+		return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, in.Identity.DeviceID, sid)}, nil
+	}
+	convID, err := uuid.Parse(sid)
+	if err != nil {
+		return nil, apperrors.BadRequest("CHAT_INVALID_CONVERSATION_ID", "conversation_id 格式错误")
+	}
+	conv, err := s.loadConversation(ctx, convID, in.Identity.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, apperrors.NotFound("CHAT_CONVERSATION_NOT_FOUND", "会话不存在或不属于当前用户")
+	}
+	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
+	return &Session{SID: conv.ID.String(), DeptID: conv.LockedDeptID, store: store}, nil
+}
+
+// donePayload SSE 流结束标记（spec §3.1：data 为字面量 [DONE]）。
+func donePayload() string { return "[DONE]" }
+
+// writeTurnResult 推送本轮权威结果：真实消息 ID、最终 result_code、最终引用。
+// 前端据此替换本地乐观消息（含反馈目标 ID），不再按内容猜测或整页回拉。
+func writeTurnResult(out SSEWriter, st *ragStreamState, resultCode string, refs []entity.Reference) error {
+	if refs == nil {
+		refs = []entity.Reference{}
+	}
+	return out.Write(EventResult, turnResultPayload{
+		TurnID:             st.turnID.String(),
+		UserMessageID:      uuidString(st.userMsgID),
+		AssistantMessageID: uuidString(st.aiMsgID),
+		ResultCode:         resultCode,
+		References:         refs,
+	})
+}
+
+// uuidString 返回 uuid 字符串；零值返回空串（匿名为零值，前端保持本地 ID）。
+func uuidString(id uuid.UUID) string {
+	if id == uuid.Nil {
+		return ""
+	}
+	return id.String()
+}
+
+// loadConversation 取会话并校验归属；不存在返回 (nil, nil)。
+func (s *ChatSendService) loadConversation(
+	ctx context.Context, convID uuid.UUID, patientID int64,
+) (*entity.Conversation, error) {
+	conv, err := s.conv.GetByIDForPatient(ctx, convID, patientID)
+	if err != nil {
+		return nil, fmt.Errorf("load conversation: %w", err)
+	}
+	return conv, nil
 }
 
 // buildSession 统一构建会话：认证用户承载 DB 会话（含科室锁定与持久化）；
@@ -176,9 +435,9 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 // 链条自此只与 Session 交互，不区分身份。
 func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Session, error) {
 	if in.Identity.Anon() {
-		// 匿名：会话 id 由 device 稳定派生（多轮续传），科室不限。
-		sid := deriveAnonSessionID(in.Identity.DeviceID)
-		return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, sid)}, nil
+		// 匿名：会话身份独立于设备身份——同设备可拥有多个会话（新建/续聊语义与认证路径一致）。
+		sid := anonSessionID(in)
+		return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, in.Identity.DeviceID, sid)}, nil
 	}
 	_, conv, err := s.resolveDeptAndConversation(ctx, in)
 	if err != nil {
@@ -192,9 +451,13 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 	}, nil
 }
 
-// deriveAnonSessionID 由 device_id 稳定派生匿名会话 id（同设备多轮沿用同一标识）。
-func deriveAnonSessionID(deviceID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("health-nexus:anon:"+deviceID)).String()
+// anonSessionID 解析匿名会话标识：请求携带 conversation_id 表示续聊该会话，否则分配全新会话。
+// 不得再由 device_id 稳定派生——否则"新对话"会复用同一标识、读到上一段的 Redis 历史。
+func anonSessionID(in StreamInput) string {
+	if in.ConversationID != nil {
+		return in.ConversationID.String()
+	}
+	return uuid.NewString()
 }
 
 // resolveDeptAndConversation 非匿名用户的科室范围校验 + 会话加载/创建。
@@ -212,29 +475,37 @@ func (s *ChatSendService) resolveDeptAndConversation(
 	return dept, conv, nil
 }
 
-// writeEmergencyWarning 紧急症状预提醒：命中时推送 safety_warning，返回是否已下发。
-func (s *ChatSendService) writeEmergencyWarning(
-	ctx context.Context, in StreamInput, out SSEWriter,
-) (bool, error) {
+// writeEmergencyNotice 紧急症状预提醒：命中时以独立提示事件下发（REQ-CHAT-010）。
+// 独立提示不进入答案正文——正文即持久化内容，混入提示会导致刷新后展示不一致。
+func (s *ChatSendService) writeEmergencyNotice(ctx context.Context, in StreamInput, out SSEWriter) error {
 	if hits := s.safetyIn.EmergencyCheck(ctx, in.Message); len(hits) > 0 {
-		if err := out.Write("safety_warning", s.safetyIn.EmergencyMessage()); err != nil {
-			return false, err
-		}
-		return true, nil
+		return out.Write(EventNotice, noticePayload{
+			Kind: NoticeEmergency,
+			Text: s.safetyIn.EmergencyMessage(),
+		})
 	}
-	return false, nil
+	return nil
 }
 
-// buildLockKey 构造防并发锁 key。已认证用 user_id，匿名用 device_id。
-func buildLockKey(in StreamInput) string {
-	if !in.Identity.Anon() {
-		cid := "new"
-		if in.ConversationID != nil {
-			cid = in.ConversationID.String()
-		}
-		return fmt.Sprintf("chat_pending:%d:%s", in.Identity.UserID, cid)
+// buildLockKey 构造防并发锁 key。认证=user_id + 会话 ID；匿名=会话 ID（已按设备命名空间隔离上下文）。
+// sess 为已解析的会话（认证=DB 会话 UUID，匿名=设备内会话标识），保证首轮与后续请求命中同一 key。
+func buildLockKey(in StreamInput, sess *Session) string {
+	if in.Identity.Anon() {
+		return fmt.Sprintf("chat_pending:anon:%s", sess.ID())
 	}
-	return fmt.Sprintf("chat_pending:anon:%s", in.Identity.DeviceID)
+	return fmt.Sprintf("chat_pending:%d:%s", in.Identity.UserID, sess.ID())
+}
+
+// PurgeAnonSession 清除匿名会话的服务端瞬态上下文（匿名"删除对话"入口）。
+// 环 key 含设备标识命名空间，携带他人会话 ID 不会命中他人上下文。
+func (s *ChatSendService) PurgeAnonSession(ctx context.Context, deviceID, conversationID string) error {
+	if s.ring == nil {
+		return nil // 无 Redis 环时匿名上下文本就不存在
+	}
+	if err := s.ring.Del(ctx, anonRingKey(deviceID, conversationID)); err != nil {
+		return fmt.Errorf("purge anon session: %w", err)
+	}
+	return nil
 }
 
 // validateStreamInput 校验消息长度。
@@ -280,9 +551,9 @@ func (s *ChatSendService) loadOrPrepareConversation(
 		}
 		return newConv, nil
 	}
-	conv, err := s.conv.GetByIDForPatient(ctx, *in.ConversationID, in.Identity.UserID)
+	conv, err := s.loadConversation(ctx, *in.ConversationID, in.Identity.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("load conversation: %w", err)
+		return nil, err
 	}
 	if conv == nil {
 		return nil, apperrors.NotFound("CHAT_CONVERSATION_NOT_FOUND", "会话不存在或不属于当前用户")
@@ -302,55 +573,79 @@ func (s *ChatSendService) loadOrPrepareConversation(
 	return conv, nil
 }
 
-// handleCrisis 命中危机关键词：持久化危机（认证=落库危机事件并通知医护；匿名=空操作——不汇报不记录）
-// 并下发危机热线。持久化失败不阻断 SSE——无论成败都推送 crisis 热线，确保患者收到救命信息（REQ-CHAT-008 / R7-1）。
-// 紧急就医提醒已在 Stream 主流程提前下发，此处不再重复推送 safety_warning。
+// handleCrisis 命中危机（规则层关键词，或 LLM 层判定自伤风险）：
+// 持久化危机（认证=落库危机事件并通知医护；匿名=空操作——不汇报不记录）并下发危机热线。
+// 持久化失败不阻断 SSE——无论成败都推送 crisis 热线，确保患者收到救命信息（REQ-CHAT-008 / R7-1）。
+// 结果码 CRISIS 经 result 事件回传，前端据此渲染（不再混入提示事件）。
 func (s *ChatSendService) handleCrisis(
-	ctx context.Context, in StreamInput, sess *Session, c *rag.Crisis, out SSEWriter,
+	ctx context.Context, in StreamInput, sess *Session, c *rag.Crisis, out SSEWriter, st *ragStreamState,
 ) error {
+	hotline := s.safetyIn.CrisisResponse()
 	// DB store 内部含一次性重试并记录告警；匿名 store 为空操作。不阻断热线下发。
-	if err := sess.store.PersistCrisis(
-		ctx, in.Identity.UserID, in.Message, c, s.safetyIn.CrisisResponse(),
-	); err != nil {
+	userID, aiID, err := sess.store.PersistCrisis(
+		ctx, in.Identity.UserID, TurnWrite{Content: in.Message, TurnID: st.turnID}, c, hotline,
+	)
+	if err != nil {
 		slog.ErrorContext(ctx, "chat crisis persist failed, still pushing hotline", "err", err)
+	}
+	st.userMsgID, st.aiMsgID = userID, aiID
+	if aiID == uuid.Nil {
+		// 无服务端持久化结果（匿名危机不记录）：撤销本轮登记，避免后续重试被判"生成中"。
+		s.clearTurnRegistration(ctx, in)
 	}
 
 	// 无论事务是否成功，都推送 crisis 热线（心理援助话术，已含热线号码）。
-	if err := out.Write("crisis", map[string]any{
-		"answer": s.safetyIn.CrisisResponse(),
-	}); err != nil {
+	if err := out.Write(EventCrisis, map[string]any{"answer": hotline}); err != nil {
 		return err
 	}
-
-	// SSE 协议（spec §3.1）：crisis 事件已推送，done=[DONE] 终止流。
-	if err := out.Write("done", "[DONE]"); err != nil {
+	if err := writeTurnResult(out, st, constants.ResultCrisis, nil); err != nil {
+		return err
+	}
+	// SSE 协议（spec §3.1）：done=[DONE] 终止流。
+	if err := out.Write(EventDone, donePayload()); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "chat: request completed", "result_code", constants.ResultCrisis)
 	return nil
 }
 
+// clearTurnRegistration 撤销本轮幂等登记（本轮没有服务端持久化结果时，重试应重新生成）。
+func (s *ChatSendService) clearTurnRegistration(ctx context.Context, in StreamInput) {
+	if s.turns == nil || in.RequestID == "" {
+		return
+	}
+	if err := s.turns.Delete(ctx, idempotencyKey(in, in.RequestID)); err != nil {
+		slog.WarnContext(ctx, "chat: idempotency clear failed", "err", err)
+	}
+}
+
 // handleInjection 命中 Prompt 注入（规则层）或 LLM 审查拒绝（LLM 层）：
-// 保存用户消息 + assistant 拒答消息（认证=落库；匿名=Redis 环/退化为不持久化），
-// 推送 safety_warning + done SSE。
+// 落库用户消息 + 拒答消息（认证=DB；匿名=Redis 环/退化为不持久化），并把拒答话术作为**本轮答案正文**下发
+// （answer_replaced），使前端展示与持久化内容一致；结果码经 result 事件回传。
 // resultCode 区分：规则层用 ResultRejected，LLM 层用 ResultIntercepted（深度拦截）。
-// emergencyWarned=true 时跳过 safety_warning SSE（紧急就医提醒已下发，避免双 warning）。
 func (s *ChatSendService) handleInjection(
-	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, resultCode string, emergencyWarned bool,
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, resultCode string, st *ragStreamState,
 ) error {
-	if _, err := sess.store.SaveUser(ctx, in.Message, sess.DeptID); err != nil {
+	// 用户消息 + 占位同一事务落库，再把占位写成拒答终态——不产生孤立 user 消息。
+	userMsg, aiMsgID, err := sess.store.SaveUserAndPlaceholder(ctx, TurnWrite{
+		Content: in.Message, TurnID: st.turnID, DeptID: sess.DeptID,
+	})
+	if err != nil {
 		return err
 	}
-	if err := sess.store.SaveAssistant(ctx, s.safetyIn.RejectionMessage(), resultCode, nil); err != nil {
+	st.userMsgID, st.aiMsgID = userMsg.ID, aiMsgID
+	rejection := s.safetyIn.RejectionMessage()
+	if err := sess.store.FinalizeAssistant(ctx, aiMsgID, st.turnID, rejection, resultCode, nil); err != nil {
 		return err
 	}
-	// 紧急提醒已下发时不再发拒答 warning--避免一次流中两条 safety_warning 造成前端困惑。
-	if !emergencyWarned {
-		if err := out.Write("safety_warning", s.safetyIn.RejectionMessage()); err != nil {
-			return err
-		}
+	// 拒答是本轮答案（与落库内容一致），作为正文下发；不再塞进提示事件。
+	if err := out.Write(EventAnswer, answerPayload{Mode: answerModeReplace, Text: rejection}); err != nil {
+		return err
 	}
-	if err := out.Write("done", "[DONE]"); err != nil {
+	if err := writeTurnResult(out, st, resultCode, nil); err != nil {
+		return err
+	}
+	if err := out.Write(EventDone, donePayload()); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "chat: request completed", "result_code", resultCode)
@@ -362,50 +657,115 @@ const ragCleanupTimeout = 5 * time.Second
 
 // ragStreamState 阶段 2.7 流式生成的可变状态，供 streamLLMTokens 累积、
 // cleanupRAGStream 在 defer 中据 streamCompleted/finalized 决定清理路径。
+// content 与 pending 分离：content 是"已通过输出安全审查、已推送给客户端"的内容（也即最终持久化内容），
+// pending 是尚未凑满一句的尾部缓冲——未审查内容绝不发给客户端。
 type ragStreamState struct {
+	turnID          uuid.UUID // 本轮生成标识：user / assistant 消息与权威结果事件共享
+	userMsgID       uuid.UUID // 本轮用户消息 ID（权威结果事件回传，供前端替换本地乐观消息）
 	aiMsgID         uuid.UUID
 	chunks          []rag.Chunk
-	full            strings.Builder
+	content         strings.Builder
+	pending         strings.Builder
 	streamCompleted bool
 	finalized       bool
-	partial         bool // LLM 超时导致答案不完整
+	partial         bool // LLM 超时/中断导致答案不完整
+	safetyChanged   bool // 流式过程中输出审查替换过内容
 }
 
-// stageRAG 阶段 1（持久化用户消息）+ 阶段 2（检索 + 流式生成）+ 阶段 3（持久化 AI 消息）。
+// len 已产生（含未凑满一句的尾部）的答案长度，用于空流判断。
+func (st *ragStreamState) len() int { return st.content.Len() + st.pending.Len() }
+
+// sentenceBoundaries 流式输出审查的分句边界（句末标点与换行）。
+// 不含半角句点：安全规则模式不含这些字符，整句入审不会漏检；反之在句中切分可能切断规则匹配。
+const sentenceBoundaries = "。！？!?；;\n"
+
+// lastSentenceBoundary 返回最后一个分句边界字符之后的字节位置（无边界时返回 -1）。
+func lastSentenceBoundary(s string) int {
+	idx := strings.LastIndexAny(s, sentenceBoundaries)
+	if idx < 0 {
+		return -1
+	}
+	_, size := utf8.DecodeRuneInString(s[idx:])
+	return idx + size
+}
+
+// emitSafeSentences 将 pending 中已完整的句子逐句送输出审查后再推送（REQ-CHAT-012~014）。
+// 关键：审查发生在内容推送给患者之前——违规语句永远不会以原文出现在客户端。
+// 仅"替换/拦截"动作就地生效（blocked），"追加免责声明"留到流结束统一处理，避免每句重复追加。
+func (s *ChatSendService) emitSafeSentences(
+	ctx context.Context, out SSEWriter, st *ragStreamState,
+) error {
+	buffered := st.pending.String()
+	idx := lastSentenceBoundary(buffered)
+	if idx < 0 {
+		return nil
+	}
+	return s.emitReviewed(ctx, out, st, buffered[:idx], buffered[idx:])
+}
+
+// flushPendingTail 流结束时审查并推送尾部不足一句的剩余内容。
+func (s *ChatSendService) flushPendingTail(ctx context.Context, out SSEWriter, st *ragStreamState) error {
+	tail := st.pending.String()
+	st.pending.Reset()
+	if tail == "" {
+		return nil
+	}
+	return s.emitReviewed(ctx, out, st, tail, "")
+}
+
+// emitReviewed 审查 chunk 并推送；rest 为留在 pending 中待下一次审查的尾部。
+func (s *ChatSendService) emitReviewed(
+	ctx context.Context, out SSEWriter, st *ragStreamState, chunk, rest string,
+) error {
+	emit := chunk
+	if res := s.safetyOut.Validate(ctx, chunk); res.Blocked && res.Final != chunk {
+		emit = res.Final
+		st.safetyChanged = true
+	}
+	if err := out.Write("token", emit); err != nil {
+		return err
+	}
+	st.content.WriteString(emit)
+	st.pending.Reset()
+	st.pending.WriteString(rest)
+	return nil
+}
+
+// stageRAG 阶段 1（持久化用户消息 + assistant 占位）+ 阶段 2（检索 + 流式生成）+ 阶段 3（持久化 AI 消息）。
 // 认证/匿名统一走此链：持久化全部委托 sess.store（认证=DB 会话，匿名=Redis 瞬态环），链条不感知身份。
-// emergencyWarned 表示是否已下发紧急 safety_warning——为 true 时 finalizeRejection 跳过拒答 warning。
-// 编排各子阶段：prepareRAGContext（历史/改写/检索）→ streamLLMTokens（流式累积）→ finalizeRAGOutput（输出审查 + 落库），
+// st 为本轮状态（turn_id / 消息 ID / 生成结果），由 Stream 创建并贯穿至权威结果事件。
+// 编排各子阶段：prepareRAGContext（历史/改写/检索）→ streamLLMTokens（流式审查推送）→ finalizeRAGOutput（复核 + 落库），
 // defer 委托 cleanupRAGStream 处理中断路径的孤儿占位消息清理。
 func (s *ChatSendService) stageRAG(
-	ctx context.Context, in StreamInput, sess *Session,
-	out SSEWriter, emergencyWarned bool,
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, st *ragStreamState,
 ) error {
-	// 阶段 1：持久化用户消息 + 标题（DB 实现含科室锁定；Redis 实现入环），返回消息用于历史排除。
-	userMsg, err := sess.store.SaveUser(ctx, in.Message, sess.DeptID)
+	// 阶段 1：用户消息 + assistant 占位在同一事务内落库（DB 实现含科室锁定；Redis 实现入环），
+	// 两者共享本轮 turn_id。本轮自创建起即为 user + assistant 一对：检索/改写/生成中途失败时
+	// 占位被 defer 清理或 finalizeRejection 写成终态，不留下孤立 user 消息。
+	userMsg, aiMsgID, err := sess.store.SaveUserAndPlaceholder(ctx, TurnWrite{
+		Content: in.Message, TurnID: st.turnID, DeptID: sess.DeptID,
+	})
 	if err != nil {
 		return err
 	}
+	st.userMsgID, st.aiMsgID = userMsg.ID, aiMsgID
+	defer func() { s.cleanupRAGStream(ctx, sess, st) }()
 
 	// 阶段 2.1~2.4：历史加载/裁剪 + 查询改写 + 检索（检索失败/空结果在内部降级为拒答）
 	// 传入当前用户消息 ID：历史加载须排除它（已单独作为 UserMessage 传入 LLM，避免重复提问）。
 	// 改写结果仅用于检索，生成用用户原话（originalQuery）。
-	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, emergencyWarned, userMsg.ID)
+	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, userMsg.ID, st)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
-			return nil // finalizeRejection 已推送 safety_warning + done，无需继续
+			return nil // finalizeRejection 已写终态并推送 result + done，无需继续
 		}
 		return err
 	}
+	st.chunks = chunks
 
 	// 阶段 2.5：推送引用切片到前端（spec §3.1：data 为裸数组）
-	if err := out.Write("references", chunks); err != nil {
+	if err := out.Write(EventReferences, chunks); err != nil {
 		return err
-	}
-
-	// 阶段 2.6：保存 AI 占位消息
-	aiMsg, err := sess.store.SaveAssistantPlaceholder(ctx)
-	if err != nil {
-		return fmt.Errorf("save ai placeholder: %w", err)
 	}
 
 	// 阶段 2.7：流式生成。st 承载可变状态，defer 委托 cleanupRAGStream 处理中断路径。
@@ -413,8 +773,6 @@ func (s *ChatSendService) stageRAG(
 	//   - 流未完成（LLM 不可用 / chunk.Err / out.Write 失败）：清理为拒答，避免空 content 孤儿消息。
 	//   - 流已完成但后续步骤因 ctx 取消失败：保留真实答案（经输出安全审查），不覆盖为拒答。
 	// finalized 阻止 defer 重复清理——正常路径 finalize 成功后置 true。
-	st := &ragStreamState{aiMsgID: aiMsg.ID, chunks: chunks}
-	defer func() { s.cleanupRAGStream(ctx, sess, st) }()
 
 	// 生成 Token 预算：改写阶段已按 TokenBudgetRewrite(4000) 裁过历史，TokenBudgetGenerate(16000)
 	// 更宽松，此后无需二次裁剪（原 trimHistoryForGeneration 恒为 no-op，已移除）。
@@ -429,12 +787,12 @@ func (s *ChatSendService) stageRAG(
 	// High 2: LLM 流正常结束但未产生任何 token（如 LLM 服务返回空 stream）。
 	// 若不显式拦截，placeholder 会被 finalize 为空 content + ResultAnswered（违反 REQ-CHAT-003）。
 	// 显式 finalize placeholder 为 RejectionMessage + REJECTED，并设置 finalized=true 阻止 defer 重复清理。
-	if st.full.Len() == 0 {
-		return s.handleEmptyStream(ctx, sess, st, out, emergencyWarned)
+	if st.content.Len() == 0 {
+		return s.handleEmptyStream(ctx, sess, st, out)
 	}
 
 	slog.InfoContext(ctx, "chat: LLM stream completed",
-		"tokens", st.full.Len(), "duration_ms", time.Since(startTime).Milliseconds())
+		"tokens", st.content.Len(), "duration_ms", time.Since(startTime).Milliseconds())
 
 	// 阶段 2.8 + 阶段 3：输出侧安全审查 + 持久化 finalize AI 消息
 	if err := s.finalizeRAGOutput(ctx, sess, st, out); err != nil {
@@ -447,24 +805,27 @@ func (s *ChatSendService) stageRAG(
 // handleEmptyStream LLM 流正常结束但未产生任何 token：显式 finalize placeholder 为拒答。
 // finalized=true 阻止 defer 重复清理（否则 cleanupRAGStream 会再次清理并产生误导日志）。
 func (s *ChatSendService) handleEmptyStream(
-	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter, emergencyWarned bool,
+	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter,
 ) error {
 	slog.WarnContext(ctx, "llm stream returned empty content, degrading to rejection")
 	st.streamCompleted = false
+	systemErr := s.safetyIn.SystemErrorMessage()
 	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), ragCleanupTimeout)
 	if ferr := sess.store.FinalizeAssistant(
-		cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
+		cleanupCtx, st.aiMsgID, st.turnID, systemErr, constants.ResultRejected, nil,
 	); ferr != nil {
 		slog.ErrorContext(ctx, "finalize empty stream placeholder failed", "err", ferr)
 	}
 	cancelCleanup()
 	st.finalized = true
-	if !emergencyWarned {
-		if err := out.Write("safety_warning", s.safetyIn.SystemErrorMessage()); err != nil {
-			return err
-		}
+	// 兜底话术即本轮答案（与落库一致），作为正文下发。
+	if err := out.Write(EventAnswer, answerPayload{Mode: answerModeReplace, Text: systemErr}); err != nil {
+		return err
 	}
-	return out.Write("done", "[DONE]")
+	if err := writeTurnResult(out, st, constants.ResultRejected, nil); err != nil {
+		return err
+	}
+	return out.Write(EventDone, donePayload())
 }
 
 // rewriteQuery 查询改写（三级降级：专用改写 → 主 LLM 兜底 → 原始查询）。
@@ -497,7 +858,7 @@ func (s *ChatSendService) rewriteQuery(ctx context.Context, msg string, history 
 // 检索失败或无结果时降级为拒答（finalizeRejection），返回其错误供 stageRAG 直接透传。
 func (s *ChatSendService) prepareRAGContext(
 	ctx context.Context, in StreamInput, sess *Session,
-	out SSEWriter, emergencyWarned bool, currentUserMsgID uuid.UUID,
+	out SSEWriter, currentUserMsgID uuid.UUID, st *ragStreamState,
 ) (originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
 	// 阶段 2.1：历史消息（最近 N 轮，排除当前轮用户消息）
 	history, err = sess.store.History(ctx, constants.HistoryTurns, &currentUserMsgID)
@@ -530,16 +891,16 @@ func (s *ChatSendService) prepareRAGContext(
 	if err != nil {
 		// 检索失败降级为拒答：阶段 1 用户消息已在阶段 1 持久化，
 		// 若直接返回 503 会留下无 assistant 回复的孤儿 user 消息，污染会话历史。
-		// 降级路径写入 assistant 拒答消息保证会话完整性，并记录原始错误供排查。
+		// 降级路径把 assistant 占位写成拒答终态保证会话完整性，并记录原始错误供排查。
 		slog.ErrorContext(ctx, "knowledge search failed, degrading to rejection", "err", err)
-		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）
 	if len(chunks) == 0 {
 		slog.WarnContext(ctx, "knowledge search returned 0 chunks, degrading to rejection",
 			"query_len", len(rewrittenQuery), "dept_id", sess.DeptID)
-		return "", nil, nil, s.finalizeRejection(ctx, sess, out, emergencyWarned, s.safetyIn.NoKnowledgeMessage())
+		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, s.safetyIn.NoKnowledgeMessage())
 	}
 
 	slog.InfoContext(ctx, "chat: RAG search completed",
@@ -549,8 +910,9 @@ func (s *ChatSendService) prepareRAGContext(
 	return in.Message, history, chunks, nil
 }
 
-// streamLLMTokens 阶段 2.7：LLM 流式调用 + token 累积 + 中断/超时检测。
-// 累积结果写入 st.full；流是否正常完成写入 st.streamCompleted（供 defer 清理路径判断）。
+// streamLLMTokens 阶段 2.7：LLM 流式调用 + 分句审查推送 + 中断/超时检测。
+// 每个 token 先进入 pending 缓冲，凑满一句经输出安全审查后立即推送并累积到 st.content（供 finalize 落库）；
+// 流是否正常完成写入 st.streamCompleted，异常中断置 st.partial（答案不完整）。
 // LLM 流式调用加 per-request deadline（R7-4 修复）：chat_pending_lock TTL 5min 覆盖最坏时长，
 // 此处 4min 留 1min 余量给收尾事务 + SSE flush。无此 deadline 时，LLM 服务 stall（首字节后中途 hang）
 // 会导致 goroutine + 连接 + Redis 锁泄漏。
@@ -572,87 +934,100 @@ func (s *ChatSendService) streamLLMTokens(
 	for chunk := range streamCh {
 		if chunk.Err != nil {
 			slog.ErrorContext(ctx, "llm stream error", "err", chunk.Err)
-			// 已流式输出部分 token：用户已经看到答案片段，标记为已完成避免 DB 覆盖为拒答。
-			if st.full.Len() > 0 {
-				st.streamCompleted = true
+			// 已有内容：答案是被中断的片段，落库须为 PARTIAL（不能因"发过内容"就当成本轮生成完成）。
+			if st.len() > 0 {
+				st.partial = true
+				// 已产生但未凑满一句的尾部一并审查后推送，避免客户端看到的比服务端保留的少。
+				if err := s.flushPendingTail(ctx, out, st); err != nil {
+					return err
+				}
 			}
 			return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
 		}
 		if chunk.Done {
 			break
 		}
-		// spec §3.1：token 事件 data 为裸字符串
-		// 先 out.Write 成功再累积到 full——确保 full 仅含客户端已收到的 token，
-		// 这样中断路径的 defer 用 full.String() finalize 与客户端实际所见一致。
-		if err := out.Write("token", chunk.Token); err != nil {
-			// 客户端断开：已发送的 token 视为已完成，避免 defer 覆盖为拒答造成 DB/客户端不一致。
-			if st.full.Len() > 0 {
-				st.streamCompleted = true
-			}
+		st.pending.WriteString(chunk.Token)
+		if err := s.emitSafeSentences(ctx, out, st); err != nil {
+			// 客户端断开：已推送内容视为不完整答案。
+			st.partial = true
 			return err
 		}
-		st.full.WriteString(chunk.Token)
 	}
-	// LLM 流正常结束（Done break 或 channel 关闭）。后续终止原因检测委托 checkStreamTermination。
+	// LLM 流正常结束（Done break 或 channel 关闭）：审查并推送尾部不足一句的内容。
+	if err := s.flushPendingTail(ctx, out, st); err != nil {
+		st.partial = true
+		return err
+	}
+	// 后续终止原因检测委托 checkStreamTermination。
 	st.streamCompleted = true
 	return s.checkStreamTermination(ctx, streamCtx, out, st)
 }
 
 // checkStreamTermination 流退出后的终止原因检测：客户端断开（ctx 取消）与 LLM stall（streamCtx 超时）。
 // 客户端断开时 ctx 被取消，LLM goroutine 关闭 channel 但不投递错误，for-range 正常退出，
-// 此处提前返回避免对不完整内容做无效的输出审查和事务。
+// 此处提前返回避免对不完整内容做无效的输出审查和事务，同时标记 partial（答案未生成完）。
 // R8-1: streamCtx 超时（LLM stall）检测——父 ctx 仍存活，故 ctx.Err() 无法捕获 streamCtx 超时；
-// 空 content 标记 streamCompleted=false 让 defer 写拒答并返回 503，部分 content 推送截断提示后按 Answered finalize。
+// 空 content 标记 streamCompleted=false 让 defer 写拒答并返回 503，部分 content 推送截断提示后按 PARTIAL finalize。
 func (s *ChatSendService) checkStreamTermination(
 	ctx, streamCtx context.Context, out SSEWriter, st *ragStreamState,
 ) error {
 	if err := ctx.Err(); err != nil {
+		if st.content.Len() > 0 {
+			st.partial = true
+		}
 		return fmt.Errorf("stream cancelled: %w", err)
 	}
 	if err := streamCtx.Err(); err != nil {
-		if st.full.Len() == 0 {
+		if st.content.Len() == 0 {
 			st.streamCompleted = false
 			return apperrors.ServiceUnavailable("CHAT_LLM_TIMEOUT", "AI 服务响应超时，请稍后重试")
 		}
 		slog.WarnContext(ctx, "llm stream timed out with partial content",
-			"tokens", st.full.Len(), "err", err)
+			"tokens", st.content.Len(), "err", err)
 		st.partial = true
-		// 推送截断提示让患者知晓答案不完整（避免误以为已收尾）。
-		if err := out.Write("safety_warning", "（响应超时，以上为部分内容，完整回答请稍后重试）"); err != nil {
+		// 截断提示作为独立提示下发（不进正文）；"回答不完整"由 result_code=PARTIAL 持久表达。
+		if err := out.Write(EventNotice, noticePayload{
+			Kind: NoticeTimeout,
+			Text: "（响应超时，以上为部分内容，完整回答请稍后重试）",
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// finalizeRAGOutput 阶段 2.8（输出侧安全审查，REQ-CHAT-012~014）+ 阶段 3（持久化 finalize AI 消息）。
-// 输出审查触发时推送 safety_warning（spec §3.1），data 为 JSON 对象 {"mode","text"}：
-//   - mode=replace：越权内容已替换为安全话术，text 为完整安全话术，前端据此覆盖已累积的 token 缓冲。
-//   - mode=append：追加免责声明，text 为追加部分，前端追加到累积答案末尾。
+// finalizeRAGOutput 阶段 2.8（输出侧安全审查复核，REQ-CHAT-012~014）+ 阶段 3（持久化 finalize AI 消息）。
+// 流式过程中已按句审查推送，此处对最终内容复核一次并补齐"追加免责声明"（追加动作留在流结束统一处理，
+// 避免每句重复追加）。正文被修改时推送 answer_replaced，前端据此修正已累积的正文，使展示与持久化一致：
+//   - mode=replace：越权内容已替换为安全话术，text 为完整安全话术。
+//   - mode=append：追加免责声明，text 为追加部分。
 //
-// 这样 UI 最终内容与 DB 持久化内容保持一致（修复前 UI 保留被拦截的原始内容）。
+// 最后推送 result（真实消息 ID + 最终 result_code + 最终引用）+ done。
 func (s *ChatSendService) finalizeRAGOutput(
 	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter,
 ) error {
-	out2 := s.safetyOut.Validate(ctx, st.full.String())
+	content := st.content.String()
+	out2 := s.safetyOut.Validate(ctx, content)
 	final := out2.Final
 	if out2.Changed {
 		slog.InfoContext(ctx, "chat: output safety triggered",
-			"blocked", out2.Blocked, "orig_len", st.full.Len(), "final_len", len(final))
-		mode := "replace"
-		warning := final
+			"blocked", out2.Blocked, "stream_replaced", st.safetyChanged,
+			"orig_len", len(content), "final_len", len(final))
+		mode := answerModeReplace
+		text := final
 		if !out2.Blocked {
 			// 仅追加声明场景：截取追加部分
-			mode = "append"
-			if strings.HasPrefix(final, st.full.String()) {
-				warning = final[len(st.full.String()):]
+			mode = answerModeAppend
+			if strings.HasPrefix(final, content) {
+				text = final[len(content):]
 			} else {
 				// 防御：前缀不匹配（不应发生），降级为 replace 避免前端追加错误内容
-				mode = "replace"
-				warning = final
+				mode = answerModeReplace
+				text = final
 			}
 		}
-		if err := out.Write("safety_warning", map[string]string{"mode": mode, "text": warning}); err != nil {
+		if err := out.Write(EventAnswer, answerPayload{Mode: mode, Text: text}); err != nil {
 			return err
 		}
 	} else {
@@ -661,24 +1036,30 @@ func (s *ChatSendService) finalizeRAGOutput(
 
 	// 阶段 3：持久化 finalize AI 消息（DB=更新占位行；Redis=入环）
 	resultCode := constants.ResultAnswered
-	if out2.Blocked {
+	if out2.Blocked || st.safetyChanged {
 		resultCode = constants.ResultIntercepted
 	} else if st.partial {
 		resultCode = constants.ResultPartial
 	}
-	if err := sess.store.FinalizeAssistant(ctx, st.aiMsgID, final, resultCode, toEntityRefs(st.chunks)); err != nil {
+	if err := sess.store.FinalizeAssistant(
+		ctx, st.aiMsgID, st.turnID, final, resultCode, toEntityRefs(st.chunks),
+	); err != nil {
 		return fmt.Errorf("finalize ai message: %w", err)
 	}
 	st.finalized = true // 阻止 defer 清理——已成功 finalize
 
+	if err := writeTurnResult(out, st, resultCode, toEntityRefs(st.chunks)); err != nil {
+		return err
+	}
 	// spec §3.1：done 事件 data 为字面量 [DONE]，标记流结束
-	return out.Write("done", "[DONE]")
+	return out.Write(EventDone, donePayload())
 }
 
 // cleanupRAGStream defer 清理：正常路径（finalized=true）直接返回；
 // 否则用 context.Background() + 超时执行清理——请求 ctx 可能在客户端断开时已取消，
 // 此时用原 ctx 清理会因 context.Canceled 而失败，留下孤儿消息。
-//   - streamCompleted=true：LLM 流已完成，对完整内容做输出审查后用真实答案 finalize，避免覆盖已生成内容。
+// 落库内容取 st.content（已经输出审查、且已推送给客户端的内容），保证 DB 与客户端所见一致。
+//   - streamCompleted=true：LLM 流已完成，用真实答案 finalize；partial 表示答案被截断。
 //   - streamCompleted=false：LLM 流未完成，清理为拒答，避免遗留空 content 的孤儿消息。
 //
 // 持久化经 sess.store 收敛身份（DB=更新占位行；Redis=入环，最终一致多轮上下文）。
@@ -688,64 +1069,68 @@ func (s *ChatSendService) cleanupRAGStream(ctx context.Context, sess *Session, s
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), ragCleanupTimeout)
 	defer cancel()
+	content := st.content.String()
 	if st.streamCompleted {
-		out2 := s.safetyOut.Validate(cleanupCtx, st.full.String())
+		out2 := s.safetyOut.Validate(cleanupCtx, content)
 		resultCode := constants.ResultAnswered
-		if out2.Blocked {
+		if out2.Blocked || st.safetyChanged {
 			resultCode = constants.ResultIntercepted
 		} else if st.partial {
 			resultCode = constants.ResultPartial
 		}
 		if ferr := sess.store.FinalizeAssistant(
-			cleanupCtx, st.aiMsgID, out2.Final, resultCode, toEntityRefs(st.chunks),
+			cleanupCtx, st.aiMsgID, st.turnID, out2.Final, resultCode, toEntityRefs(st.chunks),
 		); ferr != nil {
 			slog.ErrorContext(ctx, "cleanup finalized stream failed", "err", ferr)
 		}
 		return
 	}
-	if st.full.Len() > 0 {
-		out2 := s.safetyOut.Validate(cleanupCtx, st.full.String())
+	if content != "" {
+		out2 := s.safetyOut.Validate(cleanupCtx, content)
 		if out2.Blocked {
+			// 兜底：逐句审查后仍有越权内容（如违规表述跨句边界），放弃该片段改存系统兜底话术。
 			if ferr := sess.store.FinalizeAssistant(
-				cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
+				cleanupCtx, st.aiMsgID, st.turnID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
 			); ferr != nil {
 				slog.ErrorContext(ctx, "cleanup unsafe partial failed", "err", ferr)
 			}
 			return
 		}
 		if ferr := sess.store.FinalizeAssistant(
-			cleanupCtx, st.aiMsgID, out2.Final, constants.ResultPartial, toEntityRefs(st.chunks),
+			cleanupCtx, st.aiMsgID, st.turnID, out2.Final, constants.ResultPartial, toEntityRefs(st.chunks),
 		); ferr != nil {
 			slog.ErrorContext(ctx, "cleanup partial content failed", "err", ferr)
 		}
 		return
 	}
 	if ferr := sess.store.FinalizeAssistant(
-		cleanupCtx, st.aiMsgID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
+		cleanupCtx, st.aiMsgID, st.turnID, s.safetyIn.SystemErrorMessage(), constants.ResultRejected, nil,
 	); ferr != nil {
 		slog.ErrorContext(ctx, "cleanup orphan placeholder failed", "err", ferr)
 	}
 }
 
-// errRejectionHandled 拒答已处理哨兵错误。finalizeRejection 推送 safety_warning + done 后返回此值，
+// errRejectionHandled 拒答已处理哨兵错误。finalizeRejection 推送 result + done 后返回此值，
 // 调用方（prepareRAGContext -> stageRAG）据此停止后续 RAG 流程，避免重复推送事件。
 var errRejectionHandled = errors.New("rejection already handled")
 
-// finalizeRejection 持久化 assistant 拒答消息并推送 safety_warning + done。
-// msg 为具体拒答话术（无知识 / 系统异常等），emergencyWarned=true 时跳过 SSE warning。
+// finalizeRejection 把本轮 assistant 占位写成拒答终态并推送正文修正 + result + done。
+// 复用占位（而非新增一条 assistant 消息）——保证"本轮"始终是一对 user + assistant，不产生孤立消息。
+// msg 为具体拒答话术（无知识 / 系统异常等），作为本轮答案正文下发（与落库一致）。
 func (s *ChatSendService) finalizeRejection(
-	ctx context.Context, sess *Session, out SSEWriter, emergencyWarned bool, msg string,
+	ctx context.Context, sess *Session, st *ragStreamState, out SSEWriter, msg string,
 ) error {
-	if err := sess.store.SaveAssistant(ctx, msg, constants.ResultRejected, nil); err != nil {
+	if err := sess.store.FinalizeAssistant(ctx, st.aiMsgID, st.turnID, msg, constants.ResultRejected, nil); err != nil {
 		return err
 	}
-	// 紧急提醒已下发时不再发拒答 warning——避免一次流中两条 safety_warning 造成前端困惑。
-	if !emergencyWarned {
-		if err := out.Write("safety_warning", msg); err != nil {
-			return err
-		}
+	st.finalized = true
+	if err := out.Write(EventAnswer, answerPayload{Mode: answerModeReplace, Text: msg}); err != nil {
+		return err
 	}
-	if err := out.Write("done", "[DONE]"); err != nil {
+	if err := writeTurnResult(out, st, constants.ResultRejected, nil); err != nil {
+		return err
+	}
+	if err := out.Write(EventDone, donePayload()); err != nil {
 		return err
 	}
 	return errRejectionHandled

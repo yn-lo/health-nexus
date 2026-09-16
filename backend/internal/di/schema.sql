@@ -179,10 +179,15 @@ CREATE TABLE IF NOT EXISTS conversations (
     locked_dept_id  BIGINT       REFERENCES departments(id) ON DELETE SET NULL,
     title           VARCHAR(255) NOT NULL DEFAULT '',
     is_archived     BOOLEAN      NOT NULL DEFAULT FALSE,
-    last_message_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- 首条消息落库时才置值（会话列表据此隐藏"创建后未成功产生任何消息"的空会话）。
+    last_message_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- 兼容既有库：last_message_at 原为 NOT NULL DEFAULT now()，导致空会话无法与有消息会话区分。
+ALTER TABLE conversations ALTER COLUMN last_message_at DROP NOT NULL;
+ALTER TABLE conversations ALTER COLUMN last_message_at DROP DEFAULT;
 
 CREATE INDEX IF NOT EXISTS idx_conversations_patient_archived
     ON conversations (patient_id, is_archived);
@@ -193,6 +198,8 @@ CREATE INDEX IF NOT EXISTS idx_conversations_locked_dept ON conversations (locke
 CREATE TABLE IF NOT EXISTS messages (
     id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
     conversation_id   UUID         NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    -- 本轮生成标识：同一轮的 user / assistant 消息共享（历史数据为 NULL）。
+    turn_id           UUID,
     role              VARCHAR(20)  NOT NULL,
     content           TEXT         NOT NULL,
     result_code       VARCHAR(20)  NOT NULL DEFAULT '',
@@ -205,7 +212,17 @@ CREATE TABLE IF NOT EXISTS messages (
     CONSTRAINT messages_feedback_chk CHECK (feedback IS NULL OR feedback IN ('up', 'down'))
 );
 
+-- 兼容既有库：老表补 turn_id 列。
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS turn_id UUID;
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages (conversation_id, created_at);
+-- 幂等重放按轮定位结果（turn_id 唯一标识一轮）。
+CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages (turn_id);
+
+-- 回填（幂等）：把历史遗留的"无任何消息"会话置空，使其不再出现在会话列表。
+UPDATE conversations SET last_message_at = NULL
+WHERE last_message_at IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id);
 
 CREATE TABLE IF NOT EXISTS crisis_events (
     id                BIGSERIAL   PRIMARY KEY,

@@ -3,6 +3,7 @@ import { computed, watch } from 'vue'
 import { MessageSquare, ChevronRight, SquarePen, Trash2 } from '@lucide/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useChatStore, removeAnonSession } from '@/stores/chat'
+import { deleteAnonConversation } from '@/shared/api/chat'
 import { getAccessToken, getUserStored, timeAgo } from '@/shared'
 import { STAFF_ROLES, ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
 import { EmptyState, DsPopup, DsSwipeCell } from '@/shared/components'
@@ -72,7 +73,13 @@ async function onDelete(id: string) {
   try {
     await showConfirmDialog({ title: '删除对话', message: '确定删除该对话记录？删除后不可恢复。', danger: true })
     if (isAnon.value) {
-      // 匿名：删除本地索引 + 本地消息缓存（服务端 Redis 上下文无公开删除端点，12h 自动过期）
+      // 匿名：同时清除服务端瞬态上下文（Redis 环）+ 本地索引与消息缓存。
+      // 否则服务端上下文仍会被后续请求复用；清除失败不阻断本地清理（12h 后自动过期）。
+      try {
+        await deleteAnonConversation(id)
+      } catch {
+        /* 服务端上下文清理失败：本地照常删除，服务端 12h TTL 兜底 */
+      }
       removeAnonSession(id)
       chatStore.loadAnonSessionsList()
       return
@@ -80,6 +87,19 @@ async function onDelete(id: string) {
     await chatStore.deleteConversation(id)
   } catch {
     // 用户取消
+  }
+}
+
+/** 登录会话列表的下一页入口：总数已加载完则不展示 */
+const hasMoreConversations = computed(
+  () => !isAnon.value && chatStore.conversations.length < chatStore.conversationsTotal,
+)
+
+async function loadMore() {
+  try {
+    await chatStore.loadMoreConversations()
+  } catch {
+    // 分页失败保留已加载内容
   }
 }
 </script>
@@ -155,6 +175,12 @@ async function onDelete(id: string) {
             </button>
           </template>
         </DsSwipeCell>
+        <!-- 会话列表分页：还有更早会话时提供加载入口 -->
+        <li v-if="hasMoreConversations" class="history-drawer__more">
+          <button type="button" class="history-drawer__more-btn" :disabled="chatStore.loading" @click="loadMore">
+            {{ chatStore.loading ? '加载中…' : '加载更多' }}
+          </button>
+        </li>
       </ul>
     </div>
   </DsPopup>
@@ -317,5 +343,24 @@ async function onDelete(id: string) {
   background: transparent;
   color: var(--icon-tertiary);
   font-size: var(--body-xs-font-size);
+}
+
+/* ── 会话列表分页入口 ───────────────────────────────────── */
+.history-drawer__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacer-12) 0;
+  border-bottom: none;
+}
+.history-drawer__more-btn {
+  padding: var(--spacer-6) var(--spacer-16);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-full);
+  background: var(--bg-overlay-l1);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+}
+.history-drawer__more-btn:disabled {
+  opacity: 0.6;
 }
 </style>

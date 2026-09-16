@@ -62,12 +62,30 @@ export interface MessageListParams {
   before?: string;
 }
 
-/** SSE 流式事件 — 对齐后端 sseWriter.Write 的事件名（stream_handler.go） */
+/** 提示类别（notice 事件 kind） */
+type NoticeKind = 'emergency' | 'timeout';
+
+/** 本轮权威结果（result 事件）— 前端据此替换本地乐观消息，无需猜测或整页回拉 */
+export interface TurnResult {
+  turn_id: string;
+  /** 服务端用户消息 ID（匿名为空串时保持本地 ID） */
+  user_message_id: string;
+  assistant_message_id: string;
+  /** ANSWERED/PARTIAL/REJECTED/INTERCEPTED/CRISIS */
+  result_code: string;
+  references: Reference[];
+}
+
+/** SSE 流式事件 — 对齐后端 sseWriter.Write 的事件名（chat/service/chat_send_service.go） */
 export type SSEEvent =
   | { type: 'conversation'; data: { conversation_id: string } }
   | { type: 'token'; data: string }
   | { type: 'references'; data: Reference[] }
-  | { type: 'safety_warning'; data: string; mode?: 'replace' | 'append' }
+  /** 正文修正：replace 覆盖已累积正文；append 追加到正文末尾（修正后即持久化内容） */
+  | { type: 'answer_replaced'; data: { mode: 'replace' | 'append'; text: string } }
+  /** 独立提示：不进入答案正文，仅作 UI 提示 */
+  | { type: 'notice'; data: { kind: NoticeKind; text: string } }
   | { type: 'crisis'; data: { answer: string } }
+  | { type: 'result'; data: TurnResult }
   | { type: 'error'; data: { message: string } }
   | { type: 'done'; data: '[DONE]' };

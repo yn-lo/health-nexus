@@ -48,7 +48,7 @@ describe('useSSEChat', () => {
     const fetchSpy = vi.fn().mockResolvedValue(makeOkResponse(makeSSEStream([])))
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
 
-    const { sendQuestion } = useSSEChat({ conversationId: 'conv-1', selectedDeptId: 3 })
+    const { sendQuestion } = useSSEChat({ conversationId: '' })
     await sendQuestion('头痛怎么办')
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -58,8 +58,32 @@ describe('useSSEChat', () => {
     expect(init.method).toBe('POST')
     const body = JSON.parse(init.body as string)
     expect(body.message).toBe('头痛怎么办')
-    expect(body.conversation_id).toBe('conv-1')
+    expect(body.conversation_id).toBe('')
+  })
+
+  it('新会话携带 selectedDeptId（科室随会话锁定）', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(makeOkResponse(makeSSEStream([])))
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { sendQuestion } = useSSEChat({ conversationId: '', selectedDeptId: 3 })
+    await sendQuestion('头痛怎么办')
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
     expect(body.selected_dept_id).toBe(3)
+  })
+
+  it('已有会话不携带 selectedDeptId（由服务端采用会话锁定科室，否则会被判 CHAT_DEPT_LOCKED）', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(makeOkResponse(makeSSEStream([])))
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { sendQuestion } = useSSEChat({ conversationId: 'conv-1', selectedDeptId: 0 })
+    await sendQuestion('继续')
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.conversation_id).toBe('conv-1')
+    expect(body.selected_dept_id).toBeUndefined()
   })
 
   it('无 selectedDeptId 时 body 不含该字段', async () => {
@@ -117,28 +141,46 @@ describe('useSSEChat', () => {
     expect(body2.conversation_id).toBe('server-id')
   })
 
-  // ── safety_warning 双格式 ─────────────────────────────────────
+  // ── answer_replaced（正文修正）/ notice（独立提示）/ result（权威结果） ──
 
-  it('safety_warning 裸字符串 → 呈现在聊天内容中（currentContent）', async () => {
+  it('notice 事件 → 独立提示，不进入答案正文', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       makeOkResponse(makeSSEStream([
-        'event: safety_warning\ndata: 紧急就医提醒\n\n',
+        'event: notice\ndata: {"kind":"emergency","text":"请立即就医"}\n\n',
+        'event: token\ndata: 回答内容\n\n',
       ])),
     )
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
 
-    const { safetyWarning, currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    const { notices, currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
     await sendQuestion('hi')
 
-    expect(safetyWarning.value).toEqual({ text: '紧急就医提醒', mode: undefined })
-    expect(currentContent.value).toBe('紧急就医提醒')
+    expect(notices.value).toEqual([{ kind: 'emergency', text: '请立即就医' }])
+    // 关键：提示不混入正文（正文即持久化内容）
+    expect(currentContent.value).toBe('回答内容')
   })
 
-  it('safety_warning 裸字符串追加到已有内容后（换行分隔）', async () => {
+  it('notice 事件支持关闭（dismissNotice）', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       makeOkResponse(makeSSEStream([
-        'event: token\ndata: 部分回答\n\n',
-        'event: safety_warning\ndata: 以上仅供参考\n\n',
+        'event: notice\ndata: {"kind":"timeout","text":"响应超时"}\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { notices, dismissNotice, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+    expect(notices.value).toHaveLength(1)
+
+    dismissNotice(0)
+    expect(notices.value).toHaveLength(0)
+  })
+
+  it('answer_replaced replace → 覆盖 currentContent', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        'event: token\ndata: 原始内容\n\n',
+        'event: answer_replaced\ndata: {"mode":"replace","text":"[内容已被安全审查替换]"}\n\n',
       ])),
     )
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
@@ -146,39 +188,65 @@ describe('useSSEChat', () => {
     const { currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
     await sendQuestion('hi')
 
-    expect(currentContent.value).toBe('部分回答\n\n以上仅供参考')
-  })
-
-  it('safety_warning JSON replace → 替换 currentContent', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
-      makeOkResponse(makeSSEStream([
-        'event: token\ndata: 原始内容\n\n',
-        'event: safety_warning\ndata: {"mode":"replace","text":"[内容已被安全审查替换]"}\n\n',
-      ])),
-    )
-    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
-
-    const { safetyWarning, currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
-    await sendQuestion('hi')
-
-    expect(safetyWarning.value).toEqual({ text: '[内容已被安全审查替换]', mode: 'replace' })
     expect(currentContent.value).toBe('[内容已被安全审查替换]')
   })
 
-  it('safety_warning JSON append → 追加到 currentContent', async () => {
+  it('answer_replaced append → 追加到 currentContent', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       makeOkResponse(makeSSEStream([
         'event: token\ndata: 回答内容\n\n',
-        'event: safety_warning\ndata: {"mode":"append","text":"\\n（以上仅供参考）"}\n\n',
+        'event: answer_replaced\ndata: {"mode":"append","text":"\\n（以上仅供参考）"}\n\n',
       ])),
     )
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
 
-    const { safetyWarning, currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    const { currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
     await sendQuestion('hi')
 
-    expect(safetyWarning.value).toEqual({ text: '\n（以上仅供参考）', mode: 'append' })
     expect(currentContent.value).toBe('回答内容\n（以上仅供参考）')
+  })
+
+  it('result 事件 → 权威结果（真实消息 ID / 最终结果码 / 最终引用）', async () => {
+    const refs = [{ chunk_id: 'c1', article_id: 'a1', article_title: 't', content: 'x', score: 0.9 }]
+    const payload = {
+      turn_id: 'turn-1',
+      user_message_id: 'user-1',
+      assistant_message_id: 'ai-1',
+      result_code: 'INTERCEPTED',
+      references: refs,
+    }
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        `event: result\ndata: ${JSON.stringify(payload)}\n\n`,
+        'event: done\ndata: [DONE]\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { result, references, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    expect(result.value).toEqual(payload)
+    expect(references.value).toEqual(refs)
+  })
+
+  it('同一发送的自动重试复用同一 request_id（服务端据此幂等回放）', async () => {
+    let callCount = 0
+    const fetchSpy = vi.fn().mockImplementation(() => {
+      callCount++
+      if (callCount === 1) return Promise.reject(new Error('network down'))
+      return Promise.resolve(makeOkResponse(makeSSEStream([])))
+    })
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    const body1 = JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string)
+    const body2 = JSON.parse((fetchSpy.mock.calls[1] as [string, RequestInit])[1].body as string)
+    expect(body1.request_id).toBeTruthy()
+    expect(body2.request_id).toBe(body1.request_id)
   })
 
   // ── 原有事件解析 ──────────────────────────────────────────────

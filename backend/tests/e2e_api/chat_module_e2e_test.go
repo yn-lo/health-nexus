@@ -212,19 +212,18 @@ func TestE2EChatSSE(t *testing.T) {
 		}
 	})
 
-	// === 紧急词触发: "我胸痛得厉害" → 期望 safety_warning(紧急就医) + token + done ===
+	// === 紧急词触发: "我胸痛得厉害" → 期望 notice(紧急就医) + token + result + done ===
 	t.Run("EP23_EmergencyTrigger", func(t *testing.T) {
 		events := doSSE(t, patientToken, "我胸痛得厉害，是心梗吗", nil, 90*time.Second)
 		types := eventTypes(events)
-		sawSafetyWarning := contains(events, "safety_warning")
+		sawNotice := contains(events, "notice")
 		sawDone := contains(events, "done")
-		// 紧急提醒下发后仍走 RAG → 期望 token；但若检索未命中则可能降级为 safety_warning+done
-		// 我们只断言 safety_warning + done（紧急提醒必下发）；token 作为软断言记录
+		// 紧急提醒作为独立提示下发（不进入答案正文）后仍走 RAG → 期望 token/result
 		sawToken := contains(events, "token")
-		detail := fmt.Sprintf("events=%v sawSafetyWarning=%v sawToken=%v sawDone=%v",
-			types, sawSafetyWarning, sawToken, sawDone)
+		detail := fmt.Sprintf("events=%v sawNotice=%v sawToken=%v sawDone=%v",
+			types, sawNotice, sawToken, sawDone)
 		t.Logf("EP23 EmergencyTrigger: %s", detail)
-		pass := sawSafetyWarning && sawDone
+		pass := sawNotice && sawDone
 		recordChat("EP23 POST /api/chat/stream", "EmergencyTrigger_胸痛", pass, detail)
 		if !pass {
 			t.Errorf("EP23 emergency trigger FAILED: %s", detail)

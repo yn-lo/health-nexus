@@ -38,6 +38,7 @@ var (
 // 路由清单（契约 §3 + 匿名扩展）：
 //   - POST   /api/chat/stream                              SSE 流式问答（需 JWT，任意角色）
 //   - POST   /api/public/chat/stream                        SSE 流式问答（匿名，X-Device-Id）
+//   - DELETE /api/public/chat/conversations/{id}            匿名会话删除（清服务端瞬态上下文）
 //   - GET    /api/chat/conversations                       会话列表
 //   - GET    /api/chat/conversations/{id}                  会话详情
 //   - PATCH  /api/chat/conversations/{id}                  修改会话（标题/归档）
@@ -63,6 +64,12 @@ func NewRouter(
 		r.Use(rl.HotReloadMiddleware("global:chat_stream_anon", cfg.ChatStreamAnonGlobal, chatRatePeriod))
 		r.With(rl.HotReloadMiddleware("chat_stream_anon", cfg.ChatStreamAnon, chatRatePeriod)).
 			Post("/api/public/chat/stream", stream.Stream)
+	})
+
+	// 匿名会话删除（无需 JWT，通过 X-Device-Id 标识设备，仅可清除本设备的瞬态上下文）。
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireDeviceID)
+		r.Delete("/api/public/chat/conversations/{id}", stream.DeleteAnonConversation)
 	})
 
 	// 聊天端：/api/chat/*（任意已认证角色——聊天对所有登录用户开放，仅限流值有差异）

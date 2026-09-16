@@ -67,8 +67,8 @@ const (
 	prescriptionReplacement   = "（用药建议请遵医嘱，切勿自行用药。）"
 	stopMedicationReplacement = "（是否停药请咨询您的主治医生，切勿自行停药。）"
 	delayMedicalReplacement   = "（如症状持续或加重，请及时就医，避免延误病情。）"
-	// matchContextPadding 诊断例外检查时匹配位置前后各取的 rune 窗口大小。
-	matchContextPadding = 30
+	// sentenceEndChars 诊断例外检查的句子边界（与 chat 域流式审查的分句边界一致）。
+	sentenceEndChars = "。！？!?；;\n"
 )
 
 var fallbackOutputRules = []OutputSafetyRule{
@@ -171,13 +171,23 @@ func (f *DefaultOutputSafetyFilter) safetyWarningText() string {
 	return defaultSafetyWarning
 }
 
+// outputCategoryPriority 输出审查类别优先级（停药 > 处方 > 诊断 > 延误就医 > 其他）。
+var outputCategoryPriority = []string{"stop_medication", "prescription", "diagnosis", "delay_medical", "other"}
+
+// Validate 输出侧安全审查。
+// 两轮处理：先在**原文**上判定所有规则命中（含诊断例外判定），再按优先级依次应用替换。
+//   - 遍历全部规则而非命中首条即返回：否则一条规则命中就返回会让其他违规内容
+//     （如同时出现停药 + 诊断 + 延误就医）原样流出。
+//   - 判定必须基于原文：边判定边替换时，先应用的替换话术（如"请咨询您的主治医生"）
+//     会落进后续规则的例外窗口，把真实违规误判成例外而放行。
 func (f *DefaultOutputSafetyFilter) Validate(ctx context.Context, answer string) OutputResult {
 	if answer == "" {
 		return OutputResult{Final: answer}
 	}
 	rules := f.compiledPolicy(ctx)
-	rejection := f.rejectionText()
-	for _, category := range []string{"stop_medication", "prescription", "diagnosis", "delay_medical", "other"} {
+
+	matched := make([]compiledOutputRule, 0, len(rules))
+	for _, category := range outputCategoryPriority {
 		for _, rule := range rules {
 			if rule.Category != category {
 				continue
@@ -189,15 +199,26 @@ func (f *DefaultOutputSafetyFilter) Validate(ctx context.Context, answer string)
 			if category == "diagnosis" && hasDiagnosisExceptionNear(answer, loc) {
 				continue
 			}
+			// block 为终态动作：整篇替换为拒答话术，不再检查后续规则。
+			// 拒答话术按需读取（话术来自远端配置，流式逐句审查时不应无谓回源）。
 			if rule.Action == "block" {
-				return OutputResult{Final: rejection, Blocked: true, Changed: true}
+				return OutputResult{Final: f.rejectionText(), Blocked: true, Changed: true}
 			}
-			replaced := rule.Re.ReplaceAllString(answer, rule.Replacement)
-			return OutputResult{Final: replaced, Blocked: true, Changed: true, Replaced: true}
+			matched = append(matched, rule)
 		}
 	}
-	if medicationMentionRe.MatchString(answer) {
-		final := answer
+
+	final := answer
+	for _, rule := range matched {
+		if next := rule.Re.ReplaceAllString(final, rule.Replacement); next != final {
+			final = next
+		}
+	}
+	if final != answer {
+		return OutputResult{Final: final, Blocked: true, Changed: true, Replaced: true}
+	}
+	// 仅提及用药剂量（无越权内容）：追加安全警告，不拦截。
+	if medicationMentionRe.MatchString(final) {
 		warning := f.safetyWarningText()
 		if warning != "" && !strings.Contains(final, warning) {
 			final += "\n\n" + warning
@@ -207,19 +228,29 @@ func (f *DefaultOutputSafetyFilter) Validate(ctx context.Context, answer string)
 	return OutputResult{Final: answer}
 }
 
-// hasDiagnosisExceptionNear 检查匹配位置前后 30 rune 的局部上下文是否含诊断例外模式。
-// 避免全文匹配导致远处例外掩盖近处真实违规。使用 rune 窗口避免截断 UTF-8 多字节字符。
+// hasDiagnosisExceptionNear 判断诊断例外模式是否出现在匹配所在**句子**内。
+// 例外只在同句内判定：跨句判定会让远处无关表述（如"建议…确诊"横跨另一个分句）掩盖近处真实违规。
+// 使用 rune 边界避免截断 UTF-8 多字节字符。调用方须传入原文（替换话术会污染判定）。
 func hasDiagnosisExceptionNear(answer string, loc []int) bool {
 	runes := []rune(answer)
 	matchStart := len([]rune(answer[:loc[0]]))
 	matchEnd := matchStart + len([]rune(answer[loc[0]:loc[1]]))
-	start := matchStart - matchContextPadding
-	if start < 0 {
-		start = 0
+	start := 0
+	for i := matchStart - 1; i >= 0; i-- {
+		if strings.ContainsRune(sentenceEndChars, runes[i]) {
+			start = i + 1
+			break
+		}
 	}
-	end := matchEnd + matchContextPadding
-	if end > len(runes) {
-		end = len(runes)
+	end := len(runes)
+	for i := matchEnd; i < len(runes); i++ {
+		if strings.ContainsRune(sentenceEndChars, runes[i]) {
+			end = i
+			break
+		}
+	}
+	if start >= end {
+		return false
 	}
 	return diagnosisExceptionRe.MatchString(string(runes[start:end]))
 }

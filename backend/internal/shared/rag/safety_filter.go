@@ -58,11 +58,13 @@ type SystemPromptProvider interface {
 
 // LLMSafetyChecker 跨域：由 platform/llm 适配器实现。
 // 用于输入侧 LLM 深度审查：规则层未命中时，对疑似风险输入做 LLM 二次确认（REQ-CHAT-007）。
-// 简化策略——只暴露"是否安全"的 bool 判定，避免 chat 域耦合具体 prompt/响应结构。
+// 返回结构化分类（constants.SafetyClass*）而非布尔值：自伤风险必须能与普通拒答区分，
+// 否则模型判定的自伤倾向无法触发危机记录与热线流程。
 type LLMSafetyChecker interface {
-	// IsInputSafe 调用 LLM 判定输入是否安全。
-	// 任何错误（LLM 不可用/超时/解析失败）应返回 (true, nil)——fail-open 让流程继续，避免 LLM 故障阻断所有问答。
-	IsInputSafe(ctx context.Context, message string) (bool, error)
+	// ClassifyInput 调用 LLM 判定输入安全分类。
+	// 任何错误（LLM 不可用/超时/解析失败）应返回 constants.SafetyClassSafe——fail-open 让流程继续，
+	// 避免 LLM 故障阻断所有问答。
+	ClassifyInput(ctx context.Context, message string) string
 }
 
 // InputSafetyFilter 输入侧安全审查：规则层（零延迟）+ LLM 层（疑似复核）。
@@ -72,9 +74,10 @@ type InputSafetyFilter interface {
 	// CheckRules 规则层审查。返回决策与（命中危机时的）Crisis 上下文。
 	CheckRules(ctx context.Context, message string) (Decision, *Crisis)
 	// LLMCheck LLM 层深度审查。规则层未命中时调用，疑似风险才拒绝（REQ-CHAT-007）。
-	// 未注入 LLMSafetyChecker 或 LLM 故障时 fail-open 返回 true。
-	LLMCheck(ctx context.Context, message string) bool
-	// EmergencyCheck 检测紧急症状关键词命中（不拦截，仅作为推送 safety_warning 的信号）。
+	// 返回是否放行 + 命中的分类（constants.SafetyClass*，放行时为 SafetyClassSafe）。
+	// 未注入 LLMSafetyChecker 或 LLM 故障时 fail-open 返回放行。
+	LLMCheck(ctx context.Context, message string) (allow bool, class string)
+	// EmergencyCheck 检测紧急症状关键词命中（不拦截，仅作为推送紧急提示事件的信号）。
 	// 由 Service 在 token 流之前调用，决定是否推送紧急就医提醒（REQ-CHAT-010）。
 	EmergencyCheck(ctx context.Context, message string) []string
 	// CrisisResponse 危机话术（命中自杀/自残关键词时返回给患者），包含心理援助热线。
@@ -233,22 +236,23 @@ func (f *DefaultInputSafetyFilter) CheckRules(ctx context.Context, message strin
 // LLMCheck LLM 层深度审查（REQ-CHAT-007）。
 // 仅疑似风险输入才触发 LLM 复核，避免每条消息都过 LLM 增加延迟和成本。
 // 未注入 llmChecker 时降级为放行（与阶段 1 行为一致）。
+// 放行判定与分类一起返回：自伤类风险由上层转危机链路（记录 + 热线），其余按拒答处理。
 // ponytail: fail-open 策略——LLM 故障/超时/解析失败时放行，依赖规则层（CheckRules）兜底，折中；
 // 已知上限——LLM 服务故障时输入全放行，仅规则层关键词拦截生效；
 // 升级路径：在 di 层包装断路器，连续失败时熔断并降级到规则层 + 告警。
-func (f *DefaultInputSafetyFilter) LLMCheck(ctx context.Context, message string) bool {
+func (f *DefaultInputSafetyFilter) LLMCheck(ctx context.Context, message string) (allow bool, class string) {
 	if f.llmChecker == nil {
-		return true // 降级：未注入 LLM 时放行（与原行为一致）
+		return true, constants.SafetyClassSafe // 降级：未注入 LLM 时放行（与原行为一致）
 	}
 	// REQ-CHAT-007：规则层未命中时不触发 LLM 审查（仅疑似风险才复核）。
 	if !f.isSuspiciousInput(message) {
-		return true // 无疑似信号，跳过 LLM，节省延迟和成本
+		return true, constants.SafetyClassSafe // 无疑似信号，跳过 LLM，节省延迟和成本
 	}
-	safe, err := f.llmChecker.IsInputSafe(ctx, message)
-	if err != nil {
-		return true // fail-open
+	cls := f.llmChecker.ClassifyInput(ctx, message)
+	if cls == "" || cls == constants.SafetyClassSafe {
+		return true, constants.SafetyClassSafe
 	}
-	return safe
+	return false, cls
 }
 
 // suspiciousFragments 部分风险信号片段——规则层完整关键词未命中时，

@@ -262,6 +262,51 @@ func TestApplyRerank(t *testing.T) {
 }
 
 // ============================================================================
+// SearchSimilarChunks：Rerank 必须在截断之前（先重排全部候选，再取最终 topK）
+// ============================================================================
+
+// TestSearchSimilarChunks_RerankBeforeTruncation 多召回的候选必须有机会被 Rerank 选中。
+// 修复前先按相似度截断到 topK 再重排，使 topK 之外的候选永远无法进入最终结果。
+func TestSearchSimilarChunks_RerankBeforeTruncation(t *testing.T) {
+	chunks := &mockChunkSearcher{
+		vecHits: []repository.ChunkSearchHit{
+			makeHit(1, 0.95, "doc1", "t1"),
+			makeHit(2, 0.90, "doc2", "t2"),
+			makeHit(3, 0.85, "doc3", "t3"),
+			makeHit(4, 0.80, "doc4", "t4"),
+		},
+	}
+	// Rerank 判定最后一名（Index=3，相似度最低）最相关
+	rerank := &mockReranker{results: []llm.RerankResult{
+		{Index: 3, Score: 0.99},
+		{Index: 0, Score: 0.90},
+	}}
+	cfgProv := &mockConfigProvider{cfg: &RAGSearchConfig{
+		TopK:                2,
+		SimilarityThreshold: 0.6,
+		RerankEnabled:       true,
+	}}
+	svc := NewSearchService(chunks, &mockEmbedder{vectors: [][]float32{{0.1, 0.2}}}, rerank, cfgProv)
+
+	got, err := svc.SearchSimilarChunks(context.Background(), rag.SearchQuery{Query: "q"})
+	if err != nil {
+		t.Fatalf("期望 nil error，实际 %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("期望最终 2 条（topK 截断），实际 %d", len(got))
+	}
+	if got[0].ChunkID != "4" {
+		t.Errorf("topK 之外的候选应有机会被 Rerank 选中：got[0]=%s, want 4", got[0].ChunkID)
+	}
+	if !rerank.called {
+		t.Fatal("前置条件：Rerank 应被调用")
+	}
+	if rerank.lastTopK != 2 {
+		t.Errorf("Rerank topK = %d, want 2", rerank.lastTopK)
+	}
+}
+
+// ============================================================================
 // toRAGChunks：ChunkSearchHit -> rag.Chunk，验证 Score/VecScore 填充
 // ============================================================================
 

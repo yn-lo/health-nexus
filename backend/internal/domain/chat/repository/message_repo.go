@@ -22,44 +22,68 @@ func NewMessageRepo(pool *pgxpool.Pool) *MessageRepo {
 	return &MessageRepo{pool: pool}
 }
 
-// SaveUserMessage 持久化用户消息（result_code 留空）。
-func (r *MessageRepo) SaveUserMessage(ctx context.Context, convID uuid.UUID, content string) (*entity.Message, error) {
-	return r.save(ctx, convID, "user", content, "", nil)
+// SaveUserMessage 持久化用户消息（result_code 留空）。turnID 标识本轮生成。
+func (r *MessageRepo) SaveUserMessage(
+	ctx context.Context, convID, turnID uuid.UUID, content string,
+) (*entity.Message, error) {
+	return r.save(ctx, convID, turnID, "user", content, "", nil)
 }
 
 // SaveAssistant 保存完整 assistant 消息（用于危机/拒答等无 LLM 生成场景）。
 func (r *MessageRepo) SaveAssistant(
-	ctx context.Context, convID uuid.UUID, content, resultCode string, refs []entity.Reference,
+	ctx context.Context, convID uuid.UUID, content, resultCode string, refs []entity.Reference, turnID uuid.UUID,
 ) (*entity.Message, error) {
-	return r.save(ctx, convID, "assistant", content, resultCode, refs)
+	return r.save(ctx, convID, turnID, "assistant", content, resultCode, refs)
 }
 
 // SaveAssistantPlaceholder 保存 assistant 占位消息（空内容，待流式生成后 FinalizeAssistant）。
-func (r *MessageRepo) SaveAssistantPlaceholder(ctx context.Context, convID uuid.UUID) (*entity.Message, error) {
-	return r.save(ctx, convID, "assistant", "", "", nil)
+func (r *MessageRepo) SaveAssistantPlaceholder(
+	ctx context.Context, convID, turnID uuid.UUID,
+) (*entity.Message, error) {
+	return r.save(ctx, convID, turnID, "assistant", "", "", nil)
 }
 
 func (r *MessageRepo) save(
-	ctx context.Context, convID uuid.UUID, role, content, resultCode string, refs []entity.Reference,
+	ctx context.Context, convID, turnID uuid.UUID, role, content, resultCode string, refs []entity.Reference,
 ) (*entity.Message, error) {
-	const sql = `INSERT INTO messages (conversation_id, role, content, result_code, referenced_chunks)
-	             VALUES ($1, $2, $3, $4, $5)
-	             RETURNING id, conversation_id, role, content, result_code, referenced_chunks, created_at, updated_at`
+	const sql = `INSERT INTO messages (conversation_id, turn_id, role, content, result_code, referenced_chunks)
+	             VALUES ($1, $2, $3, $4, $5, $6)
+	             RETURNING ` + messageColumns
 	refsJSON, err := marshalRefs(refs)
 	if err != nil {
 		return nil, err
 	}
 	m := &entity.Message{}
 	var refsBytes []byte
-	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, convID, role, content, resultCode, refsJSON)
+	var argTurn *uuid.UUID
+	if turnID != uuid.Nil {
+		argTurn = &turnID
+	}
+	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, convID, argTurn, role, content, resultCode, refsJSON)
+	var scanTurn *uuid.UUID
 	if err := row.Scan(
-		&m.ID, &m.ConversationID, &m.Role, &m.Content,
+		&m.ID, &m.ConversationID, &scanTurn, &m.Role, &m.Content,
 		&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("save message: %w", err)
 	}
+	if scanTurn != nil {
+		m.TurnID = *scanTurn
+	}
 	m.ReferencedChunks = unmarshalRefs(refsBytes)
 	return m, nil
+}
+
+// ListByTurn 列出本轮的全部消息（时间升序）：幂等重放据此定位本轮结果。
+// 未找到返回空切片。
+func (r *MessageRepo) ListByTurn(
+	ctx context.Context, convID, turnID uuid.UUID,
+) ([]*entity.Message, error) {
+	const sql = `SELECT ` + messageColumns + `
+	             FROM messages
+	             WHERE conversation_id = $1 AND turn_id = $2
+	             ORDER BY created_at ASC`
+	return r.queryMessages(ctx, sql, convID, turnID)
 }
 
 // FinalizeAssistant 流式生成完成后填充内容、result_code、引用切片。
@@ -96,6 +120,10 @@ func (r *MessageRepo) UpdateFeedback(
 	return tag.RowsAffected(), nil
 }
 
+// messageColumns 消息查询列（各查询 Scan 顺序一致）。
+const messageColumns = `id, conversation_id, turn_id, role, content, result_code,
+	referenced_chunks, created_at, updated_at, feedback`
+
 // ListByConversation 列出会话消息，按 created_at 降序。
 // before 为 nil 时从最新开始；limit 控制单页大小。
 // 过滤空 assistant 占位消息：流中断且兜底清理失败时会残留，不应展示给用户。
@@ -106,8 +134,7 @@ func (r *MessageRepo) ListByConversation(
 		// 首页排序必须与游标分支的 (created_at DESC, id DESC) 全序一致：
 		// 仅按 created_at DESC 时，created_at 相同的消息顺序不确定，
 		// 取页尾作游标会漏掉/重复相同时间戳的消息（与下方 (created_at, id) 复合游标语义错位）。
-		const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
-			`created_at, updated_at, feedback
+		sql := `SELECT ` + messageColumns + `
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
 	             ORDER BY created_at DESC, id DESC LIMIT $2`
@@ -115,8 +142,7 @@ func (r *MessageRepo) ListByConversation(
 	}
 	// H4: 用 (created_at, id) 复合游标避免相同 created_at 时漏消息。
 	// Postgres ROW value comparison 要求字段类型一致：created_at TIMESTAMPTZ, id UUID。
-	const sql = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
-		`created_at, updated_at, feedback
+	sql := `SELECT ` + messageColumns + `
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
 	             AND (created_at, id) < (
@@ -135,11 +161,9 @@ func (r *MessageRepo) GetRecentHistory(
 	ctx context.Context, convID uuid.UUID, turns int, excludeID *uuid.UUID,
 ) ([]*entity.Message, error) {
 	limit := turns * 2
-	const base = `SELECT id, conversation_id, role, content, result_code, referenced_chunks, ` +
-		`created_at, updated_at, feedback
+	const base = `SELECT ` + messageColumns + `
 	             FROM (
-	                 SELECT id, conversation_id, role, content, result_code, ` +
-		`referenced_chunks, created_at, updated_at, feedback
+	                 SELECT ` + messageColumns + `
 	                 FROM messages WHERE conversation_id = $1
 	                 AND NOT (role = 'assistant' AND content = '')`
 	if excludeID != nil {
@@ -165,11 +189,15 @@ func (r *MessageRepo) queryMessages(ctx context.Context, sql string, args ...any
 	for rows.Next() {
 		m := &entity.Message{}
 		var refsBytes []byte
+		var turn *uuid.UUID
 		if err := rows.Scan(
-			&m.ID, &m.ConversationID, &m.Role, &m.Content,
+			&m.ID, &m.ConversationID, &turn, &m.Role, &m.Content,
 			&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback,
 		); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
+		}
+		if turn != nil {
+			m.TurnID = *turn
 		}
 		m.ReferencedChunks = unmarshalRefs(refsBytes)
 		out = append(out, m)

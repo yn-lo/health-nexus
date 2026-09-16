@@ -87,8 +87,9 @@ const topKMax = 50
 //  1. 调用 LLM Embedding 生成查询向量
 //  2. 调用 SearchByVector 获取 topK 候选（仅向量路，无 BM25）
 //  3. similarity_threshold 强制过滤（唯一相关性闸门，低于阈值一律裁剪）
-//  4. 向量相似度降序排序并截断到 top_k
-//  5. 若 RAGConfig.RerankEnabled=true 且结果数 > 1，调用 LLM Rerank 重排（失败降级原顺序）
+//  4. 向量相似度降序排序
+//  5. 若 RAGConfig.RerankEnabled=true 且结果数 > 1，对全部候选调用 LLM Rerank 重排（失败降级原顺序），
+//     再由重排结果截取最终 top_k（先重排后截断，多召回的候选才有机会被选中）
 //
 // Embedding 失败时直接向上返回 error（严禁静默降级，医疗场景宁报 503 也不给虚假否定）。
 // 关键依赖未注入或向量检索无命中时返回空切片（chat 域据此拒答，做到"宁可不答"）。
@@ -146,17 +147,16 @@ func (s *SearchService) applyFiltersAndRerank(
 		"rerank_enabled", cfg.RerankEnabled && s.rerank != nil,
 	)
 
-	// 按向量相似度降序，截断到 topK。
+	// 按向量相似度降序排序（不在此截断——截断后再重排会使多召回的候选永远无法被选中）。
 	sort.SliceStable(hits, func(i, j int) bool {
 		return hits[i].Score > hits[j].Score
 	})
-	if len(hits) > topK {
-		hits = hits[:topK]
-	}
 
-	// 步骤 4：可选 Rerank。
+	// 步骤 4：可选 Rerank。先对全部候选重排，再由重排结果截取最终 topK。
 	if cfg.RerankEnabled && s.rerank != nil && len(hits) > 1 {
 		hits = s.applyRerank(ctx, query, hits, topK, cfg.RerankThreshold)
+	} else if len(hits) > topK {
+		hits = hits[:topK]
 	}
 
 	// 逐条记录检索详情。
@@ -245,8 +245,9 @@ func filterBySimilarity(hits []repository.ChunkSearchHit, threshold float64) []r
 	return out
 }
 
-// applyRerank 调用 LLM Rerank 对 hits 重排，并按 threshold 过滤低分结果。
-// Rerank 失败时降级为原相似度顺序。threshold<=0 时不过滤。
+// applyRerank 调用 LLM Rerank 对 hits 重排，并按 threshold 过滤低分结果，最终截断到 topK。
+// Rerank 失败或返回空时降级为原相似度顺序（同样截断到 topK）。
+// threshold<=0 时不过滤。
 func (s *SearchService) applyRerank(
 	ctx context.Context, query string, hits []repository.ChunkSearchHit, topK int, threshold float64,
 ) []repository.ChunkSearchHit {
@@ -257,10 +258,10 @@ func (s *SearchService) applyRerank(
 	results, err := s.rerank.Rerank(ctx, query, docs, topK)
 	if err != nil {
 		slog.WarnContext(ctx, "wiki: rerank failed, fallback to similarity order", "err", err)
-		return hits
+		return truncateHits(hits, topK)
 	}
 	if len(results) == 0 {
-		return hits
+		return truncateHits(hits, topK)
 	}
 	out := make([]repository.ChunkSearchHit, 0, len(results))
 	for _, r := range results {
@@ -277,7 +278,15 @@ func (s *SearchService) applyRerank(
 			"threshold", threshold, "candidates", len(hits))
 		return hits[:1]
 	}
-	return out
+	return truncateHits(out, topK)
+}
+
+// truncateHits 截断到 topK（topK<=0 时原样返回）。
+func truncateHits(hits []repository.ChunkSearchHit, topK int) []repository.ChunkSearchHit {
+	if topK > 0 && len(hits) > topK {
+		return hits[:topK]
+	}
+	return hits
 }
 
 // 编译期断言：SearchService 实现 shared 层 rag.KnowledgeSearcher 接口。

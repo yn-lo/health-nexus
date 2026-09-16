@@ -77,6 +77,8 @@ const showDeptPicker = ref(false)
 const showDownReasonSheet = ref(false)
 const pendingDownMessageId = ref<string | null>(null)
 const feedbackMap = ref<Record<string, string>>({})
+/** 本轮用户消息的本地乐观 ID：result 事件到达后替换为服务端权威 ID（反馈等操作据此定位真实消息） */
+let pendingUserLocalId = ''
 
 const activeMode = ref<'chat' | 'knowledge'>(route.query.mode === 'knowledge' ? 'knowledge' : 'chat')
 
@@ -93,7 +95,10 @@ const { departments, selectedDepartmentId, activeDepartment, selectDepartment } 
 
 // SSE: sseOptions 为可变对象，route 变化时更新 conversationId
 const sseOptions = { conversationId: (route.params.id as string) ?? '', selectedDeptId: selectedDepartmentId.value }
-const { isStreaming, currentContent, references, crisis, error, aborted, conversationId: sseConversationId, sendQuestion, abort } = useSSEChat(sseOptions)
+const {
+  isStreaming, currentContent, references, notices, crisis, error, result, aborted,
+  conversationId: sseConversationId, sendQuestion, abort, dismissNotice,
+} = useSSEChat(sseOptions)
 
 const conversationId = computed(() => (route.params.id as string) ?? '')
 const isThinking = computed(() => isStreaming.value && !currentContent.value)
@@ -140,6 +145,18 @@ const downReasonActions: { name: string }[] = [
 
 function openHistory() {
   showHistory.value = true
+}
+
+/** 向上加载更早消息；保持视口锚定（加载后按新增高度回补 scrollTop，避免跳到顶部） */
+async function loadEarlier() {
+  const convId = sseConversationId.value || conversationId.value
+  if (!convId || chatStore.loading) return
+  const el = messageListRef.value
+  const prevHeight = el?.scrollHeight ?? 0
+  await chatStore.loadEarlierMessages(convId)
+  nextTick(() => {
+    if (el) el.scrollTop += el.scrollHeight - prevHeight
+  })
 }
 
 function onHistorySelect(id: string) {
@@ -216,8 +233,9 @@ function syncFeedbackFromMessages() {
 function sendMessage(text: string) {
   if (!text || isStreaming.value) return
 
+  pendingUserLocalId = `local-${crypto.randomUUID()}`
   chatStore.addMessage({
-    id: `local-${crypto.randomUUID()}`,
+    id: pendingUserLocalId,
     conversation_id: conversationId.value,
     role: 'user',
     content: text,
@@ -260,42 +278,25 @@ function goToArticle(articleId: number) {
   router.push({ name: 'wiki-article', params: { id: articleId } })
 }
 
-async function resolveServerMsgId(msg: Message): Promise<string | null> {
-  if (!msg.id.startsWith('local-')) return msg.id
-  const convId = sseConversationId.value || conversationId.value
-  if (!convId) return null
-  try {
-    await chatStore.fetchMessages(convId)
-    syncFeedbackFromMessages()
-    const serverMsg = chatStore.messages.find(
-      (m) => !m.id.startsWith('local-') && m.role === msg.role && m.content === msg.content,
-    )
-    return serverMsg?.id ?? null
-  } catch {
-    return null
-  }
+/** 是否可提交反馈：需服务端已持久化该消息（本地乐观消息无真实 ID，提交会 404） */
+function canFeedback(msg: Message): boolean {
+  return !isAnon && !msg.id.startsWith('local-')
 }
 
 async function onThumbsUp(msg: Message) {
-  if (feedbackMap.value[msg.id]) return
+  if (feedbackMap.value[msg.id] || !canFeedback(msg)) return
   feedbackMap.value[msg.id] = 'up'
-  const serverId = await resolveServerMsgId(msg)
-  if (serverId && serverId !== msg.id) {
-    feedbackMap.value[serverId] = 'up'
-    delete feedbackMap.value[msg.id]
-  }
   try {
-    await submitMessageFeedback(serverId ?? msg.id, 'up')
+    await submitMessageFeedback(msg.id, 'up')
     showToast('感谢您的反馈')
   } catch (e) {
     delete feedbackMap.value[msg.id]
-    if (serverId && serverId !== msg.id) delete feedbackMap.value[serverId]
     showFailToast(errmsg(e, '反馈提交失败'))
   }
 }
 
 function onThumbsDown(msg: Message) {
-  if (feedbackMap.value[msg.id]) return
+  if (feedbackMap.value[msg.id] || !canFeedback(msg)) return
   pendingDownMessageId.value = msg.id
   showDownReasonSheet.value = true
 }
@@ -306,23 +307,31 @@ async function onDownReasonSelect(_action: { name: string }) {
   if (msgId === null) return
   pendingDownMessageId.value = null
   feedbackMap.value[msgId] = 'down'
-  const msg = chatStore.messages.find((m) => m.id === msgId)
-  const serverId = msg ? await resolveServerMsgId(msg) : null
-  if (serverId && serverId !== msgId) {
-    feedbackMap.value[serverId] = 'down'
-    delete feedbackMap.value[msgId]
-  }
   try {
-    await submitMessageFeedback(serverId ?? msgId, 'down')
+    await submitMessageFeedback(msgId, 'down')
     showToast('感谢您的反馈')
   } catch (e) {
     delete feedbackMap.value[msgId]
-    if (serverId && serverId !== msgId) delete feedbackMap.value[serverId]
     showFailToast(errmsg(e, '反馈提交失败'))
   }
 }
 
-// Route 变化：中止旧流、更新 conversationId、重新加载消息
+/** 打开已有会话：先恢复会话详情（含锁定科室）再拉取消息。
+ * 科室必须恢复成会话锁定值——否则前端仍以默认「全部科室」展示，且后续请求携带错误科室会被
+ * 后端以 CHAT_DEPT_LOCKED(409) 拒绝，历史会话无法续聊。 */
+async function openConversation(id: string, jumpToBottom = false) {
+  try {
+    const conv = await chatStore.fetchConversation(id)
+    selectDepartment(conv.locked_dept_id ?? 0)
+    await chatStore.fetchMessages(id)
+    syncFeedbackFromMessages()
+    scrollToBottom(jumpToBottom)
+  } catch {
+    showFailToast('加载消息失败')
+  }
+}
+
+// Route 变化：中止旧流、更新 conversationId、重新加载会话
 watch(conversationId, (newId) => {
   // SSE conversation 事件触发的路由同步：sseConversationId 已是最新，跳过避免中断流
   if (newId === sseConversationId.value) return
@@ -332,20 +341,14 @@ watch(conversationId, (newId) => {
   }
   sseConversationId.value = newId
   sseOptions.conversationId = newId
-  if (newId) {
-    if (isAnon) {
-      // 匿名：无公开拉取端点，从 localStorage 回显本地缓存（服务端 Redis 上下文此时不展示给用户）
-      chatStore.messages = loadAnonMessages(newId)
-      scrollToBottom()
-      return
-    }
-    void chatStore.fetchMessages(newId).then(() => {
-      syncFeedbackFromMessages()
-      scrollToBottom()
-    }).catch(() => {
-      showFailToast('加载消息失败')
-    })
+  if (!newId) return
+  if (isAnon) {
+    // 匿名：无公开拉取端点，从 localStorage 回显本地缓存（服务端 Redis 上下文此时不展示给用户）
+    chatStore.messages = loadAnonMessages(newId)
+    scrollToBottom()
+    return
   }
+  void openConversation(newId)
 })
 
 // 后端 conversation 事件下发新会话 ID → 更新路由（URL 反映真实会话，后续消息自动携带）
@@ -355,23 +358,36 @@ watch(sseConversationId, (id) => {
   }
 })
 
+/**
+ * 固化本轮回答：优先采用 result 事件的权威结果（真实消息 ID / 最终结果码 / 最终引用），
+ * 不再按内容猜测 ID、也不再整页回拉（回拉会覆盖用户在此期间发送的新消息）。
+ * result 缺失（异常中断）时退回本地 ID 与推断结果码，此时该消息暂不支持反馈。
+ */
+function addTurnMessage(content: string, fallbackCode: string) {
+  const res = result.value
+  chatStore.addMessage({
+    id: res?.assistant_message_id || `local-assistant-${crypto.randomUUID()}`,
+    conversation_id: conversationId.value,
+    role: 'assistant',
+    content,
+    result_code: res?.result_code ?? fallbackCode,
+    references: res?.references?.length ? res.references : references.value,
+    created_at: new Date().toISOString(),
+  })
+  // 本轮用户消息改用服务端权威 ID（反馈等后续操作据此定位真实消息）
+  if (res?.user_message_id && pendingUserLocalId) {
+    chatStore.remapMessageId(pendingUserLocalId, res.user_message_id)
+    pendingUserLocalId = ''
+  }
+}
+
 // SSE 结束：将累积内容固化为 AI 消息
 watch(isStreaming, (streaming, prev) => {
   if (!prev || streaming) return
   if (error.value) {
     showFailToast(error.value)
     // error 事件时仍将已累积的部分内容固化为消息，避免用户已看到的流式片段丢失
-    if (currentContent.value) {
-      chatStore.addMessage({
-        id: `local-assistant-${crypto.randomUUID()}`,
-        conversation_id: conversationId.value,
-        role: 'assistant',
-        content: currentContent.value,
-        result_code: 'INTERCEPTED',
-        references: references.value,
-        created_at: new Date().toISOString(),
-      })
-    }
+    if (currentContent.value) addTurnMessage(currentContent.value, 'INTERCEPTED')
     persistAnonMessages()
     return
   }
@@ -382,11 +398,11 @@ watch(isStreaming, (streaming, prev) => {
       confirmButtonText: '我已了解',
     })
     chatStore.addMessage({
-      id: `local-assistant-${crypto.randomUUID()}`,
+      id: result.value?.assistant_message_id || `local-assistant-${crypto.randomUUID()}`,
       conversation_id: conversationId.value,
       role: 'assistant',
       content: crisis.value.answer,
-      result_code: 'CRISIS',
+      result_code: result.value?.result_code ?? 'CRISIS',
       references: [],
       created_at: new Date().toISOString(),
     })
@@ -395,25 +411,10 @@ watch(isStreaming, (streaming, prev) => {
     return
   }
   if (currentContent.value) {
-    chatStore.addMessage({
-      id: `local-assistant-${crypto.randomUUID()}`,
-      conversation_id: conversationId.value,
-      role: 'assistant',
-      content: currentContent.value,
-      result_code: aborted.value ? 'INTERCEPTED' : 'ANSWERED',
-      references: references.value,
-      created_at: new Date().toISOString(),
-    })
+    addTurnMessage(currentContent.value, aborted.value ? 'INTERCEPTED' : 'ANSWERED')
   }
   scrollToBottom()
   persistAnonMessages()
-  const convId = sseConversationId.value || conversationId.value
-  if (convId && !isAnon) {
-    chatStore.fetchMessages(convId).then(() => {
-      syncFeedbackFromMessages()
-      scrollToBottom()
-    }).catch(() => {})
-  }
 })
 
 // 流式输出时自动滚动
@@ -446,13 +447,7 @@ onMounted(async () => {
     scrollToBottom(true)
     return
   }
-  try {
-    await chatStore.fetchMessages(conversationId.value)
-    syncFeedbackFromMessages()
-    scrollToBottom(true)
-  } catch {
-    showFailToast('加载消息失败')
-  }
+  await openConversation(conversationId.value, true)
 })
 
 onUnmounted(() => {
@@ -489,6 +484,17 @@ onUnmounted(() => {
     <!-- 消息列表 - AI-Native：分组留白 + 15px 阅读字号 -->
     <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }">
       <div class="flex flex-col">
+        <!-- 向上分页：仅在还有更早记录时展示（匿名无公开拉取端点，不展示） -->
+        <div v-if="!isAnon && chatStore.hasMoreMessages" class="load-earlier flex justify-center">
+          <button
+            type="button"
+            class="load-earlier__btn"
+            :disabled="chatStore.loading"
+            @click="loadEarlier"
+          >
+            {{ chatStore.loading ? '加载中…' : '加载更早消息' }}
+          </button>
+        </div>
         <template v-for="(msg, idx) in chatStore.messages" :key="msg.id">
           <!-- 用户消息 - 品牌浅色气泡 + 时间（右对齐） -->
           <div
@@ -517,6 +523,8 @@ onUnmounted(() => {
               <div class="chat-assistant-name">
                 <span class="font-medium text-text">健康助手</span>
                 <span class="chat-time">{{ formatTime(msg.created_at) }}</span>
+                <!-- 结果码来自服务端权威结果：截断的回答标注不完整，刷新后仍然可见 -->
+                <span v-if="msg.result_code === 'PARTIAL'" class="chat-incomplete">回答不完整</span>
               </div>
               <div class="ds-bubble ds-bubble--ai">
                 <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content)"></div>
@@ -540,9 +548,9 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 反馈栏（匿名用户无服务端持久化，仅保留复制） -->
+              <!-- 反馈栏（匿名/未同步消息无服务端持久化，仅保留复制） -->
               <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
-                <template v-if="!isAnon">
+                <template v-if="canFeedback(msg)">
                   <button
                     class="feedback-btn flex items-center justify-center"
                     :class="feedbackMap[msg.id] === 'up' ? 'text-icon-brand' : 'text-icon-tertiary'"
@@ -645,6 +653,19 @@ onUnmounted(() => {
 
     <!-- 知识库模式 -->
     <KnowledgeList v-if="activeMode === 'knowledge'" ref="knowledgeRef" embedded />
+
+    <!-- 独立提示（紧急就医 / 超时）：不进入答案正文，可关闭 -->
+    <div v-if="notices.length" class="chat-notice" :style="{ bottom: `${inputBarHeight}px` }" role="status">
+      <div
+        v-for="(notice, idx) in notices"
+        :key="`${notice.kind}-${idx}`"
+        class="chat-notice__item"
+        :class="`chat-notice__item--${notice.kind}`"
+      >
+        <span class="chat-notice__text">{{ notice.text }}</span>
+        <button type="button" class="chat-notice__close" aria-label="关闭提示" @click="dismissNotice(idx)">×</button>
+      </div>
+    </div>
 
     <!-- 底部输入栏 - AI-Native：fixed bottom -->
     <ChatInputBar
@@ -850,6 +871,83 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 20;
+}
+
+/* ── 向上分页入口 ───────────────────────────────────────── */
+.load-earlier {
+  padding-bottom: var(--spacer-12);
+}
+.load-earlier__btn {
+  padding: var(--spacer-6) var(--spacer-16);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-full);
+  background: var(--bg-overlay-l1);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
+  transition: transform var(--micro-duration) var(--micro-ease);
+}
+.load-earlier__btn:active {
+  transform: scale(var(--press-scale));
+}
+.load-earlier__btn:disabled {
+  opacity: 0.6;
+}
+
+/* ── 独立提示（紧急就医 / 超时）：固定于输入栏之上 ───────── */
+.chat-notice {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-6);
+  padding: var(--spacer-8) var(--spacer-16);
+  pointer-events: none;
+}
+.chat-notice__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-8);
+  padding: var(--spacer-10) var(--spacer-12);
+  border-radius: var(--radius-12);
+  font-size: var(--body-xs-font-size);
+  line-height: 1.5;
+  pointer-events: auto;
+}
+.chat-notice__item--emergency {
+  background: var(--status-error-surface-l1);
+  color: var(--status-error-default);
+  border: 1px solid var(--status-error-surface-l3);
+}
+.chat-notice__item--timeout {
+  background: var(--bg-overlay-l1);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-neutral-l1);
+}
+.chat-notice__text {
+  flex: 1;
+  min-width: 0;
+}
+.chat-notice__close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+/* ── 结果码标记：截断回答 ───────────────────────────────── */
+.chat-incomplete {
+  padding: 0 var(--spacer-6);
+  border-radius: var(--radius-8);
+  background: var(--bg-overlay-l1);
+  color: var(--text-tertiary);
+  font-size: var(--body-xs-font-size);
 }
 
 /* ── A11y：减弱动效偏好 ─────────────────────────────────── */

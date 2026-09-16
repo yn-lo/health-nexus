@@ -191,6 +191,26 @@ describe('useChatStore', () => {
     expect(store.messages[1].id).toBe('m2')
   })
 
+  it('remapMessageId 用服务端权威 ID 替换本地乐观 ID', () => {
+    const store = useChatStore()
+    store.addMessage(makeMsg('local-user-1', '问题'))
+
+    store.remapMessageId('local-user-1', 'server-user-1')
+
+    expect(store.messages[0].id).toBe('server-user-1')
+  })
+
+  it('remapMessageId 目标已存在时移除本地占位（避免重复气泡）', () => {
+    const store = useChatStore()
+    store.messages.push(makeMsg('server-user-1', '问题'))
+    store.addMessage(makeMsg('local-user-1', '问题'))
+
+    store.remapMessageId('local-user-1', 'server-user-1')
+
+    expect(store.messages).toHaveLength(1)
+    expect(store.messages[0].id).toBe('server-user-1')
+  })
+
   it('$reset 清空所有状态（登出场景）', async () => {
     apiMocks.listConversations.mockResolvedValue({
       items: [makeConv({ id: 'a' })],

@@ -152,4 +152,17 @@ describe('chatApi 接口契约', () => {
     expect(last.url).toContain('limit=50')
     expect(last.url).toContain('before=msg-uuid-xyz')
   })
+
+  // ── deleteAnonConversation ────────────────────────────────────────
+  it('deleteAnonConversation(id) → DELETE /api/public/chat/conversations/{id}（携 X-Device-Id）', async () => {
+    const { deleteAnonConversation } = await import('@/shared/api/chat')
+    await deleteAnonConversation('anon-conv-1')
+
+    const last = router.lastCall()!
+    expect(last.url).toBe('/api/public/chat/conversations/anon-conv-1')
+    expect(last.init?.method).toBe('DELETE')
+    // 匿名请求以 X-Device-Id 标识设备（服务端据此定位本设备的瞬态上下文）
+    const headers = last.init?.headers as Headers
+    expect(headers.get('X-Device-Id')).toBeTruthy()
+  })
 })

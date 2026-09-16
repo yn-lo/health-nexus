@@ -253,6 +253,7 @@ var publicEndpoints = []endpoint{
 	{http.MethodGet, "/api/wiki/articles/featured"},
 	{http.MethodGet, "/api/wiki/articles/1"},
 	{http.MethodPost, "/api/public/chat/stream"},
+	{http.MethodDelete, "/api/public/chat/conversations/550e8400-e29b-41d4-a716-446655440000"},
 	{http.MethodGet, "/api/public/departments"},
 }
 

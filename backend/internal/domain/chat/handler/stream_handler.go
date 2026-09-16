@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"health-nexus/internal/domain/chat/service"
@@ -31,16 +32,21 @@ func NewStreamHandler(chat *service.ChatSendService) *StreamHandler {
 
 // Stream POST /api/chat/stream
 //
-// JSON 请求体：{"message": 必填, ≤2000 字符, "conversation_id": 可选, "selected_dept_id": 可选}
+// JSON 请求体：{"message": 必填, ≤2000 字符, "conversation_id": 可选, "selected_dept_id": 可选,
+// "request_id": 可选（UUID，幂等标识，重试须复用同一值）}
 // 使用 POST + JSON body 而非 GET query：2000 字中文消息 URL 编码后约 18KB，
 // 超出 Nginx/CDN 默认请求行限制（414），且患者提问（PHI）会残留在 access log。
-// SSE 事件：conversation, token, references, safety_warning, crisis, error, done
-//   - conversation：认证用户首事件，携带会话 ID（新建/已有），前端据此更新 URL 与后续请求。
-//   - safety_warning：纯文本（紧急提醒/拒答）或 {"mode":"replace"|"append","text":...}（输出审查）。
+// SSE 事件：conversation, token, references, answer_replaced, notice, crisis, result, error, done
+//   - conversation：首事件，携带会话 ID（新建/已有），前端据此更新 URL 与后续请求。
+//   - answer_replaced：{"mode":"replace"|"append","text":...} 正文修正（输出审查 / 拒答话术），
+//     修正后的正文即持久化内容。
+//   - notice：{"kind":"emergency"|"timeout","text":...} 面向用户的独立提示，不进入答案正文。
+//   - result：{"turn_id","user_message_id","assistant_message_id","result_code","references"}
+//     本轮权威结果，前端据此替换本地乐观消息，无需猜测或整页回拉。
 //
 // 错误处理：
 //   - 预流错误（参数解析失败 / 消息空 / 超长）：HTTP 错误响应（400/422）
-//   - 流中错误（404 会话不存在 / 409 锁定 / 503 LLM 不可达）：
+//   - 流中错误（404 会话不存在 / 409 锁定或本轮生成中 / 503 LLM 不可达）：
 //     若尚未写入任何 SSE 事件，回退为 HTTP 错误响应；否则写 SSE error 事件。
 func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	in, err := parseStreamInput(r)
@@ -72,9 +78,30 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		// 流中错误：写 SSE error 事件 + done 事件作为终止信号。
 		// done 是 spec §3.1 规定的流结束标记，error 后必须补 done，
 		// 否则客户端 EventSource 会继续等待而连接挂起。
-		_ = sse.Write("error", map[string]any{"message": userFacingMessage(err)})
-		_ = sse.Write("done", "[DONE]")
+		_ = sse.Write(service.EventError, map[string]any{"message": userFacingMessage(err)})
+		_ = sse.Write(service.EventDone, "[DONE]")
 	}
+}
+
+// DeleteAnonConversation DELETE /api/public/chat/conversations/{id}
+// 匿名会话删除：清除服务端瞬态上下文（Redis 环），使匿名"删除对话"与"新对话"语义一致
+// （此前仅清本地缓存，服务端上下文仍被下一次请求复用）。
+func (h *StreamHandler) DeleteAnonConversation(w http.ResponseWriter, r *http.Request) {
+	id := identity.FromRequestOrZero(r)
+	if !id.Anon() || id.DeviceID == "" {
+		response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "missing device_id in context"))
+		return
+	}
+	convID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.WriteError(w, r, apperrors.BadRequest("CHAT_INVALID_ID", "id 格式错误"))
+		return
+	}
+	if err := h.chat.PurgeAnonSession(r.Context(), id.DeviceID, convID.String()); err != nil {
+		response.WriteError(w, r, apperrors.Internal("CHAT_ANON_PURGE_FAILED", err))
+		return
+	}
+	response.WriteOK(w, map[string]bool{"success": true})
 }
 
 // parseStreamInput 解析 JSON 请求体为 service.StreamInput。
@@ -93,6 +120,7 @@ func parseStreamInput(r *http.Request) (service.StreamInput, error) {
 		Message        string `json:"message"`
 		ConversationID string `json:"conversation_id"`
 		SelectedDeptID *int64 `json:"selected_dept_id"`
+		RequestID      string `json:"request_id"`
 	}
 	// 限 1MB 防大报文耗尽内存（匿名端点无鉴权门槛，风险最高；与 auth/wiki handler 一致）。
 	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
@@ -122,11 +150,22 @@ func parseStreamInput(r *http.Request) (service.StreamInput, error) {
 		return service.StreamInput{}, apperrors.BadRequest("CHAT_INVALID_DEPT_ID", "selected_dept_id 格式错误")
 	}
 
+	// request_id 幂等标识：可选；存在时须为合法 UUID（作为幂等登记 key 的一部分）。
+	// 非 UUID 值会污染 key 空间，直接拒绝而非静默忽略。
+	requestID := ""
+	if body.RequestID != "" {
+		if _, err := uuid.Parse(body.RequestID); err != nil {
+			return service.StreamInput{}, apperrors.BadRequest("CHAT_INVALID_REQUEST_ID", "request_id 格式错误")
+		}
+		requestID = body.RequestID
+	}
+
 	return service.StreamInput{
 		Identity:       id,
 		ConversationID: convID,
 		SelectedDeptID: body.SelectedDeptID,
 		Message:        msg,
+		RequestID:      requestID,
 	}, nil
 }
 
@@ -152,9 +191,9 @@ type sseWriter struct {
 var sseDataReplacer = strings.NewReplacer("\r\n", "\ndata: ", "\r", "\ndata: ", "\n", "\ndata: ")
 
 // Write 写入一个 SSE 事件并立即 flush。
-// 裸字符串（token / done=[DONE] / safety_warning 话术）原样输出，不经 JSON 序列化，
+// 裸字符串（token / done=[DONE]）原样输出，不经 JSON 序列化，
 // 以符合 spec §3.1（token data 为裸字符串、done data 为 [DONE] 字面量）。
-// 其他类型（数组、map）正常 JSON 序列化。
+// 其他类型（数组、map、结构体）正常 JSON 序列化。
 // ponytail: 错误忽略——SSE 单向推送，写失败（如客户端断开）无法回传给 service，折中；
 // service 通过 ctx.Done() 感知客户端断开并停止 LLM 流。
 func (s *sseWriter) Write(event string, data any) error {

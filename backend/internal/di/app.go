@@ -282,11 +282,16 @@ func buildChatRouter(
 	crisisNotifier := adapter.NewAsynqCrisisNotifier(infra.AsynqClient)
 	// 匿名会话瞬态上下文环（Redis List，12h TTL 自动过期，无需清理任务）。
 	ring := redis.NewRingStore(infra.Redis)
+	// 请求幂等登记（request_id → 本轮）：Redis 不可用时置 nil，chat 域降级为不幂等。
+	var turnRegistry chatservice.TurnRegistry
+	if infra.Redis != nil {
+		turnRegistry = redis.NewTurnRegistry(infra.Redis)
+	}
 	chatSvc := chatservice.NewChatSendService(
 		deptResolver, inputSafety, outputSafety, knowledgeSearcher,
 		rewriteClient, llmClient, llmClient,
 		conversationRepo, messageRepo, crisisRepo, crisisNotifier,
-		infra.Locker, infra.TxMgr, ring, promptProvider,
+		infra.Locker, infra.TxMgr, ring, turnRegistry, promptProvider,
 	)
 	convSvc := chatservice.NewConversationService(conversationRepo, messageRepo)
 	crisisSvc := chatservice.NewCrisisService(crisisRepo)

@@ -9,9 +9,12 @@ import (
 // Message 消息实体，对应 messages 表。
 // Role 取值见 constants.MessageRoleUser/Assistant。
 // ResultCode 取值见 constants.Result*（user 消息留空）。
+// TurnID 标识"本轮生成"：同一轮的 user 与 assistant 消息共享同一 turn_id，
+// 供幂等重放定位本轮结果、按轮聚合与审计（uuid.Nil 表示历史数据未记录轮次）。
 type Message struct {
 	ID               uuid.UUID
 	ConversationID   uuid.UUID
+	TurnID           uuid.UUID
 	Role             string
 	Content          string
 	ResultCode       string

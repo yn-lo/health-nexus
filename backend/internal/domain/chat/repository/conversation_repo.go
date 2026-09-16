@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -25,20 +26,37 @@ func NewConversationRepo(pool *pgxpool.Pool) *ConversationRepo {
 	return &ConversationRepo{pool: pool}
 }
 
+// conversationColumns 会话查询列，保证各查询的 Scan 顺序一致。
+const conversationColumns = `id, patient_id, locked_dept_id, title, is_archived,
+	last_message_at, created_at, updated_at`
+
+// scanConversation 扫描一行会话。last_message_at 可为 NULL（尚无消息的空会话），
+// 实体字段保持 time.Time 零值以兼容既有调用方。
+func scanConversation(row pgx.Row) (*entity.Conversation, error) {
+	c := &entity.Conversation{}
+	var lastMsgAt *time.Time
+	if err := row.Scan(
+		&c.ID, &c.PatientID, &c.LockedDeptID, &c.Title,
+		&c.IsArchived, &lastMsgAt, &c.CreatedAt, &c.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	if lastMsgAt != nil {
+		c.LastMessageAt = *lastMsgAt
+	}
+	return c, nil
+}
+
 // Create 创建新会话，返回完整实体。
-// lockedDeptID 为 nil 表示未锁定科室。
+// lockedDeptID 为 nil 表示未锁定科室。last_message_at 留空，首条消息落库时才置值。
 func (r *ConversationRepo) Create(
 	ctx context.Context, patientID int64, lockedDeptID *int64,
 ) (*entity.Conversation, error) {
 	const sql = `INSERT INTO conversations (patient_id, locked_dept_id)
 	             VALUES ($1, $2)
-	             RETURNING id, patient_id, locked_dept_id, title, is_archived, last_message_at, created_at, updated_at`
-	c := &entity.Conversation{}
-	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, patientID, lockedDeptID)
-	if err := row.Scan(
-		&c.ID, &c.PatientID, &c.LockedDeptID, &c.Title,
-		&c.IsArchived, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt,
-	); err != nil {
+	             RETURNING ` + conversationColumns
+	c, err := scanConversation(postgres.Q(ctx, r.pool).QueryRow(ctx, sql, patientID, lockedDeptID))
+	if err != nil {
 		return nil, fmt.Errorf("create conversation: %w", err)
 	}
 	return c, nil
@@ -48,14 +66,10 @@ func (r *ConversationRepo) Create(
 func (r *ConversationRepo) GetByIDForPatient(
 	ctx context.Context, id uuid.UUID, patientID int64,
 ) (*entity.Conversation, error) {
-	const sql = `SELECT id, patient_id, locked_dept_id, title, is_archived, last_message_at, created_at, updated_at
+	const sql = `SELECT ` + conversationColumns + `
 	             FROM conversations WHERE id = $1 AND patient_id = $2`
-	c := &entity.Conversation{}
-	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id, patientID)
-	if err := row.Scan(
-		&c.ID, &c.PatientID, &c.LockedDeptID, &c.Title,
-		&c.IsArchived, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt,
-	); err != nil {
+	c, err := scanConversation(postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id, patientID))
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -65,6 +79,7 @@ func (r *ConversationRepo) GetByIDForPatient(
 }
 
 // ListByPatient 列出患者会话。includeArchived=false 时仅未归档。
+// 过滤 last_message_at IS NULL 的会话：创建后未成功产生任何消息（锁失败 / LLM 不可用等）的空会话对用户不可见。
 func (r *ConversationRepo) ListByPatient(
 	ctx context.Context, patientID int64, includeArchived bool, limit, offset int,
 ) ([]*entity.Conversation, int64, error) {
@@ -84,11 +99,10 @@ func (r *ConversationRepo) ListByPatient(
 	// id DESC 作为 tiebreaker：last_message_at 相同（如同一时刻创建/触发）时保证跨页顺序确定，
 	// 避免 OFFSET 分页在不同查询间对并列行返回不同顺序导致重复/漏行。
 	listSQL := fmt.Sprintf(
-		`SELECT id, patient_id, locked_dept_id, title, is_archived,
-		        last_message_at, created_at, updated_at
+		`SELECT %s
 		 FROM conversations WHERE %s
 		 ORDER BY last_message_at DESC, id DESC LIMIT $%d OFFSET $%d`,
-		filter, len(args)-1, len(args))
+		conversationColumns, filter, len(args)-1, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
@@ -96,11 +110,8 @@ func (r *ConversationRepo) ListByPatient(
 	defer rows.Close()
 	out := []*entity.Conversation{}
 	for rows.Next() {
-		c := &entity.Conversation{}
-		if err := rows.Scan(
-			&c.ID, &c.PatientID, &c.LockedDeptID, &c.Title,
-			&c.IsArchived, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanConversation(rows)
+		if err != nil {
 			return nil, 0, fmt.Errorf("scan conversation: %w", err)
 		}
 		out = append(out, c)
@@ -131,15 +142,10 @@ func (r *ConversationRepo) Patch(
 	sql := fmt.Sprintf(
 		`UPDATE conversations SET %s, updated_at = now()
 		 WHERE id = $%d AND patient_id = $%d
-		 RETURNING id, patient_id, locked_dept_id, title,
-		           is_archived, last_message_at, created_at, updated_at`,
-		strings.Join(sets, ", "), len(args)-1, len(args))
-	c := &entity.Conversation{}
-	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, args...)
-	if err := row.Scan(
-		&c.ID, &c.PatientID, &c.LockedDeptID, &c.Title,
-		&c.IsArchived, &c.LastMessageAt, &c.CreatedAt, &c.UpdatedAt,
-	); err != nil {
+		 RETURNING %s`,
+		strings.Join(sets, ", "), len(args)-1, len(args), conversationColumns)
+	c, err := scanConversation(postgres.Q(ctx, r.pool).QueryRow(ctx, sql, args...))
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}

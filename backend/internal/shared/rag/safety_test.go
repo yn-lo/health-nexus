@@ -5,9 +5,10 @@ package rag
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"health-nexus/internal/shared/constants"
 )
 
 // ============================================================================
@@ -401,6 +402,36 @@ func TestValidate_NormalAnswer_PassThrough(t *testing.T) {
 }
 
 // ============================================================================
+// 输出侧：Validate — 多类违规同时命中（回归：命中首条规则即返回会遗漏其余违规）
+// ============================================================================
+
+func TestValidate_MultipleViolations_AllReplaced(t *testing.T) {
+	filter := NewDefaultOutputSafetyFilter(nil)
+	ctx := context.Background()
+
+	answer := "建议立即停药。你被确诊为高血压，另外不需要就医。"
+	result := filter.Validate(ctx, answer)
+
+	if !result.Blocked || !result.Changed {
+		t.Fatalf("期望 Blocked+Changed，实际 %+v", result)
+	}
+	for _, banned := range []string{"建议立即停药", "确诊为高血压", "不需要就医"} {
+		if strings.Contains(result.Final, banned) {
+			t.Errorf("违规内容 %q 未被替换，Final=%q", banned, result.Final)
+		}
+	}
+	if !strings.Contains(result.Final, "切勿自行停药") {
+		t.Errorf("期望含停药话术，实际: %s", result.Final)
+	}
+	if !strings.Contains(result.Final, "主治医生") {
+		t.Errorf("期望含诊断话术，实际: %s", result.Final)
+	}
+	if !strings.Contains(result.Final, "及时就医") {
+		t.Errorf("期望含延误就医话术，实际: %s", result.Final)
+	}
+}
+
+// ============================================================================
 // 输出侧：Validate — 幂等性（已含免责声明不重复追加）
 // ============================================================================
 
@@ -450,13 +481,13 @@ func TestFilterMessages_NotEmpty(t *testing.T) {
 // ============================================================================
 
 // mockLLMSafetyChecker 最小 mock 实现，无需引入 mock 框架。
+// 返回结构化分类（constants.SafetyClass*），空值等价于放行。
 type mockLLMSafetyChecker struct {
-	safe bool
-	err  error
+	class string
 }
 
-func (m *mockLLMSafetyChecker) IsInputSafe(_ context.Context, _ string) (bool, error) {
-	return m.safe, m.err
+func (m *mockLLMSafetyChecker) ClassifyInput(_ context.Context, _ string) string {
+	return m.class
 }
 
 // TestLLMCheck_NilChecker_DegradeToAllow 验证降级路径：未注入 llmChecker 时始终放行。
@@ -464,41 +495,60 @@ func TestLLMCheck_NilChecker_DegradeToAllow(t *testing.T) {
 	filter := NewDefaultInputSafetyFilter(nil, nil)
 	ctx := context.Background()
 
-	if !filter.LLMCheck(ctx, "任意输入都应放行") {
-		t.Error("nil llmChecker 时 LLMCheck 应放行（降级路径）")
+	if allow, class := filter.LLMCheck(ctx, "任意输入都应放行"); !allow || class != constants.SafetyClassSafe {
+		t.Errorf("nil llmChecker 时 LLMCheck 应放行（降级路径），实际 allow=%v class=%q", allow, class)
 	}
 }
 
-// TestLLMCheck_UnsafeInput_ReturnsFalse 验证：mock 返回 false 时 LLMCheck 返回 false。
+// TestLLMCheck_UnsafeInput_ReturnsClass 验证：模型判定 UNSAFE 时拒绝并回传分类。
 // 输入须含 suspiciousFragments 中的片段（如"过量"）才会触发 LLM 复核路径。
-func TestLLMCheck_UnsafeInput_ReturnsFalse(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{safe: false})
+func TestLLMCheck_UnsafeInput_ReturnsClass(t *testing.T) {
+	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassMedicalAbuse})
 	ctx := context.Background()
 
-	if filter.LLMCheck(ctx, "我想过量服药") {
-		t.Error("IsInputSafe 返回 false 时 LLMCheck 应返回 false")
+	allow, class := filter.LLMCheck(ctx, "我想过量服药")
+	if allow {
+		t.Error("分类非 SAFE 时 LLMCheck 应拒绝")
+	}
+	if class != constants.SafetyClassMedicalAbuse {
+		t.Errorf("class = %q, want %q（分类须原样回传供上层分流）", class, constants.SafetyClassMedicalAbuse)
 	}
 }
 
-// TestLLMCheck_SafeInput_ReturnsTrue 验证：mock 返回 true 时 LLMCheck 返回 true。
+// TestLLMCheck_SelfHarm_ReturnsSelfHarmClass 自伤风险必须保留分类，
+// 否则上层无法把它转入危机链路（记录危机事件 + 热线）。
+func TestLLMCheck_SelfHarm_ReturnsSelfHarmClass(t *testing.T) {
+	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassSelfHarm})
+	ctx := context.Background()
+
+	allow, class := filter.LLMCheck(ctx, "我想去死")
+	if allow {
+		t.Error("自伤风险应被拒绝")
+	}
+	if class != constants.SafetyClassSelfHarm {
+		t.Errorf("class = %q, want %q", class, constants.SafetyClassSelfHarm)
+	}
+}
+
+// TestLLMCheck_SafeInput_ReturnsTrue 验证：mock 返回 SAFE 时 LLMCheck 放行。
 // 输入须含 suspiciousFragments 中的片段（如"死"）才会触发 LLM 复核路径。
 func TestLLMCheck_SafeInput_ReturnsTrue(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{safe: true})
+	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassSafe})
 	ctx := context.Background()
 
-	if !filter.LLMCheck(ctx, "我最近困死了") {
-		t.Error("IsInputSafe 返回 true 时 LLMCheck 应返回 true")
+	if allow, _ := filter.LLMCheck(ctx, "我最近困死了"); !allow {
+		t.Error("分类为 SAFE 时 LLMCheck 应放行")
 	}
 }
 
-// TestLLMCheck_Error_FailOpen 验证 fail-open 策略：IsInputSafe 返回 error 时 LLMCheck 放行。
+// TestLLMCheck_FailOpen_ReturnsTrue 验证 fail-open 策略：检查器故障（返回空分类）时放行。
 // 输入须含 suspiciousFragments 中的片段（如"毒"）才会触发 LLM 复核路径。
-func TestLLMCheck_Error_FailOpen(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{safe: false, err: errors.New("llm timeout")})
+func TestLLMCheck_FailOpen_ReturnsTrue(t *testing.T) {
+	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: ""})
 	ctx := context.Background()
 
-	if !filter.LLMCheck(ctx, "这种毒蘑菇能吃吗") {
-		t.Error("IsInputSafe 返回 error 时 LLMCheck 应 fail-open 放行")
+	if allow, _ := filter.LLMCheck(ctx, "这种毒蘑菇能吃吗"); !allow {
+		t.Error("检查器不可用（空分类）时 LLMCheck 应 fail-open 放行")
 	}
 }
 

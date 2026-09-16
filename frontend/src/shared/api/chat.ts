@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, getDeviceId } from './client';
 import type {
   Conversation,
   ConversationListParams,
@@ -46,4 +46,15 @@ export function listMessages(conversationId: string, params?: MessageListParams)
 /** 提交消息反馈（点赞/点踩，成功返回 204 无响应体） */
 export function submitMessageFeedback(messageId: string, feedback: 'up' | 'down') {
   return apiClient<void>(`/chat/messages/${messageId}/feedback`, { method: 'POST', body: { feedback } });
+}
+
+/**
+ * 删除匿名会话的服务端上下文（清除 Redis 瞬态环）。
+ * 匿名无 JWT，以 X-Device-Id 标识设备；仅能清除本设备命名空间下的会话。
+ */
+export function deleteAnonConversation(conversationId: string) {
+  return apiClient<{ success: boolean }>(`/public/chat/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: { 'X-Device-Id': getDeviceId() },
+  });
 }
