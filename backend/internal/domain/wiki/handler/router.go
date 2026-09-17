@@ -15,20 +15,22 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
-// Router 装配 wiki 域全部 22 个 HTTP 端点（公开 3 + 医护文章 13 + 引用 6）。
+// Router 装配 wiki 域全部 HTTP 端点（公开 3 + 医护文章 13 + 引用 6 + 图片上传 1 + 图片读取 1）。
 // 公开端点无中间件；医护端统一挂载 JWTAuth + RequireStaff（契约 §0.4 权限矩阵）。
 type Router struct {
 	public    *PublicHandler
 	staff     *StaffArticleHandler
 	reference *ReferenceHandler
+	upload    *UploadHandler
 	auth      *middleware.Authenticator
 }
 
 // NewRouter 构造 wiki 域路由器。
 func NewRouter(
-	public *PublicHandler, staff *StaffArticleHandler, reference *ReferenceHandler, auth *middleware.Authenticator,
+	public *PublicHandler, staff *StaffArticleHandler, reference *ReferenceHandler,
+	upload *UploadHandler, auth *middleware.Authenticator,
 ) *Router {
-	return &Router{public: public, staff: staff, reference: reference, auth: auth}
+	return &Router{public: public, staff: staff, reference: reference, upload: upload, auth: auth}
 }
 
 // Mount 挂载 wiki 域路由到 chi.Router。
@@ -47,6 +49,8 @@ func NewRouter(
 //   - POST   /api/staff/wiki/articles/{article_id}/unarchive 恢复归档（archived→published）
 //   - GET    /api/staff/wiki/articles/{article_id}/chunks       列出生效切片
 //   - POST   /api/staff/wiki/articles/{article_id}/revectorize  重新切片向量化
+//   - POST   /api/staff/wiki/uploads                   上传正文插图（返回 URL）
+//   - GET    /uploads/{filename}                      读取正文图片（公开，匿名可访问）
 //   - POST   /api/staff/wiki/references               发起引用申请
 //   - GET    /api/staff/wiki/references               引用授权列表
 //   - GET    /api/staff/wiki/references/articles      可引用的公开文章列表
@@ -61,9 +65,17 @@ func (rt *Router) Mount(r chi.Router) {
 		r.Get("/{article_id}", rt.public.Detail)
 	})
 
+	// 文章正文图片的公开读取：匿名可访问（患者端文章详情直接引用该 URL）。
+	// 挂在根路径而非 /api 下：语义上属于静态资源，且不受 /api 的 JSON 404 兜底影响。
+	// 文件名白名单校验在 handler 内完成，此处不暴露目录列表。
+	r.Get("/uploads/{filename}", rt.upload.Serve)
+
 	// 医护端：JWT + RequireStaff + DataIsolation（DOCTOR/NURSE/DEPT_ADMIN/SUPER_ADMIN 均可访问，具体权限由 service 层校验）。
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(rt.auth), middleware.RequireStaff(), middleware.DataIsolation())
+
+		// 正文插图上传：仅医护端可上传，返回可写入正文的 URL。
+		r.Post("/api/staff/wiki/uploads", rt.upload.Create)
 
 		r.Route("/api/staff/wiki/articles", func(r chi.Router) {
 			r.Post("/", rt.staff.Create)

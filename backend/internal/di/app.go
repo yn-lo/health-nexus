@@ -158,7 +158,7 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// ========== wiki 域 ==========
 	chunkRepo := wikirepo.NewChunkRepo(infra.Pool)
-	wikiRouter := buildWikiRouter(infra, deptRepo, userRepo, chunkRepo)
+	wikiRouter := buildWikiRouter(infra, cfg, deptRepo, userRepo, chunkRepo)
 
 	// ========== chat 域 ==========
 	chatRouter, err := buildChatRouter(ctx, infra, cfg.LLM, aesKey, deptRepo, configSvc, chunkRepo)
@@ -210,6 +210,7 @@ func buildConfigDomain(
 
 func buildWikiRouter(
 	infra *Infrastructure,
+	cfg *config.Config,
 	deptRepo *baserepo.DepartmentRepo,
 	userRepo *authrepo.UserRepo,
 	chunkRepo *wikirepo.ChunkRepo,
@@ -231,6 +232,7 @@ func buildWikiRouter(
 		wikihandler.NewPublicHandler(articleSvc),
 		wikihandler.NewStaffArticleHandler(articleSvc),
 		wikihandler.NewReferenceHandler(referenceSvc, articleSvc),
+		wikihandler.NewUploadHandler(cfg.Upload.Dir, cfg.Upload.MaxSizeMB),
 		infra.Auth,
 	)
 }

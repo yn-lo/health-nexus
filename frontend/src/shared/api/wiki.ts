@@ -59,6 +59,16 @@ export function updateArticle(articleId: number, data: ArticleUpdateRequest) {
   return apiClient<ArticleStaff>(`/staff/wiki/articles/${articleId}`, { method: 'PUT', body: data });
 }
 
+/**
+ * 上传正文插图（multipart）。返回的 url 直接写入正文 <img src>。
+ * 图片不参与 RAG 切片与向量化，仅作文档展示；患者端文章详情可直接加载。
+ */
+export function uploadArticleImage(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return apiClient<{ url: string }>('/staff/wiki/uploads', { method: 'POST', body: form });
+}
+
 /** 提交文章审核（契约 §4.6，draft → pending） */
 export function submitArticle(articleId: number) {
   return apiClient<{ success: boolean }>(`/staff/wiki/articles/${articleId}/submit`, { method: 'POST' });

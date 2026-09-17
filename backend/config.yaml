@@ -84,3 +84,10 @@ rate_limit:
   chat_stream_anon: 5
   # 匿名流式问答全局总量桶（次/分钟），防批量伪造 device_id 绕过单设备限流
   chat_stream_anon_global: 300
+
+# 知识库文章图片上传（正文插图，不参与向量化）
+upload:
+  # 本地存储目录（相对进程工作目录）。docker 部署请挂载卷，否则容器重建即丢失。
+  dir: "uploads"
+  # 单张图片大小上限（MB），超限返回 413
+  max_size_mb: 5

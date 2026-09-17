@@ -73,6 +73,11 @@ export default defineConfig({
         target: 'http://localhost:5230',
         changeOrigin: true,
       },
+      // 文章正文图片（后端本地存储目录，直接由 Go 静态服务托管）
+      '/uploads': {
+        target: 'http://localhost:5230',
+        changeOrigin: true,
+      },
     },
   },
   test: {

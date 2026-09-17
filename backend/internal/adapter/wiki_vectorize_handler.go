@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -102,7 +104,10 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	}
 
 	chunkSize, chunkOverlap := h.resolveChunkConfig(ctx)
-	chunkTexts := chunkContent(article.Content, chunkSize, chunkOverlap)
+	// 切片用纯文本：正文为富文本 HTML，直接切片会把标签、样式与 <img src> URL 一并喂给
+	// embedding，成为检索噪声（且图片本身不参与向量化）。
+	plainText := htmlToPlainText(article.Content)
+	chunkTexts := chunkContent(plainText, chunkSize, chunkOverlap)
 	if len(chunkTexts) == 0 {
 		slog.InfoContext(ctx, "wiki: vectorize empty content, skip", "article_id", id)
 		return nil
@@ -149,7 +154,29 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	return nil
 }
 
-// chunkContent 按 rune 切分 content 为带重叠的片段。
+// reHTMLBlockTags 匹配块级标签（含 <br>），转纯文本时替换为空格以保留语义边界，
+// 否则 "<p>甲</p><p>乙</p>" 会被拼成 "甲乙"，跨块语义粘连。
+var reHTMLBlockTags = regexp.MustCompile(
+	`(?i)</?(?:p|div|br|hr|li|ul|ol|h[1-6]|blockquote|pre|table|thead|tbody|tr|td|th|section|article)[^>]*>`)
+
+// reHTMLTags 匹配剩余任意标签（含 <img src="...">）：直接丢弃，不参与向量化。
+var reHTMLTags = regexp.MustCompile(`<[^>]*>`)
+
+// htmlToPlainText 将富文本 HTML 正文转为纯文本，供切片向量化使用。
+// 步骤：块级标签→空格 → 其余标签（含 img）丢弃 → 解码 HTML 实体 → 空白归一。
+// 空白归一同时清掉 &nbsp; 解码出的 NBSP，避免不可见字符混入向量。
+func htmlToPlainText(s string) string {
+	if !strings.Contains(s, "<") && !strings.Contains(s, "&") {
+		// 已是纯文本：仅做去首尾空白，避免无谓的复制开销。
+		return strings.TrimSpace(s)
+	}
+	s = reHTMLBlockTags.ReplaceAllString(s, " ")
+	s = reHTMLTags.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// chunkContent 按 rune 切分 content 为带重叠的片段（content 应为纯文本，见 htmlToPlainText）。
 // ponytail: 简单定长滑动窗口；step=size-overlap，末尾不足 size 时取剩余部分，简化。
 // 升级路径：按 markdown 结构（标题/段落）切片以保留语义边界。
 func chunkContent(content string, size, overlap int) []string {

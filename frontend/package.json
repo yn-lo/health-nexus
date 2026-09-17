@@ -20,6 +20,8 @@
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.3.0",
     "@lucide/vue": "^1.23.0",
+    "@tiptap/extension-image": "3.27.1",
+    "@tiptap/extension-text-align": "3.27.1",
     "@tiptap/starter-kit": "latest",
     "@tiptap/vue-3": "latest",
     "markdown-it": "latest",

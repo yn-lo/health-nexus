@@ -53,6 +53,9 @@ services:
     command: ["/bin/server"]
     ports:
       - "5230:5230"
+    volumes:
+      # 文章正文图片本地存储（upload.dir），容器重建不丢失
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,3 +91,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads:

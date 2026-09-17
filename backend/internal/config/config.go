@@ -53,6 +53,10 @@ const (
 	defaultChatStreamRateLimit       = 20
 	defaultChatStreamAnonRateLimit   = 5
 	defaultChatStreamAnonGlobalLimit = 300
+
+	// 文章图片上传默认值
+	defaultUploadDir       = "uploads"
+	defaultUploadMaxSizeMB = 5
 )
 
 // Config 应用配置根结构。
@@ -66,6 +70,7 @@ type Config struct {
 	Argon2    Argon2Config    `mapstructure:"argon2"`
 	Security  SecurityConfig  `mapstructure:"security"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	Upload    UploadConfig    `mapstructure:"upload"`
 }
 
 // ServerConfig HTTP 服务器配置。
@@ -167,6 +172,14 @@ type RateLimitConfig struct {
 	ChatStreamAnonGlobal int `mapstructure:"chat_stream_anon_global"`
 }
 
+// UploadConfig 知识库文章图片上传配置。
+// Dir 为本地存储目录（相对进程工作目录，docker 部署需挂载卷持久化）；
+// MaxSizeMB 为单张图片大小上限，超限直接拒绝。
+type UploadConfig struct {
+	Dir       string `mapstructure:"dir"`
+	MaxSizeMB int    `mapstructure:"max_size_mb"`
+}
+
 // Load 加载配置：先读 yaml，再用环境变量覆盖。
 func Load() (*Config, error) {
 	v := viper.New()
@@ -234,4 +247,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("rate_limit.chat_stream", defaultChatStreamRateLimit)
 	v.SetDefault("rate_limit.chat_stream_anon", defaultChatStreamAnonRateLimit)
 	v.SetDefault("rate_limit.chat_stream_anon_global", defaultChatStreamAnonGlobalLimit)
+
+	// 文章图片上传
+	v.SetDefault("upload.dir", defaultUploadDir)
+	v.SetDefault("upload.max_size_mb", defaultUploadMaxSizeMB)
 }

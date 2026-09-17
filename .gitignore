@@ -66,5 +66,8 @@ frontend/dist/
 graphify-out/
 .edge-tmp/
 
+# 知识库文章图片本地存储（运行时生成，不入库）
+backend/uploads/
+
 docs/
 tmp/

@@ -87,11 +87,12 @@ func buildTestRouter() http.Handler {
 	// base 域（1 端点）
 	basehandler.NewDepartmentHandler(nil, testAuth).Mount(r)
 
-	// wiki 域（18 端点：2 公开 + 11 文章管理 + 5 引用授权）
+	// wiki 域（20 端点：2 公开文章 + 11 文章管理 + 5 引用授权 + 上传 + 图片读取）
 	wikihandler.NewRouter(
 		wikihandler.NewPublicHandler(wikiservice.NewArticleService(stubArticleRepo{}, nil, nil, nil, nil, nil, nil)),
 		wikihandler.NewStaffArticleHandler(nil),
 		wikihandler.NewReferenceHandler(nil, nil),
+		wikihandler.NewUploadHandler("", 0),
 		testAuth,
 	).Mount(r)
 
@@ -255,6 +256,8 @@ var publicEndpoints = []endpoint{
 	{http.MethodPost, "/api/public/chat/stream"},
 	{http.MethodDelete, "/api/public/chat/conversations/550e8400-e29b-41d4-a716-446655440000"},
 	{http.MethodGet, "/api/public/departments"},
+	// 文章正文图片（匿名读取，患者端文章详情引用）
+	{http.MethodGet, "/uploads/" + testUUID},
 }
 
 // protectedEndpoints 需 JWT 的端点（66 个）。
@@ -296,6 +299,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/articles/1/featured"},
 	{http.MethodGet, "/api/staff/wiki/articles/1/chunks"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/revectorize"},
+	{http.MethodPost, "/api/staff/wiki/uploads"},
 	// wiki staff 引用
 	{http.MethodPost, "/api/staff/wiki/references"},
 	{http.MethodGet, "/api/staff/wiki/references"},
@@ -358,6 +362,7 @@ var staffEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/articles/1/featured"},
 	{http.MethodGet, "/api/staff/wiki/articles/1/chunks"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/revectorize"},
+	{http.MethodPost, "/api/staff/wiki/uploads"},
 	{http.MethodPost, "/api/staff/wiki/references"},
 	{http.MethodGet, "/api/staff/wiki/references"},
 	{http.MethodPost, "/api/staff/wiki/references/1/approve"},

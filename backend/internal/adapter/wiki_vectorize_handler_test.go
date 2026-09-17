@@ -318,6 +318,70 @@ func reconstructChunks(chunks []string, overlap int) string {
 }
 
 // ============================================================================
+// htmlToPlainText：富文本 → 纯文本（切片输入）
+// ============================================================================
+
+func TestHTMLToPlainText(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "纯文本原样返回", in: "高血压患者日常管理", want: "高血压患者日常管理"},
+		{name: "空字符串", in: "", want: ""},
+		{name: "纯空白", in: "  \n\t ", want: ""},
+		{
+			name: "块级标签转为分隔不粘连",
+			in:   "<p>甲</p><p>乙</p>",
+			want: "甲 乙",
+		},
+		{
+			name: "行内标签直接丢弃",
+			in:   "<p>血压<strong>偏高</strong>时就医</p>",
+			want: "血压偏高时就医",
+		},
+		{
+			name: "img标签及其URL不进入文本",
+			in:   `<p>用药说明</p><img src="https://cdn.example.com/a.png" alt="图"><p>遵医嘱</p>`,
+			want: "用药说明 遵医嘱",
+		},
+		{
+			name: "标题与列表保留语义边界",
+			in:   "<h2>注意事项</h2><ul><li>低盐</li><li>运动</li></ul>",
+			want: "注意事项 低盐 运动",
+		},
+		{
+			name: "HTML实体被解码",
+			in:   "<p>结论是 &quot;低盐饮食&quot;&nbsp;有效</p>",
+			want: `结论是 "低盐饮食" 有效`,
+		},
+		{
+			name: "br换行转为分隔",
+			in:   "第一行<br>第二行",
+			want: "第一行 第二行",
+		},
+		{
+			name: "仅图片_无文本",
+			in:   `<p><img src="https://cdn.example.com/a.png"></p>`,
+			want: "",
+		},
+		{
+			name: "带属性的div与span",
+			in:   `<div class="x" style="color:red"><span>内容</span></div>`,
+			want: "内容",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := htmlToPlainText(tc.in); got != tc.want {
+				t.Errorf("htmlToPlainText(%q) = %q，期望 %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// ============================================================================
 // HandleVectorize：handler 流程测试
 // ============================================================================
 
@@ -525,6 +589,60 @@ func TestHandleVectorize(t *testing.T) {
 		}
 		if chunks.createdChunks[0].Content != "短内容" {
 			t.Errorf("chunk 内容 %q，期望 %q", chunks.createdChunks[0].Content, "短内容")
+		}
+	})
+
+	t.Run("HTML正文_切片不含标签与图片URL", func(t *testing.T) {
+		// 正文为 TipTap 产出的 HTML：标签/属性/图片 URL 都不得作为语义内容入库。
+		fetcher := &mockArticleFetcher{article: &entity.Article{
+			ID:      12,
+			Status:  constants.ArticleStatusPublished,
+			Content: `<h2>用药提示</h2><p>饭后服用</p><img src="https://cdn.example.com/a.png" alt="图">`,
+			Version: 1,
+		}}
+		embed := &mockEmbedder{vectors: [][]float32{{0.5}}}
+		chunks := &mockChunkWriter{}
+		h := &VectorizeHandler{articles: fetcher, chunks: chunks, embed: embed}
+
+		err := h.HandleVectorize(context.Background(), makeTask("12"))
+		if err != nil {
+			t.Fatalf("期望 nil error，实际 %v", err)
+		}
+		if len(chunks.createdChunks) != 1 {
+			t.Fatalf("期望 1 个 chunk，实际 %d", len(chunks.createdChunks))
+		}
+		got := chunks.createdChunks[0].Content
+		if got != "用药提示 饭后服用" {
+			t.Errorf("chunk 内容 %q，期望 %q", got, "用药提示 饭后服用")
+		}
+		if strings.ContainsAny(got, "<>") {
+			t.Errorf("chunk 内容仍含 HTML 标签：%q", got)
+		}
+		if strings.Contains(got, "cdn.example.com") {
+			t.Errorf("chunk 内容仍含图片 URL：%q", got)
+		}
+	})
+
+	t.Run("仅图片正文_跳过向量化", func(t *testing.T) {
+		fetcher := &mockArticleFetcher{article: &entity.Article{
+			ID:      13,
+			Status:  constants.ArticleStatusPublished,
+			Content: `<p><img src="https://cdn.example.com/a.png"></p>`,
+			Version: 1,
+		}}
+		embed := &mockEmbedder{}
+		chunks := &mockChunkWriter{}
+		h := &VectorizeHandler{articles: fetcher, chunks: chunks, embed: embed}
+
+		err := h.HandleVectorize(context.Background(), makeTask("13"))
+		if err != nil {
+			t.Fatalf("期望 nil error（无文本可切片时跳过），实际 %v", err)
+		}
+		if embed.called {
+			t.Error("期望 embed 未被调用（正文只剩图片，无文本）")
+		}
+		if len(chunks.createdChunks) != 0 {
+			t.Errorf("期望 0 个 chunk，实际 %d", len(chunks.createdChunks))
 		}
 	})
 
