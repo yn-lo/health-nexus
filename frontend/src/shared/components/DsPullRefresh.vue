@@ -32,11 +32,22 @@ const statusText = computed(() => {
   return '下拉刷新'
 })
 
+/** __scroller 自身不滚动；真实滚动容器是最近的 overflow-y 祖先（如 .knowledge-list） */
+function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+  let p = el?.parentElement ?? null
+  while (p) {
+    const oy = getComputedStyle(p).overflowY
+    if (oy === 'auto' || oy === 'scroll') return p
+    p = p.parentElement
+  }
+  return null
+}
+
 function onTouchStart(e: TouchEvent) {
   if (props.loading) return
-  // 仅在内容滚动到顶部时启用下拉
-  const scroller = (e.currentTarget as HTMLElement).querySelector('.ds-pull-refresh__scroller')
-  if (scroller && scroller.scrollTop > 0) return
+  // 仅当真实滚动容器在顶部时启用下拉，否则列表中部下拉会与页面滚动叠加冲突
+  const sp = findScrollParent(e.currentTarget as HTMLElement)
+  if (sp && sp.scrollTop > 0) return
   const touch = e.touches[0]
   startY = touch.clientY
   startX = touch.clientX

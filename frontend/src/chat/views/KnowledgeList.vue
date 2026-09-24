@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="knowledge-list flex flex-col bg-[var(--bg-base-secondary)] overflow-y-auto no-scrollbar" :class="embedded ? 'flex-1 min-h-0' : 'min-h-[calc(100dvh-var(--layout-tabbar-height))]'">
+  <div ref="containerRef" class="knowledge-list flex flex-col bg-[var(--bg-base-secondary)] overflow-y-auto overscroll-contain no-scrollbar" :class="embedded ? 'flex-1 min-h-0' : 'min-h-[calc(100dvh-var(--layout-tabbar-height))]'">
     <!-- 顶部栏（白色背景，与下方内容区分）- 嵌入模式由父组件提供 -->
     <header v-if="!embedded" class="sticky top-0 z-30 flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-12)] border-b border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]">
       <h1 class="truncate font-heading text-heading-md font-semibold text-text">

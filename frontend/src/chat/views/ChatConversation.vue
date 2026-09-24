@@ -425,8 +425,8 @@ onUnmounted(() => {
 
 <template>
   <div class="chat-conversation flex flex-col h-[100dvh] bg-[var(--bg-base-secondary)]">
-    <!-- 顶部栏 - AI-Native frosted -->
-    <ChatHeader variant="transparent" @open-history="openHistory">
+    <!-- 顶部栏 - 磨玻璃半透明（AppHeader frosted 变体） -->
+    <ChatHeader variant="frosted" @open-history="openHistory">
       <template #center>
         <div class="ds-fab-segment ds-fab-segment--neutral">
           <button

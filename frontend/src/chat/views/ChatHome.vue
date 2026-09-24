@@ -95,7 +95,7 @@ function onPromptClick(item: QuickAction) {
 <template>
  <div class="chat-home">
  <!-- 顶部栏 -->
- <ChatHeader variant="transparent" @open-history="openHistory">
+ <ChatHeader variant="frosted" @open-history="openHistory">
  <template #center>
  <div class="ds-fab-segment ds-fab-segment--neutral">
  <button
