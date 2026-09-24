@@ -60,7 +60,9 @@ func (c *Client) pingChat(ctx context.Context, providerType string) error {
 	return nil
 }
 
-// pingEmbed 用 embeddings 验证连通。
+// pingEmbed 用 embeddings 验证连通，并校验返回向量可用。
+// 只判 HTTP 200 不够：供应商异常时可能返回 200 + 全零/NaN 向量，
+// 此时连通性"正常"但检索必然 0 命中，管理员会被误导。
 func (c *Client) pingEmbed(ctx context.Context) error {
 	if c.cfg.EmbeddingModel == "" {
 		return fmt.Errorf("ping: embedding model not configured")
@@ -74,6 +76,9 @@ func (c *Client) pingEmbed(ctx context.Context) error {
 	}
 	if len(resp.Data) == 0 {
 		return fmt.Errorf("ping embedding: empty data")
+	}
+	if err := validateEmbedding(resp.Data[0].Embedding); err != nil {
+		return fmt.Errorf("ping embedding: %w", err)
 	}
 	return nil
 }

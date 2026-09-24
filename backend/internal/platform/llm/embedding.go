@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/sashabaranov/go-openai"
 
@@ -49,8 +50,34 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 			return nil, fmt.Errorf("embed batch [%d:%d): expected %d embeddings, got %d", i, end, end-i, len(resp.Data))
 		}
 		for _, e := range resp.Data {
+			if err := validateEmbedding(e.Embedding); err != nil {
+				return nil, fmt.Errorf("embed batch [%d:%d): %w", i, end, err)
+			}
 			result = append(result, e.Embedding)
 		}
 	}
 	return result, nil
+}
+
+// validateEmbedding 校验供应商返回的向量是否可用（空 / NaN / Inf / 全零一律视为无效）。
+// 供应商异常时可能返回 HTTP 200 + 无效向量：检索侧会得到"0 命中"，被上层当成
+// "知识库没有相关内容"，把故障伪装成无资料（患者看到误导性拒答）；
+// 写入侧则会把坏向量写进索引且无从察觉。故在唯一出口处拦截，让故障显式暴露。
+func validateEmbedding(v []float32) error {
+	if len(v) == 0 {
+		return fmt.Errorf("invalid embedding: empty vector")
+	}
+	nonZero := false
+	for _, x := range v {
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			return fmt.Errorf("invalid embedding: contains NaN/Inf")
+		}
+		if x != 0 {
+			nonZero = true
+		}
+	}
+	if !nonZero {
+		return fmt.Errorf("invalid embedding: vector is all zeros")
+	}
+	return nil
 }

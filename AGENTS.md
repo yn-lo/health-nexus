@@ -42,5 +42,6 @@ Bug fix = root cause: grep every caller, fix the shared function once.
 
 Not lazy about: understanding the problem, input validation at trust boundaries, error handling that prevents data loss, security, anything explicitly requested. Non-trivial logic leaves ONE runnable check.
 
-## 工作流
-- 新功能：先更新需求文档 → 写核心测试 → 实现 → 测试（类 TDD）
+
+
+

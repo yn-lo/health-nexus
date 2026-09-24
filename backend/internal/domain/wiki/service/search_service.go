@@ -91,8 +91,9 @@ const topKMax = 50
 //  5. 若 RAGConfig.RerankEnabled=true 且结果数 > 1，对全部候选调用 LLM Rerank 重排（失败降级原顺序），
 //     再由重排结果截取最终 top_k（先重排后截断，多召回的候选才有机会被选中）
 //
-// Embedding 失败时直接向上返回 error（严禁静默降级，医疗场景宁报 503 也不给虚假否定）。
-// 关键依赖未注入或向量检索无命中时返回空切片（chat 域据此拒答，做到"宁可不答"）。
+// Embedding 失败、或向量检索本身失败（DB/索引异常）时直接向上返回 error
+// （严禁静默降级，医疗场景宁报 503 也不给虚假否定，也不把故障说成"知识库没有内容"）。
+// 关键依赖未注入、或检索正常但无命中（含全部低于阈值）时返回空切片（chat 域据此拒答，做到"宁可不答"）。
 func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQuery) ([]rag.Chunk, error) {
 	if s.chunks == nil || s.embed == nil || s.cfgProv == nil {
 		// 依赖未注入：降级为空结果，chat 域走拒答路径（REQ-CHAT-003）。
@@ -107,7 +108,9 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	// 步骤 2：仅向量检索。检索失败视为无命中（返回空，chat 域拒答），不静默回退。
+	// 步骤 2：仅向量检索。检索本身失败（DB/索引异常）必须向上返回 error——
+	// 检索故障不等于"知识库没有内容"，静默降级为空会让患者看到误导性的"暂无相关内容"，
+	// 真实故障也被日志级别降为 warn 而难以发现。
 	var deptIDs []int64
 	if q.DeptID != nil {
 		deptIDs = []int64{*q.DeptID}
@@ -115,8 +118,7 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 	hits, err := s.chunks.SearchByVector(
 		ctx, queryVec, candidateK, deptIDs, cfg.SimilarityThreshold, s.embeddingModel())
 	if err != nil {
-		slog.WarnContext(ctx, "wiki: vector search failed, degrading to empty", "err", err)
-		return []rag.Chunk{}, nil
+		return nil, fmt.Errorf("vector search: %w", err)
 	}
 	if len(hits) == 0 {
 		return []rag.Chunk{}, nil

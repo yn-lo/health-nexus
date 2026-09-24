@@ -547,19 +547,20 @@ func TestSearchSimilarChunks(t *testing.T) {
 		}
 	})
 
-	t.Run("向量检索失败_返回空切片不报错", func(t *testing.T) {
-		// 纯向量路失败视为无命中，chat 域据此拒答，不静默回退。
+	t.Run("向量检索失败_向上返回error不伪装成无命中", func(t *testing.T) {
+		// 检索故障 ≠ "知识库没有内容"：必须向上返回 error，由 chat 域用系统异常话术提示；
+		// 静默降级为空会让患者看到误导性的"暂无相关内容"，真实故障也查不出来。
 		chunks := &mockChunkSearcher{vecErr: errors.New("vector search down")}
 		embed := &mockEmbedder{vectors: [][]float32{{0.1}}}
 		cfgProv := &mockConfigProvider{cfg: &RAGSearchConfig{TopK: 5, RerankEnabled: false}}
 		svc := NewSearchService(chunks, embed, nil, cfgProv)
 
 		got, err := svc.SearchSimilarChunks(context.Background(), rag.SearchQuery{Query: "q"})
-		if err != nil {
-			t.Errorf("期望 nil error（向量失败降级空），实际 %v", err)
+		if err == nil {
+			t.Fatal("期望 non-nil error（检索失败严禁伪装成无命中），实际 nil")
 		}
-		if got == nil || len(got) != 0 {
-			t.Errorf("期望空切片，实际 %v", got)
+		if len(got) != 0 {
+			t.Errorf("期望空结果，实际 %d 条", len(got))
 		}
 	})
 
