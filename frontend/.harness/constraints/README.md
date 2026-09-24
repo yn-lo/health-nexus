@@ -12,18 +12,17 @@
 
 ## 门禁命令
 
-```bash
-.harness/constraints/ci/gate.sh          # 全跑 P0+P1+P2
-.harness/constraints/ci/gate.sh p0       # 静态分析/类型/测试/构建/死代码
-.harness/constraints/ci/gate.sh p1       # npm audit 安全
-.harness/constraints/ci/gate.sh p2       # jscpd 工程债
-```
-
-等价于手动逐条执行：
+唯一入口（完整实现，不要在别处重复定义检查范围）：
 
 ```bash
-npm run lint && npm run type-check && npm run test:arch && npm run lint:style \
-  && npm run build && npm test && npm run dead-code && npm audit --audit-level=high
+.harness/constraints/ci/gate.sh             # 全跑 P0+P1+P2
+.harness/constraints/ci/gate.sh p0          # P0 静态分析/类型/测试/构建/死代码
+.harness/constraints/ci/gate.sh p1          # P1 npm audit 安全
+.harness/constraints/ci/gate.sh p2          # P2 jscpd 工程债
+.harness/constraints/ci/gate.sh selftest    # 门禁自身验证（注入违规样例）
+GATE_STRICT=1 .harness/constraints/ci/gate.sh   # CI：被跳过的检查视为失败
 ```
+
+仓库根 `frontend/gate.sh`、`frontend/gate.ps1` 是同一入口的薄包装。
 
 门禁分层：P0 阻塞（lint / type-check / test:arch / test / build / lint:style / dead-code）、P1 阻塞（npm audit）、P2 非阻塞告警（jscpd 代码克隆）。

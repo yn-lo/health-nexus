@@ -85,7 +85,6 @@ function setMode(mode: 'chat' | 'knowledge') {
   activeMode.value = mode
   router.replace({ query: { ...route.query, mode } })
 }
-const knowledgeRef = ref<InstanceType<typeof KnowledgeList> | null>(null)
 
 const initialDepartmentId = Number(route.query.department ?? 0)
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId })
@@ -163,7 +162,8 @@ function startNewChat() {
   sseConversationId.value = ''
   sseOptions.conversationId = ''
   sseOptions.selectedDeptId = selectedDepartmentId.value
-  chatStore.messages = []
+  // 作废在途的会话加载：否则加载态会残留（输入栏被永久禁用），且其响应回来会把旧会话历史写回
+  chatStore.cancelConversationLoad()
   router.replace({ name: 'chat-home' })
 }
 
@@ -220,7 +220,8 @@ function syncFeedbackFromMessages() {
 }
 
 function sendMessage(text: string) {
-  if (!text || isStreaming.value) return
+  // 会话历史未就位时禁止发送：否则消息会被追加到上一条会话的残列表，且新会话历史返回后被整体丢弃（P1）
+  if (!text || isStreaming.value || chatStore.messagesLoading) return
 
   pendingUserLocalId = `local-${crypto.randomUUID()}`
   chatStore.addMessage({
@@ -289,6 +290,7 @@ async function onFeedback(msg: Message, value: MessageFeedback) {
  * 后端以 CHAT_DEPT_LOCKED(409) 拒绝，历史会话无法续聊。
  *
  * P1 快速切换：从"开始加载"就分配代次（beginConversationLoad），详情、科室、消息共享同一代次。
+ * 同代次内消息列表已被清空并进入加载态，历史就位前不允许发送。
  * A 的迟到详情/消息因代次过期被丢弃，不会覆盖 B 的 currentConversation / messages / 科室。 */
 async function openConversation(id: string, jumpToBottom = false) {
   const epoch = chatStore.beginConversationLoad()
@@ -302,7 +304,10 @@ async function openConversation(id: string, jumpToBottom = false) {
     syncFeedbackFromMessages()
     scrollToBottom(jumpToBottom)
   } catch {
-    if (chatStore.isCurrentLoad(epoch)) showFailToast('加载消息失败')
+    if (chatStore.isCurrentLoad(epoch)) {
+      chatStore.endConversationLoad(epoch)
+      showFailToast('加载消息失败')
+    }
   }
 }
 
@@ -361,8 +366,9 @@ watch(isStreaming, (streaming, prev) => {
   if (!prev || streaming) return
   if (error.value) {
     showFailToast(error.value)
-    // error 事件时仍将已累积的部分内容固化为消息，避免用户已看到的流式片段丢失
-    if (currentContent.value) addTurnMessage(currentContent.value, 'INTERCEPTED')
+    // error 事件时仍将已累积的部分内容固化为消息，避免用户已看到的流式片段丢失。
+    // 无权威 result 时用 PARTIAL（"回答不完整"），与后端中断语义一致；INTERCEPTED 仅表示安全拦截。
+    if (currentContent.value) addTurnMessage(currentContent.value, 'PARTIAL')
     persistAnonMessages()
     return
   }
@@ -386,14 +392,15 @@ watch(isStreaming, (streaming, prev) => {
     return
   }
   if (currentContent.value) {
-    addTurnMessage(currentContent.value, aborted.value ? 'INTERCEPTED' : 'ANSWERED')
+    // 主动停止/无完成证据：保留片段同样按 PARTIAL 标注"回答不完整"（result 存在时以服务端结果为准）
+    addTurnMessage(currentContent.value, aborted.value ? 'PARTIAL' : 'ANSWERED')
   }
   scrollToBottom()
   persistAnonMessages()
 })
 
 // 流式输出时自动滚动
-watch(currentContent, scrollToBottom)
+watch(currentContent, () => scrollToBottom())
 
 onMounted(async () => {
   const barEl = inputBarRef.value?.$el as HTMLElement | undefined
@@ -625,7 +632,7 @@ onUnmounted(() => {
     </main>
 
     <!-- 知识库模式 -->
-    <KnowledgeList v-if="activeMode === 'knowledge'" ref="knowledgeRef" embedded />
+    <KnowledgeList v-if="activeMode === 'knowledge'" embedded />
 
     <!-- 独立提示（紧急就医 / 超时）：不进入答案正文，可关闭 -->
     <div v-if="notices.length" class="chat-notice" :style="{ bottom: `${inputBarHeight}px` }" role="status">
@@ -645,8 +652,9 @@ onUnmounted(() => {
       v-if="activeMode === 'chat'"
       ref="inputBarRef"
       class="chat-conversation-input-bar"
-      :department-name="activeDepartment.name"
+      :department-name="activeDepartment?.name"
       :loading="isStreaming"
+      :disabled="chatStore.messagesLoading"
       placeholder="输入您的健康问题..."
       @send="sendMessage"
       @stop="abort"

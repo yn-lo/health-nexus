@@ -9,7 +9,7 @@ import { UserCog, Shield, Building2, Lock, Unlock, RotateCcw, Trash2, Eye, EyeOf
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, PasswordStrength, DsPopup } from '@/shared/components'
 import { authApi, errmsg, getUserStored, fmtDateTime, useDepartmentOptions } from '@/shared'
-import { ROLE_LABEL, SUPER_ADMIN_ROLE, STAFF_ROLES, PATIENT_ROLES, type UserRole } from '@/shared/constants/roles'
+import { ROLE_LABEL, SUPER_ADMIN_ROLE, STAFF_ROLES, PATIENT_ROLES, DEFAULT_STAFF_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount } from '@/shared'
 
 const router = useRouter()
@@ -80,7 +80,7 @@ async function submitDept() {
 
 // 修改角色弹窗（仅超管）
 const showRoleDialog = ref(false)
-const selectedRole = ref<UserRole>(STAFF_ROLES[STAFF_ROLES.length - 1])
+const selectedRole = ref<UserRole>(DEFAULT_STAFF_ROLE)
 const savingRole = ref(false)
 
 /** 全部角色（STAFF + PATIENT），顺序：管理员 → 医护 → 患者 */
@@ -369,7 +369,7 @@ onMounted(() => {
             <option :value="0" disabled>请选择科室</option>
             <option
               v-for="opt in deptOptions"
-              :key="opt.id"
+              :key="String(opt.id)"
               :value="opt.id"
               :disabled="!isSuperAdmin && opt.id !== currentDeptId"
             >{{ opt.label }}</option>

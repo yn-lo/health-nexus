@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * 安全策略总览 — 展示后端实际生效的敏感词、输出规则、话术及来源
  * API: configApi.getSafetyPolicy
@@ -10,7 +10,14 @@ import { useDsToast } from '@/shared/composables'
 import { AppHeader, StatRow, SectionHeading } from '@/shared/components'
 import { configApi } from '@/shared'
 import { errmsg } from '@/shared/api/client'
-import type { SafetyPolicyResponse, SafetyPolicyWords, SafetyPolicyOutputRule } from '@/shared'
+import type {
+ SafetyPolicyResponse,
+ SafetyPolicyWords,
+ SafetyPolicyOutputRule,
+ SafetyMessages,
+ SensitiveWordCategory,
+ SafetyRuleCategory,
+} from '@/shared'
 
 const router = useRouter()
 const { showFailToast } = useDsToast()
@@ -18,13 +25,13 @@ const { showFailToast } = useDsToast()
 const loading = ref(false)
 const policy = ref<SafetyPolicyResponse | null>(null)
 
-const categoryLabel: Record<string, string> = {
+const categoryLabel: Record<SensitiveWordCategory, string> = {
  suicide: '自杀/自残',
  emergency: '急诊/紧急',
  injection: '注入攻击',
 }
 
-const ruleCategoryLabel: Record<string, string> = {
+const ruleCategoryLabel: Record<SafetyRuleCategory, string> = {
  stop_medication: '停药建议',
  prescription: '处方建议',
  diagnosis: '诊断建议',
@@ -49,6 +56,15 @@ const sourceIcon: Record<string, typeof Database> = {
  hardcoded: Code2,
 }
 
+/** 安全话术字段（key/label）— heroStats 与话术列表共用，避免写死数量 */
+type MessageFieldKey = Exclude<keyof SafetyMessages, 'updated_at'>
+const messageFieldDefs: { key: MessageFieldKey; label: string }[] = [
+ { key: 'rejection_message', label: '拒答话术' },
+ { key: 'emergency_message', label: '紧急响应话术' },
+ { key: 'crisis_response', label: '危机干预话术' },
+ { key: 'safety_warning_message', label: '安全警告话术' },
+]
+
 const heroStats = computed(() => {
  if (!policy.value) return []
  const p = policy.value
@@ -58,7 +74,7 @@ const heroStats = computed(() => {
  return [
  { value: wordCount, label: '敏感词' },
  { value: p.output_rules.length, label: '输出规则' },
- { value: 6, label: '话术项' },
+ { value: messageFieldDefs.length, label: '话术项' },
  ]
 })
 
@@ -72,30 +88,27 @@ const wordSections = computed<{ category: string; label: string; data: SafetyPol
  ]
 })
 
-const groupedRules = computed<{ category: string; label: string; rules: SafetyPolicyOutputRule[] }[]>(() => {
+const groupedRules = computed<{ category: SafetyRuleCategory; label: string; rules: SafetyPolicyOutputRule[] }[]>(() => {
  if (!policy.value) return []
  const groups: Record<string, SafetyPolicyOutputRule[]> = {}
  for (const r of policy.value.output_rules) {
- if (!groups[r.category]) groups[r.category] = []
- groups[r.category].push(r)
+ const list = groups[r.category] ?? []
+ list.push(r)
+ groups[r.category] = list
  }
- const order = ['stop_medication', 'prescription', 'diagnosis', 'delay_medical', 'other']
- return order
- .filter(c => groups[c])
- .map(c => ({ category: c, label: ruleCategoryLabel[c] || c, rules: groups[c] }))
+ const order: SafetyRuleCategory[] = ['stop_medication', 'prescription', 'diagnosis', 'delay_medical', 'other']
+ const result: { category: SafetyRuleCategory; label: string; rules: SafetyPolicyOutputRule[] }[] = []
+ for (const c of order) {
+ const rules = groups[c]
+ if (rules && rules.length > 0) result.push({ category: c, label: ruleCategoryLabel[c], rules })
+ }
+ return result
 })
 
-const messageFields = computed<{ key: string; label: string; value: string }[]>(() => {
+const messageFields = computed(() => {
  if (!policy.value) return []
  const m = policy.value.messages
- return [
- { key: 'rejection_message', label: '拒答话术', value: m.rejection_message },
- { key: 'emergency_message', label: '紧急响应话术', value: m.emergency_message },
- { key: 'crisis_response', label: '危机干预话术', value: m.crisis_response },
- { key: 'safety_warning_message', label: '安全警告话术', value: m.safety_warning_message },
- { key: 'crisis_hotline', label: '危机热线', value: m.crisis_hotline },
- { key: 'medication_disclaimer', label: '用药免责声明', value: m.medication_disclaimer },
- ]
+ return messageFieldDefs.map(f => ({ key: f.key, label: f.label, value: m[f.key] }))
 })
 
 async function load() {

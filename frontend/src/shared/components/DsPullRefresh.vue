@@ -56,6 +56,7 @@ function onTouchStart(e: TouchEvent) {
   // 仅在滚动容器（含文档）都在顶部时启用下拉，否则与原生滚动叠加冲突
   if (!isAtScrollTop(e.currentTarget as HTMLElement)) return
   const touch = e.touches[0]
+  if (!touch) return
   startY = touch.clientY
   startX = touch.clientX
   isVertical = false
@@ -65,6 +66,7 @@ function onTouchStart(e: TouchEvent) {
 function onTouchMove(e: TouchEvent) {
   if (!isDragging.value || props.loading) return
   const touch = e.touches[0]
+  if (!touch) return
   const dy = touch.clientY - startY
   const dx = touch.clientX - startX
   if (!isVertical) {

@@ -3,20 +3,22 @@
 ## 项目概述
 AI 驱动的医院健康宣教平台，使用 RAG 技术实现 7x24 智能健康问答，为患者提供可溯源的健康指导，减轻医护重复宣教负担。
 - **只适配手机端**： 本项目的前端仅使用H5页面进行访问，所有的前端页面适配手机端
-- **架构**：Monorepo 前后端分离。后端 `backend/`，前端 `frontend/`（各自技术栈见子项目 CLAUDE.md）
+- **架构**：Monorepo 前后端分离。后端 `backend/`，前端 `frontend/`（各自技术栈见子项目 AGENTS.md）
 - **后端架构**：DDD 限界上下文（base / auth / wiki / chat / config）+ 三层分离（Handler → Service → Repository）+ 手写 DI + 手写 SQL (pgx)
 - **前端架构**：双 MPA（患者端 `chat.html`、医护端含管理 `staff.html`，Vite MPA 多入口），API 基路径 `/api/`，含 `/api/auth/*`、`/api/base/*`、`/api/public/*`、`/api/wiki/*`、`/api/staff/wiki/*`、`/api/chat/*`、`/api/staff/chat/*`、`/api/staff/config/*`、`/api/staff/auth/*`、`/api/staff/base/*`、`/healthz`
 
 ## 子项目导航
-本文件仅保留跨子项目的总体描述与通用原则。各子项目的细节（专属项目概述、知识导航、构建验证命令、专属硬性规则）见各自 CLAUDE.md：
+本文件仅保留跨子项目的总体描述与通用原则。各子项目的细节（专属项目概述、知识导航、构建验证命令、专属硬性规则）见各自 AGENTS.md：
 
 | 子项目 | 说明 | 入口 |
 |--------|------|------|
-| 后端 | API 服务 + RAG 引擎 + 知识库 | [backend/CLAUDE.md](backend/CLAUDE.md) |
-| 前端 | 患者端 + 医护端 SPA | [frontend/CLAUDE.md](frontend/CLAUDE.md) |
+| 后端 | API 服务 + RAG 引擎 + 知识库 | [backend/AGENTS.md](backend/AGENTS.md) |
+| 前端 | 患者端 + 医护端 SPA | [frontend/AGENTS.md](frontend/AGENTS.md) |
+
+门禁设计与状态语义的统一规范见 [harness.md](harness.md)：单一门禁入口与双平台一致性（§5.2）、结果状态与失败策略（§5.3）、门禁自测（§6.1）、分阶段落地（§10.1）。
 
 ## 全局硬性规则
-跨子项目通用红线，子项目专属规则见各自 CLAUDE.md。
+跨子项目通用红线，子项目专属规则见各自 AGENTS.md。
 
 - **不可逆操作**：禁止 force push main；禁止 `rm -rf`。
 - **密钥/凭证**：禁止读取或修改任何密钥与凭证文件（`*.pem`、`*.key`、`.env*`、`config.local.yaml` 等）。具体密钥存放位置与覆盖规则见各子项目。

@@ -45,8 +45,8 @@ interface ConfigSection {
 }
 
 const sections = computed<ConfigSection[]>(() => {
- const all: ConfigSection[] = [
- {
+ // 基础分组用具名常量，超管额外项直接挂上去（避免按索引取数组元素）
+ const people: ConfigSection = {
   title: '人员与组织',
   entries: [
   {
@@ -66,8 +66,8 @@ const sections = computed<ConfigSection[]>(() => {
   variant: 'brand',
   },
   ],
- },
- {
+ }
+ const ai: ConfigSection = {
   title: 'AI 与检索',
   entries: [
   {
@@ -87,11 +87,11 @@ const sections = computed<ConfigSection[]>(() => {
   variant: 'brand',
   },
   ],
- },
- ]
+ }
+ const all: ConfigSection[] = [people, ai]
  if (isSuperAdmin.value) {
   // 科室管理仅超管可见
-  all[0].entries.push({
+  people.entries.push({
   key: 'departments',
   label: '科室管理',
   desc: '科室层级 / 公开 / 启用',
@@ -99,7 +99,7 @@ const sections = computed<ConfigSection[]>(() => {
   routeName: 'staff-config-departments',
   variant: 'brand',
   })
-  all[1].entries.unshift(
+  ai.entries.unshift(
  {
  key: 'ai-providers',
  label: 'AI 提供商',

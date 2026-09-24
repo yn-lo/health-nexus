@@ -26,6 +26,7 @@ function getActionWidth(): number {
 
 function onTouchStart(e: TouchEvent) {
   const touch = e.touches[0]
+  if (!touch) return
   startX = touch.clientX
   startY = touch.clientY
   startOffset = isOpen.value ? -getActionWidth() : 0
@@ -36,6 +37,7 @@ function onTouchStart(e: TouchEvent) {
 function onTouchMove(e: TouchEvent) {
   if (!isDragging.value) return
   const touch = e.touches[0]
+  if (!touch) return
   const dx = touch.clientX - startX
   const dy = touch.clientY - startY
   // 横向意图判定：一旦判定为横向滑动则锁定，阻止纵向滚动

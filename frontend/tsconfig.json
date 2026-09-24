@@ -1,4 +1,7 @@
 {
+  // 解决方案入口（仅供 IDE 识别项目引用）：本身不含文件，直接 `vue-tsc --noEmit`
+  // 在此配置上不会检查任何源码。类型检查入口见 package.json 的 type-check
+  // （显式指向 tsconfig.app.json + tsconfig.node.json）。
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },

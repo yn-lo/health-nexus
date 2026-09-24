@@ -50,7 +50,7 @@ function sanitizeStyle(raw: string): string | null {
 }
 
 /** isSafeAttrValue 判断属性值是否可原样保留（URL 类走 isSafeUrl，数值类走白名单正则，style 走 sanitizeStyle）。 */
-function isSafeAttrValue(tag: string, name: string, value: string): boolean {
+function isSafeAttrValue(name: string, value: string): boolean {
   if (name === 'alt') return true
   if (name === 'width' || name === 'height') return reNumericAttr.test(value)
   if (name === 'style') return sanitizeStyle(value) !== null
@@ -93,7 +93,7 @@ function sanitizeChildren(parent: Element | DocumentFragment): DocumentFragment 
         if (safe !== null) clean.setAttribute(name, safe)
         continue
       }
-      if (isSafeAttrValue(tag, name, v)) clean.setAttribute(name, v)
+      if (isSafeAttrValue(name, v)) clean.setAttribute(name, v)
     }
     if (tag === 'a') {
       clean.setAttribute('target', '_blank')

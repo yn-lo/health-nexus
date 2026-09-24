@@ -17,6 +17,9 @@ export const SUPER_ADMIN_ROLE: UserRole = 'SUPER_ADMIN'
 /** 医护角色列表 */
 export const STAFF_ROLES: UserRole[] = ['SUPER_ADMIN', 'DEPT_ADMIN', 'DOCTOR', 'NURSE']
 
+/** 默认医护角色 — 新建账户 / 角色弹窗的初始值（最低权限的医护角色） */
+export const DEFAULT_STAFF_ROLE: UserRole = 'NURSE'
+
 /** 患者角色列表 */
 export const PATIENT_ROLES: UserRole[] = ['PATIENT']
 

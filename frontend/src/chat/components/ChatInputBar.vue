@@ -17,11 +17,14 @@ const props = withDefaults(defineProps<{
  departmentName?: string
  /** 发送按钮 loading（流式中） */
  loading?: boolean
+ /** 禁止发送（如会话历史加载中）：仅禁用发送，不切换为停止按钮 */
+ disabled?: boolean
  /** 占位文字 */
  placeholder?: string
 }>(), {
  departmentName: '全部科室',
  loading: false,
+ disabled: false,
  placeholder: '请输入您的健康问题...',
 })
 
@@ -34,7 +37,7 @@ const emit = defineEmits<{
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-const canSend = computed(() => inputText.value.trim().length > 0 && !props.loading)
+const canSend = computed(() => inputText.value.trim().length > 0 && !props.loading && !props.disabled)
 
 function autoResize() {
  const el = textareaRef.value
@@ -52,7 +55,7 @@ function onInputKeydown(e: KeyboardEvent) {
 
 function doSend() {
  const text = inputText.value.trim()
- if (!text || props.loading) return
+ if (!text || props.loading || props.disabled) return
  emit('send', text)
  inputText.value = ''
  nextTick(() => autoResize())

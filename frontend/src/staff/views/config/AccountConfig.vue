@@ -10,7 +10,7 @@ import { UserCog, Eye, EyeOff } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
 import { ConfigCrudPage } from '@/shared/components'
 import { authApi, errmsg, usePagedList, getUserStored, useDepartmentOptions } from '@/shared'
-import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, SUPER_ADMIN_ROLE, type UserRole } from '@/shared/constants/roles'
+import { ROLE_LABEL, STAFF_ROLES, PATIENT_ROLES, SUPER_ADMIN_ROLE, DEFAULT_STAFF_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount, StaffAccountCreateRequest } from '@/shared'
 
 const router = useRouter()
@@ -92,9 +92,9 @@ const showPassword = ref(false)
 const form = ref<StaffAccountCreateRequest>(defaultForm())
 
 function defaultForm(): StaffAccountCreateRequest {
- // 默认选最后一个医护角色（NURSE）— 通过常量索引避免硬编码字面量
+ // 默认选默认医护角色（NURSE）— 走角色常量，避免硬编码字面量
  // 科室管理员创建账户默认绑定本科室；超管默认不选（需手动选择）
- return { username: '', password: '', role: STAFF_ROLES[STAFF_ROLES.length - 1], dept_id: isSuperAdmin ? 0 : currentDeptId }
+ return { username: '', password: '', role: DEFAULT_STAFF_ROLE, dept_id: isSuperAdmin ? 0 : currentDeptId }
 }
 
 function openCreate() {
@@ -185,7 +185,7 @@ onMounted(() => {
     <select v-model="filterDept" class="ds-input flex-1" :disabled="!isSuperAdmin">
      <template v-if="isSuperAdmin">
       <option value="all">全部科室</option>
-      <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+      <option v-for="opt in deptOptions" :key="String(opt.id)" :value="opt.id">{{ opt.label }}</option>
      </template>
      <option v-else :value="currentDeptId">{{ currentDeptLabel || '本科室' }}</option>
     </select>
@@ -255,7 +255,7 @@ onMounted(() => {
      <span class="text-body-sm text-text-secondary">科室<span class="text-[var(--status-error-default)]">*</span></span>
      <select v-model.number="form.dept_id" class="ds-input">
       <option :value="0" disabled>请选择科室</option>
-      <option v-for="opt in deptOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+      <option v-for="opt in deptOptions" :key="String(opt.id)" :value="opt.id">{{ opt.label }}</option>
      </select>
     </div>
    </div>

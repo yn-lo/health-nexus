@@ -29,7 +29,6 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import TextAlign from '@tiptap/extension-text-align'
-import type { Editor } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader } from '@/shared/components'
@@ -149,29 +148,32 @@ const AlignedImage = Image.extend({
  // justify-content（官方容器为 flex 布局，对齐落在这里才生效）。
  addNodeView() {
  // this.parent?.() 先执行父方法，得到视图工厂 (props) => NodeView
- const parentFactory = this.parent?.() as ((props: unknown) => unknown) | undefined
- return (props) => {
+ const parentFactory = this.parent?.()
+ if (!parentFactory) return null
+ // 官方 ResizableNodeView 运行时即 NodeView，额外附带 container/update（NodeView 类型未声明），故整块断言
+ return ((props: Parameters<typeof parentFactory>[0]) => {
  type ResizableLike = {
  container?: HTMLElement | null
  update?: (node: unknown, decorations: unknown, innerDecorations: unknown) => boolean
  }
- const nv = parentFactory?.(props) as ResizableLike | undefined
- if (!nv || typeof nv.update !== 'function') return nv
+ const nv = parentFactory(props) as ResizableLike
  const syncAlign = (node: unknown) => {
  if (!nv.container) return
  const align = (node as { attrs?: { textAlign?: string | null } }).attrs?.textAlign
  nv.container.style.justifyContent =
  align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'
  }
+ // 父视图未提供 update（非官方 resize 实现）时无法包装，原样返回
+ if (typeof nv.update !== 'function') return nv
  syncAlign(props.node)
  const originalUpdate = nv.update.bind(nv)
- nv.update = (node, decorations, innerDecorations) => {
+ nv.update = (node: unknown, decorations: unknown, innerDecorations: unknown) => {
  const ok = originalUpdate(node, decorations, innerDecorations)
  if (ok) syncAlign(node)
  return ok
  }
  return nv
- }
+ }) as typeof parentFactory
  },
 })
 
@@ -186,7 +188,7 @@ const editor = useEditor({
   TextAlign.configure({ types: ['heading', 'paragraph'] }),
  ],
  content: '',
- onUpdate: ({ editor: e }: { editor: Editor }) => {
+ onUpdate: ({ editor: e }) => {
  content.value = e.getHTML()
  },
 })
@@ -377,7 +379,14 @@ function buildUpdatePayload() {
 /** 创建或更新文章，返回文章 ID（编辑态走更新，新建态先创建）。saveDraft/submitReview/publishDirectly 共用 */
 async function ensureArticleSaved(): Promise<number> {
   if (!isEditMode.value) {
-    return (await wikiApi.createArticle(buildCreatePayload())).id
+    const created = await wikiApi.createArticle(buildCreatePayload())
+    // 保留创建返回的状态与版本号：审批必须携带"已审阅内容的真实版本"，缺失会被后端拒绝（P1）。
+    articleStatus.value = created.status
+    articleVersion.value = created.version
+    // 切换到编辑路由：提交/审批失败后重试同一篇文章（走更新），不会重复创建出待审核稿（P1）。
+    // 同组件路由复用不会重新挂载，表单状态原样保留。
+    await router.replace({ name: 'staff-article-edit', params: { id: String(created.id) } })
+    return created.id
   }
   const articleId = Number(route.params.id)
   // 后端行为：已发布文章修改正文后状态回到 pending（审核通过前线上仍用上一版）。
@@ -433,7 +442,9 @@ async function publishDirectly() {
   if (st !== 'published') {
     // 审批绑定当前审阅版本：管理员在编辑页所见版本即审阅版本。
     // 提交后若版本漂移（他人编辑）后端返回 409，需刷新后重新审阅。
-    await wikiApi.approveArticle(articleId, articleVersion.value ?? undefined)
+    const version = articleVersion.value
+    if (!version) throw new Error('缺少审阅版本号，请刷新后重新审阅')
+    await wikiApi.approveArticle(articleId, version)
   }
   showSuccessToast(st === 'published' ? '已保存' : '发布成功')
   router.push({ name: 'staff-articles' })
@@ -596,7 +607,7 @@ onMounted(async () => {
  :disabled="!isSuperAdmin"
  >
  <option :value="null" disabled>请选择科室</option>
- <option v-for="opt in allowedDepartments" :key="opt.id" :value="opt.id">
+ <option v-for="opt in allowedDepartments" :key="String(opt.id)" :value="opt.id">
  {{ opt.label }}
  </option>
  </select>
@@ -776,7 +787,7 @@ onMounted(async () => {
  暂无切片（向量化可能失败，可尝试重新切片）
  </span>
  <span v-else class="font-heading text-body-sm text-text">
- 共 {{ chunks.length }} 片 · 版本 v{{ chunks[0].version }}
+ 共 {{ chunks.length }} 片 · 版本 v{{ chunks[0]?.version }}
  </span>
  <span v-if="chunksCreatedAt" class="font-heading text-body-xs text-text-tertiary">
  生成于 {{ fmtDateTime(chunksCreatedAt) }}

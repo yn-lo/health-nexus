@@ -105,6 +105,8 @@ export const useChatStore = defineStore('chat', () => {
   const conversationsTotal = ref(0)
   /** 是否还有更早的消息可加载（上一页取满一页即认为还有） */
   const hasMoreMessages = ref(false)
+  /** 会话历史加载中：切换会话起为 true，历史到位（或加载失败）后为 false。期间禁止发送 */
+  const messagesLoading = ref(false)
 
   /** 加载匿名会话索引到内存 */
   function loadAnonSessionsList() {
@@ -124,9 +126,31 @@ export const useChatStore = defineStore('chat', () => {
   /**
    * 开始一次会话加载：递增代次并返回本次操作的代次。
    * 页面在"选择/切换会话"时立即调用（先于详情请求），使详情、科室、消息共享同一代次。
+   * 同时即刻隔离旧会话消息并置加载态：切换瞬间旧消息仍可见、且可继续发送会被追加到
+   * 旧列表并触发 localWriteSeq，导致新会话历史返回后被整体丢弃（P1）。
    */
   function beginConversationLoad(): number {
+    messages.value = []
+    hasMoreMessages.value = false
+    messagesLoading.value = true
     return ++fetchEpoch
+  }
+
+  /** 结束本次会话加载（历史到位或加载失败）；代次过期时不改状态，避免覆盖新会话 */
+  function endConversationLoad(epoch: number) {
+    if (isCurrentLoad(epoch)) messagesLoading.value = false
+  }
+
+  /**
+   * 放弃在途会话加载（新建对话/离开会话）：作废代次 + 复位加载态并清空消息列表。
+   * 仅递增代次不足以复原加载态（输入栏会被永久禁用），而只清列表又会让在途响应
+   * 回来时把已离开的会话历史重新写回。
+   */
+  function cancelConversationLoad() {
+    fetchEpoch++
+    messagesLoading.value = false
+    messages.value = []
+    hasMoreMessages.value = false
   }
 
   /** 本次代次是否仍是最新（未被后续切换取代）。 */
@@ -210,7 +234,10 @@ export const useChatStore = defineStore('chat', () => {
       messages.value = res
       hasMoreMessages.value = res.length >= MESSAGE_PAGE_SIZE
     } finally {
-      if (isCurrentLoad(myEpoch)) loading.value = false
+      if (isCurrentLoad(myEpoch)) {
+        loading.value = false
+        messagesLoading.value = false
+      }
     }
   }
 
@@ -260,7 +287,9 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.splice(idx, 1)
       return
     }
-    messages.value[idx] = { ...messages.value[idx], id: toId }
+    const cur = messages.value[idx]
+    if (!cur) return
+    messages.value[idx] = { ...cur, id: toId }
   }
 
   /** 重置整个 store — 登出时调用（Pinia setup store 不支持 $reset()，需手动实现） */
@@ -272,6 +301,7 @@ export const useChatStore = defineStore('chat', () => {
     anonSessions.value = []
     conversationsTotal.value = 0
     hasMoreMessages.value = false
+    messagesLoading.value = false
     fetchEpoch = 0
     localWriteSeq = 0
   }
@@ -284,10 +314,13 @@ export const useChatStore = defineStore('chat', () => {
     anonSessions,
     conversationsTotal,
     hasMoreMessages,
+    messagesLoading,
     loadAnonSessionsList,
     fetchConversations,
     loadMoreConversations,
     beginConversationLoad,
+    endConversationLoad,
+    cancelConversationLoad,
     isCurrentLoad,
     fetchConversation,
     updateConversation,

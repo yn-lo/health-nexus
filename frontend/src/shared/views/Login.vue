@@ -14,7 +14,7 @@
  * - 大字号 + 清晰层级：老年患者可读性优先
  *
  * 与 Register / ForgotPassword / ChangePassword 共用 PageShell + 设计令牌，
- * 不写组件级 scoped 样式（遵循 frontend/CLAUDE.md 硬性规则 1）。
+ * 不写组件级 scoped 样式（遵循 frontend/AGENTS.md 硬性规则 1）。
  */
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'

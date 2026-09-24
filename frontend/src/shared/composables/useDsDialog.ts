@@ -26,6 +26,8 @@ interface DialogState {
   inputPlaceholder: string
   inputValue: string
   inputError: string
+  /** 输入框校验器（showInput 时生效）：返回 true 通过，返回字符串为失败提示 */
+  inputValidator: ((value: string) => string | true) | null
   resolve: ((value: unknown) => void) | null
   reject: ((reason?: 'cancel') => void) | null
 }
@@ -42,6 +44,7 @@ const state = ref<DialogState>({
   inputPlaceholder: '',
   inputValue: '',
   inputError: '',
+  inputValidator: null,
   resolve: null,
   reject: null,
 })
@@ -60,6 +63,7 @@ function open(options: DialogOptions, showCancel: boolean): Promise<unknown> {
       inputPlaceholder: options.inputPlaceholder ?? '',
       inputValue: '',
       inputError: '',
+      inputValidator: options.inputValidator ?? null,
       resolve,
       reject,
     }

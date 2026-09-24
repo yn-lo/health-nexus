@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * 前端架构约束测试 — AC-ARCH-FE-* 追溯矩阵
- * 对齐 CLAUDE.md 前端硬性规则 + harness/frontend/specs/2026-07-17-frontend-rewrite-design.md §9
+ * 对齐 AGENTS.md 前端硬性规则 + harness/frontend/specs/2026-07-17-frontend-rewrite-design.md §9
  *
  * 约束 ID 对照：
  *   AC-ARCH-FE-01  禁止 any 类型
@@ -465,7 +465,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
   })
 
   // ── AC-ARCH-FE-11: 禁止组件间 prop 传递超过两层 ──────────────────────
-  it('AC-ARCH-FE-11: 禁止组件间 prop 传递超过两层（CLAUDE.md 硬性规则）', () => {
+  it('AC-ARCH-FE-11: 禁止组件间 prop 传递超过两层（AGENTS.md 硬性规则）', () => {
     const violations: string[] = []
 
     // 构建组件 prop 图：收集每个组件的 defineProps 名称
@@ -723,7 +723,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
 
     if (violations.length > 0) {
       throw new Error(
-        `AC-ARCH-FE-12 失败：发现 ${violations.length} 处死代码（CLAUDE.md: 生产代码不得存在死代码）:\n${violations.join('\n')}`,
+        `AC-ARCH-FE-12 失败：发现 ${violations.length} 处死代码（AGENTS.md: 生产代码不得存在死代码）:\n${violations.join('\n')}`,
       )
     }
   })
@@ -737,7 +737,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
     // 简单检查 strict: true 是否存在（JSON 中可能是 "strict": true）
     if (!/["']strict["']\s*:\s*true/.test(content)) {
       throw new Error(
-        'AC-ARCH-FE-13 失败：tsconfig.app.json 未启用 strict: true\n  CLAUDE.md 硬性规则：前端使用 TypeScript strict 模式',
+        'AC-ARCH-FE-13 失败：tsconfig.app.json 未启用 strict: true\n  AGENTS.md 硬性规则：前端使用 TypeScript strict 模式',
       )
     }
   })
@@ -1093,7 +1093,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
 
     if (violations.length > 0) {
       throw new Error(
-        `AC-ARCH-FE-21 失败：发现 ${violations.length} 处外部 CDN 引用（违反 CLAUDE.md 硬性规则第 8 条：禁止使用 CDN）:\n${violations.join('\n')}`,
+        `AC-ARCH-FE-21 失败：发现 ${violations.length} 处外部 CDN 引用（违反 AGENTS.md 硬性规则第 8 条：禁止使用 CDN）:\n${violations.join('\n')}`,
       )
     }
   })

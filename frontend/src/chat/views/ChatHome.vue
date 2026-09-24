@@ -36,7 +36,6 @@ const showDeptPicker = ref(false)
 
 /** 视图模式：聊天 / 知识库 — 同步到 URL query，跨导航（如文章详情返回）可恢复 */
 const activeMode = ref<'chat' | 'knowledge'>(route.query.mode === 'knowledge' ? 'knowledge' : 'chat')
-const knowledgeRef = ref<InstanceType<typeof KnowledgeList> | null>(null)
 
 /** 切换模式时同步到 URL（replace 避免堆历史） */
 function setMode(mode: 'chat' | 'knowledge') {
@@ -164,13 +163,13 @@ function onPromptClick(item: QuickAction) {
  <ChatInputBar
  v-if="activeMode === 'chat'"
  class="chat-home-input-bar"
- :department-name="activeDepartment.name"
+ :department-name="activeDepartment?.name"
  @send="sendMessage"
  @open-dept-picker="openDeptPicker"
  />
 
  <!-- 知识库模式 -->
- <KnowledgeList v-else ref="knowledgeRef" embedded />
+ <KnowledgeList v-else embedded />
 
  <!-- 历史抽屉 -->
  <ChatHistoryDrawer

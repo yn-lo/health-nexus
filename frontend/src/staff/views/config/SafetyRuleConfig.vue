@@ -75,7 +75,8 @@ const filtered = computed(() => {
  return list
 })
 
-const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<SafetyRule, SafetyRuleCreateRequest>({
+// form 类型取 Required：defaultForm/toForm 始终填充全部字段，用请求类型（字段可选）会让表单字段类型带 undefined
+const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<SafetyRule, Required<SafetyRuleCreateRequest>>({
  listRef: rules,
  defaultForm: () => ({ name: '', category: 'diagnosis', pattern: '', action: 'replace', replacement: '', is_active: true, description: '' }),
  toForm: (r) => ({ name: r.name, category: r.category, pattern: r.pattern, action: r.action, replacement: r.replacement, is_active: r.is_active, description: r.description }),

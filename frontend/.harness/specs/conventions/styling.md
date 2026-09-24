@@ -23,7 +23,7 @@
 
 ### 组件级样式豁免机制
 
-原则上组件内禁止 `<style scoped>`（frontend/CLAUDE.md 硬性规则 1）。极少数场景（如第三方组件内部结构无法用工具类命中）可通过豁免通道：
+原则上组件内禁止 `<style scoped>`（frontend/AGENTS.md 硬性规则 1）。极少数场景（如第三方组件内部结构无法用工具类命中）可通过豁免通道：
 
 - 在 `<style>` 块内标注 `ponytail:allow-scoped-css` 注释，由 `tests/arch/governance.test.ts` 的 AC-ARCH-FE-16 放行
 - 未标注的 `<style scoped>` 会被架构约束测试拦截（当前仅 16 个组件使用，15 个已标注，1 个遗留待补标或改造）

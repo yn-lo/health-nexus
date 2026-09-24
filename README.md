@@ -116,10 +116,10 @@ go test ./internal/harness/arch/...
 ### 前端（在 `frontend/` 目录执行）
 
 ```bash
-npx eslint src/                  # Lint
-npx vue-tsc --noEmit             # 类型检查
+npm run lint                     # Lint
+npm run type-check               # 类型检查（tsconfig.app.json + tsconfig.node.json）
 npx vitest run                   # 单元测试
-npx vite build                   # 构建
+npm run build                    # 类型检查 + 构建
 ```
 
 ### 完整门禁（CI 等价）

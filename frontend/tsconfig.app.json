@@ -22,10 +22,9 @@
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
 
-    /* 路径别名 */
-    "baseUrl": ".",
+    /* 路径别名（无 baseUrl：paths 相对本配置文件解析，TS 6 起 baseUrl 已弃用） */
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [

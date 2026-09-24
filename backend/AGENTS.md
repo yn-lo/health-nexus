@@ -1,6 +1,6 @@
-# CLAUDE.md — health-nexus backend
+# AGENTS.md — health-nexus backend
 
-> 本文件仅描述后端子项目。跨项目通用原则（MCP 工具优先策略、Ponytail、TDD 工作流、全局安全红线）见根目录 [../CLAUDE.md](../CLAUDE.md)。
+> 本文件仅描述后端子项目。跨项目通用原则（MCP 工具优先策略、Ponytail、TDD 工作流、全局安全红线）见根目录 [../AGENTS.md](../AGENTS.md)。
 
 ## 项目概述
 医疗健康对话后端（RAG + 危机干预 + 知识库管理）。Go 1.25 + chi + pgx/v5 + PostgreSQL(pgvector) + Redis + asynq + JWT(HS256) + log/slog。
@@ -16,6 +16,7 @@
 | 架构约束规则（AC-ARCH-*） | `internal/harness/arch/arch_test.go` |
 | lint 配置 | `.golangci.yml` |
 | 数据模型 | `internal/di/schema.sql`（幂等，启动自动应用） |
+| 门禁规范（单一入口 / 状态语义 / 自测） | 根目录 `../harness.md` |
 
 ## 构建与验证
 
@@ -23,7 +24,11 @@
 ```bash
 .harness/constraints/ci/gate.sh           # 全跑
 .harness/constraints/ci/gate.sh p0        # 仅 P0
+.harness/constraints/ci/gate.sh selftest  # 门禁自身验证（注入违规样例）
+make verify                               # 同上（薄包装，唯一实现仍是 gate.sh）
 ```
+
+CI/发布须加 `GATE_STRICT=1`（或 `make verify-strict`）：缺工具、无 API Key 等被跳过的检查视为失败。
 
 **快速预检**（秒级子集）：
 ```bash
@@ -35,7 +40,7 @@ go build ./... && go vet ./... && go test ./internal/... -count=1
 ## 硬性规则
 - **密钥**：禁止读取/修改 `*.key`、`config.local.yaml`、`.env*`。JWT 使用 HS256 对称密钥（环境变量 `HEALTH_NEXUS_JWT_SECRET`），生产须用环境变量覆盖。
 - **生产配置**：`config.yaml` 的 API Key / `encryption_key` 仅供开发；生产须用 `HEALTH_NEXUS_*` 环境变量覆盖。空 `encryption_key` 启动时 panic。
-- **不可逆操作**：禁止修改已提交迁移（force push / rm -rf 等通用红线见根目录 CLAUDE.md）。
+- **不可逆操作**：禁止修改已提交迁移（force push / rm -rf 等通用红线见根目录 AGENTS.md）。
 - **认证**：受保护端点必经 `JWTAuth`；config 域额外需 `RequireAdmin()`；角色隔离由 `RequireRole` 强制。
 - **安全优先**：refresh token 轮换/登出在 Redis 故障时 fail-closed（503）。
 - **错误不泄露**：未知错误统一 500 `INTERNAL_ERROR`；登录失败统一 `AUTH_INVALID_CREDENTIALS`。

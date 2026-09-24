@@ -35,7 +35,7 @@ const route = useRoute()
 const activeTab = computed(() => {
   const name = route.name as string
   const matched = props.items.find((item) => item.routeNames.includes(name))
-  return matched?.key ?? props.defaultActive ?? props.items[0]?.key
+  return matched?.key ?? props.defaultActive ?? props.items[0]?.key ?? ''
 })
 
 /** 是否显示底部导航（详情页等自带操作栏的页面需隐藏） */

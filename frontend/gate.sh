@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
+# 前端门禁入口（薄包装）
+#
+# 唯一实现见 .harness/constraints/ci/gate.sh（P0+P1+P2 全量）。
+# 本文件刻意不定义任何检查项，避免再次出现「多套范围不同的门禁」。
+#
+# 用法同唯一实现：
+#   ./gate.sh              # 全跑 P0+P1+P2
+#   ./gate.sh p0           # 仅 P0
+#   ./gate.sh selftest     # 门禁自身验证
+#   GATE_STRICT=1 ./gate.sh  # CI 模式：被跳过的检查视为失败
 set -euo pipefail
-echo "=== Health Nexus Frontend Gate ==="
-failed=()
-run() { echo ""; echo ">> $1"; shift; if ! "$@"; then failed+=("$1"); fi }
-run "ESLint" npx eslint src/ --quiet
-run "TypeCheck" npx vue-tsc --noEmit
-run "ArchTest" npx vitest run tests/arch/
-run "StyleGuard" node scripts/style-guard.mjs
-if [ ${#failed[@]} -gt 0 ]; then
-  echo ""; echo "GATE FAILED: ${failed[*]}"
-  exit 1
-fi
-echo ""; echo "All checks passed"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+exec bash .harness/constraints/ci/gate.sh "$@"

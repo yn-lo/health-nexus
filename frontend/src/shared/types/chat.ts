@@ -63,7 +63,7 @@ export interface MessageListParams {
 }
 
 /** 提示类别（notice 事件 kind） */
-type NoticeKind = 'emergency' | 'timeout';
+export type NoticeKind = 'emergency' | 'timeout';
 
 /** 本轮权威结果（result 事件）— 前端据此替换本地乐观消息，无需猜测或整页回拉 */
 export interface TurnResult {

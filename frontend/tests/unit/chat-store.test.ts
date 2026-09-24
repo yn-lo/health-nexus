@@ -135,6 +135,50 @@ describe('useChatStore', () => {
     expect(store.messages[0]?.conversation_id).toBe('B')
   })
 
+  // P1 切换会话加载期间：旧会话消息必须立即隔离，历史就位前不得发送。
+  // 回归自审查复现：切换 B 时保留 A 的消息且允许发送，随后 B 的历史被 localWriteSeq 守卫整体丢弃。
+  it('切换会话立即隔离旧消息并进入加载态，历史就位后恢复', async () => {
+    const store = useChatStore()
+    store.messages = [{ ...makeMsg('old-A', 'A 的旧回答'), conversation_id: 'A' }]
+    let finish!: (value: Message[]) => void
+    apiMocks.listMessages.mockImplementation(
+      () => new Promise<Message[]>((resolve) => { finish = resolve }),
+    )
+
+    // 与 ChatConversation.openConversation 相同：切换即 beginConversationLoad
+    const epoch = store.beginConversationLoad()
+    expect(store.messages).toHaveLength(0)      // 旧会话消息不得残留
+    expect(store.messagesLoading).toBe(true)    // 加载态（页面据此禁用发送）
+    store.currentConversation = makeConv({ id: 'B' })
+
+    const load = store.fetchMessages('B', epoch)
+    finish([{ ...makeMsg('history-B', 'B 的历史'), conversation_id: 'B' }])
+    await load
+
+    expect(store.messages.map((m) => m.conversation_id)).toEqual(['B'])
+    expect(store.messagesLoading).toBe(false)
+  })
+
+  it('会话加载失败或代次过期时加载态正确收尾（不会永久禁止发送）', async () => {
+    const store = useChatStore()
+    apiMocks.listMessages.mockRejectedValue(new Error('boom'))
+    const epoch = store.beginConversationLoad()
+    await expect(store.fetchMessages('B', epoch)).rejects.toThrow('boom')
+    expect(store.messagesLoading).toBe(false)   // fetchMessages 失败也要退出加载态
+
+    // 详情阶段失败（未走到 fetchMessages）由 openConversation 的 catch → endConversationLoad 收尾
+    const failedDetail = store.beginConversationLoad()
+    expect(store.messagesLoading).toBe(true)
+    store.endConversationLoad(failedDetail)
+    expect(store.messagesLoading).toBe(false)
+
+    // 过期代次的收尾不得覆盖新会话的加载态
+    const stale = store.beginConversationLoad()
+    store.beginConversationLoad()
+    store.endConversationLoad(stale)
+    expect(store.messagesLoading).toBe(true)
+  })
+
   it('updateConversation 同步更新列表和 currentConversation', async () => {
     const updated = makeConv({ id: 'u1', title: '重命名后', archived: true })
     apiMocks.updateConversation.mockResolvedValue(updated)

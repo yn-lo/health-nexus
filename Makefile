@@ -11,7 +11,8 @@ SHELL := /bin/bash
 GO := go
 GOFLAGS := -trimpath
 MODULE := health-nexus
-ROOT_DIR := $(shell pwd)
+# CURDIR 由 Make 自身提供，不 shell 出去；`$(shell pwd)` 在 Windows 上会失败并让 ROOT_DIR 为空。
+ROOT_DIR := $(CURDIR)
 BACKEND_GO := $(ROOT_DIR)/backend
 
 # 工具版本（与 go.mod 对齐或固定）
@@ -75,25 +76,19 @@ lint: ## golangci-lint 全量检查
 vet: ## go vet
 	cd $(BACKEND_GO) && $(GO) vet ./...
 
-# 完整验证门禁（CI 等价）
+# 完整验证门禁：委托给唯一实现 backend/.harness/constraints/ci/gate.sh（P0+P1+P2）。
+# 不再在本文件内重复定义检查范围，避免与 gate.sh 分叉成两套门禁。
 .PHONY: verify
-verify: vet lint test-harness test coverage-gate ## 完整验证门禁：vet + lint + harness AST + 单元测试 + 覆盖率门禁
-	@echo "✓ All verification gates passed"
+verify: ## 完整验证门禁（P0+P1+P2，委托 backend/.harness/constraints/ci/gate.sh）
+	bash backend/.harness/constraints/ci/gate.sh
+
+.PHONY: verify-strict
+verify-strict: ## CI/发布门禁：被跳过的检查（缺工具/无 API Key）视为失败
+	GATE_STRICT=1 bash backend/.harness/constraints/ci/gate.sh
 
 .PHONY: govulncheck
 govulncheck: ## 依赖漏洞扫描（仅报告，不阻断）
 	cd $(BACKEND_GO) && govulncheck ./...
-
-.PHONY: coverage-gate
-coverage-gate: ## 覆盖率门禁检查（Service >= 85%, 安全中间件 100%）
-	cd $(BACKEND_GO) && $(GO) test -race -coverprofile=coverage.out ./internal/...
-	@echo "Checking coverage thresholds..."
-	@cd $(BACKEND_GO) && $(GO) tool cover -func=coverage.out | grep -E 'domain/.*/service/' | awk '{print $$3}' | sed 's/%//' | while read cov; do \
-		if [ "$$(echo "$$cov < 85" | bc -l)" = "1" ]; then \
-			echo "FAIL: Service coverage $$cov% < 85%"; exit 1; \
-		fi; \
-	done || true
-	@echo "✓ Coverage gates passed"
 
 # ============================================================================
 # 代码生成

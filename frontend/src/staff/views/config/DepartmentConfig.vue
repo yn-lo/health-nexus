@@ -83,7 +83,8 @@ async function load() {
 }
 
 // ===== 编辑器（创建 + 编辑共用 popup） =====
-const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<DepartmentTreeNode, DepartmentCreateRequest>({
+// form 类型取 Required：defaultForm/toForm 始终填充全部字段，用请求类型（字段可选）会让表单字段类型带 undefined
+const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<DepartmentTreeNode, Required<DepartmentCreateRequest>>({
  listRef: tree,
  defaultForm: () => ({ name: '', parent_id: null, is_public: false, is_active: true, description: '' }),
  toForm: (n) => ({ name: n.name, parent_id: n.parent_id, is_public: n.is_public, is_active: n.is_active, description: n.description ?? '' }),

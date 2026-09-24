@@ -1,6 +1,6 @@
 # Health Nexus Frontend 知识地图
 
-> 本文件仅描述前端子项目。跨项目通用原则（MCP 工具优先策略、Ponytail、TDD 工作流、全局安全红线）见根目录 [../CLAUDE.md](../CLAUDE.md)。
+> 本文件仅描述前端子项目。跨项目通用原则（MCP 工具优先策略、Ponytail、TDD 工作流、全局安全红线）见根目录 [../AGENTS.md](../AGENTS.md)。
 
 ## 项目概述
 
@@ -10,25 +10,30 @@ Health Nexus Frontend 是一个双 MPA（多页应用）健康平台，包含患
 
 | 主题        | 规范文件                                               |
 | --------- | -------------------------------------------------- |
-| 架构总览      | .harness/specs/architecture/overview\.md           |
+| 架构总览      | .harness/specs/architecture/overview.md           |
 | 层级边界      | .harness/specs/architecture/boundaries.md          |
-| 数据流       | .harness/specs/architecture/data-flow\.md          |
+| 数据流       | .harness/specs/architecture/data-flow.md          |
 | 样式规范      | .harness/specs/conventions/styling.md              |
 | 认证页设计语言  | design.md                                          |
 | 约束工具      | .harness/constraints/README.md                     |
+| 门禁规范（单一入口 / 状态语义 / 自测） | 根目录 `../harness.md` |
 | 后端 API 端点（代码即文档） | 后端各域 `handler/router.go` + 契约测试 `backend/tests/api_contract_test.go` |
 | 真实环境 E2E 测试指南 | [.harness/specs/testing/e2e.md](.harness/specs/testing/e2e.md) |
 
 
 ## 构建与验证
 
-完整门禁：
+完整门禁（唯一入口，P0+P1+P2；实现见 `.harness/constraints/ci/gate.sh`）：
 
 ```bash
-npm run lint && npm run type-check && npm run test:arch && npm run lint:style && npm run dead-code && npm run dup-check
+./gate.sh              # 全跑（等价于 .harness/constraints/ci/gate.sh）
+./gate.sh p0           # 仅 P0：lint / 类型 / 架构 / 单测 / 构建 / 样式 / 死代码
+./gate.sh selftest     # 门禁自身验证（注入违规样例，必须被检出）
 ```
 
-快速预检：
+CI/发布须加 `GATE_STRICT=1`：缺工具或被跳过的检查视为失败，避免「没有运行」被记成「通过」。
+
+快速预检（秒级子集）：
 
 ```bash
 npm run type-check && npm run test:arch

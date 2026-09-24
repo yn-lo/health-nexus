@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Harness CI 门禁（Bash 版，Linux/macOS/CI）
-# 参见 harness.md §4.6 门禁分层：P0 架构不变量 + 测试质量 + 静态分析；P1 安全 + 规范；P2 契约 + 工程债 + 卫生。
-# 约束输出原则（harness.md §4.3）：只输出错误，全部通过时输出一行确认。
-# 优雅降级（harness.md §1.4）：可选工具未安装时跳过并告警，不阻塞。
+# 规范：../harness.md（§5.2 单一门禁入口与双平台一致性、§5.3 结果状态与失败策略、§6.1 门禁自测）。
+# 本脚本是后端唯一门禁实现；Makefile 的 verify/verify-strict 只是调用它的薄包装。
+# 约束输出原则：只输出错误，全部通过时输出一行确认。
+# 优雅降级：可选工具未安装时跳过并告警，不阻塞；
+# 设 GATE_STRICT=1 后改为阻断（CI/发布流水线必须设，否则「没有运行」会被记成「通过」）。
 #
 # 用法：
-#   .harness/constraints/ci/gate.sh           # 默认全跑 P0+P1+P2
+#   .harness/constraints/ci/gate.sh            # 默认全跑 P0+P1+P2
 #   .harness/constraints/ci/gate.sh p0         # 仅跑 P0
 #   .harness/constraints/ci/gate.sh p1         # 仅跑 P1
 #   .harness/constraints/ci/gate.sh p2         # 仅跑 P2
+#   .harness/constraints/ci/gate.sh selftest   # 门禁自身验证（注入违规样例，必须被检出）
+#   GATE_STRICT=1 .harness/constraints/ci/gate.sh   # CI 模式：缺工具/被跳过即失败
 set -uo pipefail
 
 # Windows PowerShell 兼容：从 PowerShell 调用时 stdout fd 可能被劫持导致内建 echo 写入失败。
@@ -44,6 +48,25 @@ warn() {
   WARNINGS=$((WARNINGS + 1))
 }
 
+# CI/发布模式：GATE_STRICT=1 时，「被跳过」视为失败——没有运行的检查不得记成通过。
+STRICT="${GATE_STRICT:-}"
+
+# skipped 记录一条被跳过的检查：严格模式失败，本地降级为告警。
+skipped() {
+  if [ -n "$STRICT" ]; then
+    fail "$1" "${2:-在 CI 环境安装齐全部工具后重试}"
+  else
+    warn "$1"
+  fi
+}
+
+# require_tool 检查必需工具；缺失时按 skipped 处理并返回 1，调用方据此跳过检查。
+require_tool() {
+  has_tool "$1" && return 0
+  skipped "$1 不可用，已跳过 $2" "${3:-安装 $1}"
+  return 1
+}
+
 # capture_fail 跑一条命令，失败则记录并把 stderr 摘要写入失败条目。
 # 用法: capture_fail "<检查名>" "<修复建议>" "<文档引用>" -- <cmd...>
 capture_fail() {
@@ -72,7 +95,7 @@ run_p0() {
   capture_fail \
     "go build ./... 失败" \
     "修复编译错误后重试" \
-    "CLAUDE.md" \
+    "AGENTS.md" \
     -- go build ./...
 
   # P0-2 go vet
@@ -136,7 +159,8 @@ run_p0() {
           ".harness/specs/conventions/testing.md" \
           -- env CGO_ENABLED=1 go test -race ./internal/... -count=1
       else
-        warn "race 检测已跳过：CGO_ENABLED=0 且未找到 gcc（go test -race 需要 cgo；CI 服务器应安装 gcc 并设置 CGO_ENABLED=1）"
+        skipped "race 检测被跳过：CGO_ENABLED=0 且未找到 gcc（go test -race 需要 cgo）" \
+          "CI 服务器安装 gcc 并设置 CGO_ENABLED=1"
       fi
     fi
   fi
@@ -145,7 +169,8 @@ run_p0() {
   # 检测项：死代码（unused/staticcheck U1000）、魔法值（mnd）、
   #         错误未处理（errcheck）、过长函数（funlen）、安全漏洞（gosec）、
   #         禁用依赖（depguard）、import 排序（goimports）等
-  if has_tool golangci-lint; then
+  if require_tool golangci-lint "P0-7 lint（含死代码/魔法值/安全规则）" \
+    "go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; then
     # golangci-lint 的真实报告在 stdout，缓存/进度信息在 stderr。
     # 单独捕获：丢弃 stderr 噪音，只看 stdout 的真实 lint 报告。
     local lint_out lint_rc
@@ -157,21 +182,18 @@ run_p0() {
         ".golangci.yml"
       echo "$lint_out" | grep -v -E '^\s*$' | head -n 40 | sed 's/^/    /'
     fi
-  else
-    warn "golangci-lint 未安装，已跳过 P0-7 lint（CI 服务器应装齐；本地可 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest）"
   fi
 
   # P0-7b 全程序可达性死代码扫描（golang.org/x/tools/cmd/deadcode）
   # 与 P0-7 的 unused/staticcheck U1000 互补：unused 按构建上下文分析，
   # deadcode 从 main/init 做整包可达性分析，能抓「仅被未用导出间接引用」的死函数。
-  if has_tool deadcode; then
+  if require_tool deadcode "P0-7b 全程序死代码扫描" \
+    "go install golang.org/x/tools/cmd/deadcode@latest"; then
     capture_fail \
       "deadcode 发现不可达的死代码" \
       "删除 deadcode 报告中的未使用符号（非测试产物）" \
       "golang.org/x/tools/cmd/deadcode" \
       -- deadcode ./...
-  else
-    warn "deadcode 未安装，已跳过 P0-7b 全程序死代码扫描（go install golang.org/x/tools/cmd/deadcode@latest；CI 服务器应装齐）"
   fi
 
   # P0-8 数据库结构/种子单一事实来源（schema.sql + seed.sql，内嵌，内容哈希幂等）
@@ -206,21 +228,20 @@ run_p1() {
   echo "==> P1: 安全 / 规范"
 
   # P1-1 govulncheck（依赖漏洞扫描）
-  if has_tool govulncheck; then
+  if require_tool govulncheck "P1-1 依赖漏洞扫描" \
+    "go install golang.org/x/vuln/cmd/govulncheck@latest"; then
     capture_fail \
       "govulncheck 发现已知漏洞" \
       "升级受影响依赖到修复版本" \
       "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck" \
       -- govulncheck ./...
-  else
-    warn "govulncheck 未安装，已跳过 P1-1 漏洞扫描（go install golang.org/x/vuln/cmd/govulncheck@latest）"
   fi
 
   # P1-2 gofmt 强制（不允许未格式化代码入库）
   local fmt_out
   fmt_out="$(gofmt -l . 2>/dev/null | grep -v -E '^(vendor/|\.git/)' || true)"
   if [ -n "$fmt_out" ]; then
-    fail "gofmt 发现未格式化文件" "运行 gofmt -w ." "CLAUDE.md"
+    fail "gofmt 发现未格式化文件" "运行 gofmt -w ." "AGENTS.md"
     echo "$fmt_out" | head -n 20 | sed 's/^/    /'
   fi
 
@@ -241,7 +262,7 @@ run_p1() {
   fi
 
   # P1-5 Playwright E2E（前后端联调；服务未启动时优雅降级为告警，不阻塞）
-  if has_tool npx; then
+  if require_tool npx "P1-5 Playwright E2E" "安装 Node.js/npm 并执行 npm install"; then
     local fe_alive be_alive
     # curl -w '%{http_code}' 连接失败时输出 000，工具不可用时为空 → 兜底 000
     fe_alive="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://localhost:5173/ 2>/dev/null)"
@@ -255,21 +276,23 @@ run_p1() {
         "frontend/tests/e2e/, frontend/playwright.config.ts" \
         -- bash -c 'cd ../frontend && npx playwright test --reporter=line'
     else
-      warn "Playwright E2E 已跳过：前后端服务未启动（前端 ${fe_alive} / 后端 ${be_alive}；需先启动 air + vite dev）"
+      skipped "Playwright E2E 被跳过：前后端服务未启动（前端 ${fe_alive} / 后端 ${be_alive}）" \
+        "发布前必须启动 air + vite dev 后重跑，E2E 未运行不得记成通过"
     fi
   fi
 
   # P1-6 临床评测（tests/eval，-tags eval；真实调用 LLM，需 API Key）
   # 高风险漏判率 0 容忍 / 误拦率 <=20%，未达标阻塞。评测内部无 Key 时也会 t.Skip，此处为双保险：
   # 显式 warn 提示跳过原因，避免「看起来跑了其实没跑」。
-  if has_tool go && [ -n "${HEALTH_NEXUS_LLM_API_KEY:-}" ]; then
+  if [ -n "${HEALTH_NEXUS_LLM_API_KEY:-}" ]; then
     capture_fail \
       "临床评测未达标（高风险漏判 / 误拦超阈值）" \
       "按 tests/eval 报告逐条复盘不一致样本；高风险漏判率必须为 0" \
       "tests/eval/" \
       -- go test -tags eval ./tests/eval/... -count=1
   else
-    warn "临床评测已跳过：未配置 HEALTH_NEXUS_LLM_API_KEY（配置后门禁将真实调用 LLM 跑 tests/eval 全量样本）"
+    skipped "临床评测被跳过：未配置 HEALTH_NEXUS_LLM_API_KEY" \
+      "发布前必须配置 Key 真实调用 LLM 跑 tests/eval 全量样本，未运行不得记成通过"
   fi
 }
 
@@ -328,7 +351,7 @@ run_p2() {
     --exclude-dir=testdata --exclude-dir=vendor internal/ cmd/ 2>/dev/null | \
     grep -v -E '_test\.go' || true)"
   if [ -n "$cdn_out" ]; then
-    fail "生产代码引用外网 CDN（P2 卫生）" "改为本地资源或经审核的白名单域名" "CLAUDE.md"
+    fail "生产代码引用外网 CDN（P2 卫生）" "改为本地资源或经审核的白名单域名" "AGENTS.md"
     echo "$cdn_out" | head -n 10 | sed 's/^/    /'
   fi
 
@@ -369,17 +392,68 @@ run_p2() {
     fi
   fi
 
-  # P2-7 前端重复代码率门禁（jscpd，含 ts/js/vue；阈值与忽略规则见 frontend/.jscpd.json）
-  # 重复率超阈值时 jscpd 退出非 0，与后端 dupl 同为阻塞项。
-  # node_modules 未安装时优雅降级为告警（与 P1-5 一致），避免 backend-only 检出被卡。
+  # P2-7 前端重复代码率检测（jscpd，含 ts/js/vue；阈值与忽略规则见 frontend/.jscpd.json）
+  # 策略：疑似语义重复属「需判断事项」，只告警供 review 参考，不阻断——与 frontend gate.sh P2-1 一致。
+  # 说明：Go 侧结构性重复由 P0-7 golangci-lint 的 dupl 规则阻断，此处不再叠加前端阻断项。
   if [ -d ../frontend/node_modules ] && has_tool npm; then
-    capture_fail \
-      "前端重复代码率超阈值（jscpd）" \
-      "按 consoleFull 报告重构重复代码；阈值 8%、minTokens 50，见 frontend/.jscpd.json" \
-      "frontend/.jscpd.json" \
-      -- bash -c 'cd ../frontend && npm run dup-check'
+    local fe_dup_out fe_dup_rc n
+    fe_dup_out="$(cd ../frontend && npm run dup-check --silent 2>&1)"; fe_dup_rc=$?
+    n="$(printf '%s\n' "$fe_dup_out" | grep -oE 'Found [0-9]+ clones' | grep -oE '[0-9]+' | head -n1)"
+    if [ -n "$n" ] && [ "$n" -gt 0 ]; then
+      warn "前端 jscpd 发现 ${n} 个代码克隆（P2 工程债，建议提取公共组件/工具）"
+      printf '%s\n' "$fe_dup_out" | grep -E 'Clone found|Found [0-9]+ clones' | head -n 5 | sed 's/^/    /'
+    elif [ -z "$n" ]; then
+      skipped "前端 jscpd 未产出结果（退出码 ${fe_dup_rc}），P2-7 未真正执行" \
+        "检查 frontend/.jscpd.json 与依赖安装"
+    fi
   else
-    warn "前端 dup-check 已跳过：../frontend/node_modules 未安装或 npm 不可用（npm install 后生效）"
+    skipped "前端 dup-check 被跳过：../frontend/node_modules 未安装或 npm 不可用" \
+      "在 frontend/ 执行 npm install"
+  fi
+}
+
+# ============================================================================
+# selftest — 门禁自身验证（注入违规样例，必须被检出且最终返回失败）
+# 自检不接受降级：探针工具不可用即失败，否则「自检通过」本身会变成假绿灯。
+# ============================================================================
+run_selftest() {
+  echo "==> selftest: 门禁自身验证"
+
+  probe_tool() {
+    has_tool "$1" && return 0
+    fail "selftest 无法验证：$1 不可用" "安装 $1 后重跑；自检不接受降级"
+    return 1
+  }
+
+  # 探针路径不用 local：EXIT trap 在函数返回后才执行，local 变量此时已出作用域，
+  # cleanup 会拿到空值而删不掉故意违规的样例文件。
+  probe_dir='internal/__gate_selftest__'
+  probe_arch='internal/domain/auth/handler/__gate_selftest__.go'
+  cleanup() { rm -rf "$probe_dir"; rm -f "$probe_arch"; }
+  trap cleanup EXIT
+
+  # S1 失败管道探针：子命令失败必须被记为门禁失败（防止 `|| true` 类假绿灯复活）
+  local before="$FAILURES"
+  { capture_fail "probe" "" "" -- false ; } >/dev/null 2>&1
+  if [ "$FAILURES" -eq "$before" ]; then
+    fail "selftest: 失败退出码未被记为门禁失败" "检查 gate.sh 的 capture_fail 与管道写法"
+  fi
+  FAILURES="$before"
+
+  probe_tool go || return 1
+
+  # S2 go vet 探针：注入 printf 类型错误（vet 是 P0-2 的实际检查器）
+  mkdir -p "$probe_dir"
+  printf 'package gateselftest\n\nimport "fmt"\n\nfunc probe() { fmt.Printf("%%d", "not-a-number") }\n' > "$probe_dir/probe.go"
+  if go vet "./$probe_dir/" >/dev/null 2>&1; then
+    fail "selftest: go vet 未检出注入的 printf 类型错误" "检查 P0-2 go vet 是否被执行"
+  fi
+  rm -rf "$probe_dir"
+
+  # S3 架构测试探针：注入 handler → repository 反向依赖（AC-ARCH-01）
+  printf 'package handler\n\nimport _ "health-nexus/internal/domain/auth/repository"\n' > "$probe_arch"
+  if go test ./internal/harness/arch/ -run TestArch_HandlerMustNotDependOnRepository -count=1 >/dev/null 2>&1; then
+    fail "selftest: 架构测试未检出 handler → repository 反向依赖" "检查 internal/harness/arch/arch_test.go 的 AC-ARCH-01"
   fi
 }
 
@@ -390,13 +464,14 @@ case "$TIER" in
   p0) run_p0 ;;
   p1) run_p1 ;;
   p2) run_p2 ;;
+  selftest) run_selftest ;;
   all)
     run_p0
     run_p1
     run_p2
     ;;
   *)
-    echo "用法: $0 [p0|p1|p2|all]" >&2
+    echo "用法: $0 [p0|p1|p2|selftest|all]" >&2
     exit 2
     ;;
 esac

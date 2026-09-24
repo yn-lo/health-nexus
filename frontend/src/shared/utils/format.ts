@@ -23,7 +23,7 @@ export function timeAgo(iso: string | null | undefined): string {
 }
 
 /** ISO → YYYY-MM-DD */
-export function fmtDate(iso: string): string {
+export function fmtDate(iso: string | null | undefined): string {
   return iso ? iso.slice(0, 10) : ''
 }
 

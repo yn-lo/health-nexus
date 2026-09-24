@@ -69,7 +69,8 @@ const filtered = computed(() => {
  return list
 })
 
-const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<SensitiveWord, SensitiveWordCreateRequest>({
+// form 类型取 Required：defaultForm/toForm 始终填充全部字段，用请求类型（字段可选）会让表单字段类型带 undefined
+const { showEditor, editing, form, openCreate, openEdit, submit, remove } = useCrudEditor<SensitiveWord, Required<SensitiveWordCreateRequest>>({
  listRef: words,
  defaultForm: () => ({ word: '', category: 'suicide', is_active: true }),
  toForm: (w) => ({ word: w.word, category: w.category, is_active: w.is_active }),
