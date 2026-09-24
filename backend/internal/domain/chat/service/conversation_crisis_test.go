@@ -10,6 +10,7 @@ import (
 
 	"health-nexus/internal/domain/chat/entity"
 	"health-nexus/internal/domain/chat/repository"
+	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
 )
 
@@ -60,6 +61,9 @@ func (m *mockConvRepo) Delete(_ context.Context, _ uuid.UUID, _ int64) (int64, e
 type mockMsgRepo struct {
 	msgs    []*entity.Message
 	listErr error
+	// 反馈统计的科室过滤捕获：lastDeptID 记录 Service 传入的过滤科室。
+	lastDeptID *int64
+	lastLimit  int
 }
 
 func (m *mockMsgRepo) ListByConversation(_ context.Context, _ uuid.UUID, _ *uuid.UUID, _ int) ([]*entity.Message, error) {
@@ -70,11 +74,16 @@ func (m *mockMsgRepo) UpdateFeedback(_ context.Context, _ uuid.UUID, _ int64, _ 
 	return 0, nil
 }
 
-func (m *mockMsgRepo) FeedbackSummary(_ context.Context) (repository.FeedbackCountRow, error) {
+func (m *mockMsgRepo) FeedbackSummary(_ context.Context, deptID int64) (repository.FeedbackCountRow, error) {
+	d := deptID
+	m.lastDeptID = &d
 	return repository.FeedbackCountRow{}, nil
 }
 
-func (m *mockMsgRepo) RecentFeedback(_ context.Context, _ int) ([]repository.FeedbackRow, error) {
+func (m *mockMsgRepo) RecentFeedback(_ context.Context, limit int, deptID int64) ([]repository.FeedbackRow, error) {
+	d := deptID
+	m.lastDeptID = &d
+	m.lastLimit = limit
 	return nil, nil
 }
 
@@ -494,6 +503,34 @@ func TestCrisisService_Handle(t *testing.T) {
 // ============================================================================
 // 测试辅助函数
 // ============================================================================
+
+// TestConversationService_FeedbackStats_DepartmentIsolation P1：普通医护的反馈统计必须按本科室过滤，
+// 不得返回其他科室会话的正文片段与消息标识；超管不限科室（deptID=0）。
+func TestConversationService_FeedbackStats_DepartmentIsolation(t *testing.T) {
+	t.Run("普通医护_按本科室过滤", func(t *testing.T) {
+		msg := &mockMsgRepo{}
+		svc := NewConversationService(&mockConvRepo{}, msg)
+		if _, err := svc.FeedbackStats(context.Background(),
+			CrisisActor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}, 20); err != nil {
+			t.Fatalf("期望 nil，实际 %v", err)
+		}
+		if msg.lastDeptID == nil || *msg.lastDeptID != 10 {
+			t.Errorf("期望按 deptID=10 过滤，实际 %v", msg.lastDeptID)
+		}
+	})
+
+	t.Run("超管_不限科室", func(t *testing.T) {
+		msg := &mockMsgRepo{}
+		svc := NewConversationService(&mockConvRepo{}, msg)
+		if _, err := svc.FeedbackStats(context.Background(),
+			CrisisActor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}, 20); err != nil {
+			t.Fatalf("期望 nil，实际 %v", err)
+		}
+		if msg.lastDeptID == nil || *msg.lastDeptID != 0 {
+			t.Errorf("超管期望 deptID=0（不限科室），实际 %v", msg.lastDeptID)
+		}
+	})
+}
 
 // assertAppErr 断言 err 是 *AppError 且 HTTP 和 Code 匹配。
 func assertAppErr(t *testing.T, err error, wantHTTP int, wantCode string) {

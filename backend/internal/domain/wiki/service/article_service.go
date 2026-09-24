@@ -583,13 +583,13 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 		summary := truncateRunes(stripHTMLTags(*fields.Content))
 		fields.Summary = &summary
 	}
-	if article.Status == constants.ArticleStatusPublished {
+	// 内容变更一律要求在 SQL 内判定重新审核（published → pending + 版本递增），
+	// 不依赖此处读到的状态——它与写入时的实际状态可能已漂移（P1 并发编辑绕过审核）。
+	// 非 published 的文章由 SQL 的 CASE 保持原状态与版本（draft/pending 内容编辑不变状态）。
+	if fields.ContentHash != nil {
+		fields.ReReviewOnContentChange = true
+	} else if article.Status == constants.ArticleStatusPublished {
 		fields.IncrementVersion = true
-		// 已发布文章内容变更 → 回到待审核；仅元数据变更（标题/封面/来源等）不触发重新审核。
-		if fields.ContentHash != nil {
-			pending := constants.ArticleStatusPending
-			fields.Status = &pending
-		}
 	}
 	return fields
 }
@@ -611,8 +611,9 @@ func (s *ArticleService) commitUpdate(
 			}
 			return translateArticleErr(err)
 		}
-		// 已发布文章内容变更（仍为 published，例如直接改库或元数据路径）：失效旧切片并写 outbox 保证最终一致。
-		// 走重新审核路径（status 已回 pending）时不在此处理——切片留待 Approve 后重建。
+		// 防御分支：内容变更后状态理论上必为 pending（SQL 内 CASE 保证），
+		// 故此分支仅在"直接改库等带外写入使行仍为 published"时兜底失效旧切片并写 outbox。
+		// 正常路径不在此处理——切片留待 Approve 后重建。
 		stillPublished := a.Status == constants.ArticleStatusPublished
 		if fields.ContentHash != nil && stillPublished && s.chunks != nil {
 			if _, dErr := s.chunks.DeactivateByArticle(ctx, articleID); dErr != nil {
@@ -645,8 +646,9 @@ func (s *ArticleService) commitUpdate(
 	return updated, nil
 }
 
-// enqueueVectorizeAfterUpdate 已发布文章内容变更后，事务提交后异步入队重新切片向量化
-// （与 Approve 入队模式一致，REQ-WIKI-011/012）。outbox 已在事务内写入，此处为快速路径。
+// enqueueVectorizeAfterUpdate 事务提交后异步入队重新切片向量化（快速路径，与 Approve 模式一致）。
+// 内容变更后状态一律回 pending（SQL 内 CASE 保证），故正常路径不会入队——重建发生在 Approve；
+// 此处仅兜底"带外写入使行仍为 published"的场景。outbox 已在事务内写入（如触发）。
 func (s *ArticleService) enqueueVectorizeAfterUpdate(
 	ctx context.Context, articleID int64, updated *entity.Article, contentChanged bool,
 ) {
@@ -761,6 +763,8 @@ func (s *ArticleService) Approve(ctx context.Context, in ApproveInput) error {
 				ReviewerID:     &reviewerID,
 				ReviewComment:  strPtrOrNil(in.Note),
 				SetPublishedAt: true,
+				// 重新审核通过即清除复审逾期标记，否则高风险逾期文章仍无法被检索（P2）。
+				ClearReviewOverdue: true,
 			}); err != nil {
 			return s.translateArticleStatusErr(ctx, in.ArticleID, err)
 		}
@@ -896,6 +900,12 @@ func (s *ArticleService) Unarchive(ctx context.Context, articleID int64, actor A
 	}
 	if !constants.IsAdmin(actor.Role) {
 		return apperrors.Forbidden("WIKI_FORBIDDEN", "仅管理员可恢复归档文章")
+	}
+	// 数据隔离：科室管理员只能恢复本科室文章（超管不限）——
+	// 否则跨科室恢复归档会让他人科室内容重新公开（与 Archive/Approve 的科室校验一致）。
+	if actor.Role != constants.RoleSuperAdmin &&
+		(article.DepartmentID == nil || *article.DepartmentID != actor.DeptID) {
+		return apperrors.Forbidden("WIKI_DEPT_MISMATCH", "非本科室文章不可恢复")
 	}
 	if article.Status != constants.ArticleStatusArchived {
 		return apperrors.Conflict("WIKI_INVALID_STATUS", "仅归档文章可恢复")

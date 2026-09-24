@@ -107,11 +107,15 @@ func (r *ArticleRepo) LockVersion(ctx context.Context, id int64) (int, error) {
 
 // GetPublishedByID 取已发布文章详情（含 department_name/author_name JOIN）。
 // 原子 +1 阅读量（CTE UPDATE+JOIN）；契约 §4.2 规定每次访问 +1，未定义去重。
-// 未找到（不存在/未发布/已删除）返回 (nil, ErrNotFound)。
+// 可见性与检索层对齐：published，或 pending 且曾发布（published_at 非空）——
+// 后者是"已发布文章被修改、正在重新审核"，其旧切片仍被 RAG 引用，原文必须可读，
+// 否则点击引用会 404（P2）。draft/archived/deleted 一律不可见。
+// 未找到（不存在/不可见/已删除）返回 (nil, ErrNotFound)。
 func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.Article, error) {
 	const sql = `WITH bumped AS (
 		UPDATE articles SET view_count = view_count + 1, updated_at = now()
-		WHERE id = $1 AND status = $2 AND is_deleted = false
+		WHERE id = $1 AND is_deleted = false
+		  AND (status = $2 OR (status = $3 AND published_at IS NOT NULL))
 		RETURNING ` + articleColumns + `
 	)
 	SELECT b.id, b.title, b.content, b.summary, b.cover_image_url, b.status, b.version,
@@ -123,7 +127,8 @@ func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.A
 	FROM bumped b
 	LEFT JOIN departments d ON d.id = b.department_id
 	LEFT JOIN users u ON u.id = b.author_id`
-	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id, constants.ArticleStatusPublished)
+	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id,
+		constants.ArticleStatusPublished, constants.ArticleStatusPending)
 	a, err := scanArticleWithNames(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -300,8 +305,8 @@ func (r *ArticleRepo) ListForStaff(
 	return out, total, rows.Err()
 }
 
-// UpdateFields 更新文章可变字段（不含状态/阅读量/版本）。仅更新非 nil 字段。
-// contentChanged=true 时同步写入新的 content_hash，并视情况递增 version（已发布时）。
+// UpdateFields 更新文章可变字段（不含阅读量）。仅更新非 nil 字段。
+// 内容变更（ContentHash 非 nil）时按行当前状态判定：published → pending 并递增版本（重新审核，P1）。
 // 返回更新后的实体（含 department_name/author_name JOIN）；不存在返回 ErrNotFound。
 func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateFields) (*entity.Article, error) {
 	b := &updateBuilder{sets: []string{"updated_at = now()"}}
@@ -395,11 +400,17 @@ func (b *updateBuilder) applyUpdateFields(f UpdateFields) {
 	if f.ContentRisk != nil {
 		b.add("content_risk", contentRiskOrDefault(*f.ContentRisk))
 	}
-	// 已发布文章的内容修改回到待审核（重新审核通过前继续服务原审核版本）。
-	if f.Status != nil {
-		b.add("status", *f.Status)
-	}
-	if f.IncrementVersion {
+	// 内容变更不得停留在已发布状态（P1）：状态迁移必须在 UPDATE 语句内按行**当前**状态判定，
+	// 不能依赖服务端读取时的状态快照——否则"作者读到 pending、管理员随后审核发布、
+	// 作者的写才提交"会让未审核的新正文保持 published 并进入向量化队列，绕过审核。
+	// 仅当行当前为 published 时回退 pending 并递增版本；draft/pending/archived 保持原状态与版本。
+	if f.ReReviewOnContentChange {
+		b.sets = append(b.sets,
+			fmt.Sprintf("status = CASE WHEN status = '%s' THEN '%s' ELSE status END",
+				constants.ArticleStatusPublished, constants.ArticleStatusPending),
+			fmt.Sprintf("version = CASE WHEN status = '%s' THEN version + 1 ELSE version END",
+				constants.ArticleStatusPublished))
+	} else if f.IncrementVersion {
 		b.sets = append(b.sets, "version = version + 1")
 	}
 }
@@ -412,8 +423,10 @@ type UpdateFields struct {
 	CoverImageURL  *string
 	AllowReference *bool
 	ContentHash    *string
-	// Status 非 nil 时同时迁移状态：已发布文章内容修改后回到 pending（重新审核）。
-	Status *string
+	// ReReviewOnContentChange 本次更新包含内容变更（ContentHash 非 nil）：由 UPDATE 语句按行
+	// 当前状态判定——published 则回退 pending 并递增版本（重新审核）。判定必须在 SQL 内完成，
+	// 不能依赖服务端读取时的状态快照（P1 并发编辑绕过审核）。
+	ReReviewOnContentChange bool
 	// 知识条目元数据（P1）。
 	Source               *string
 	ApplicablePopulation *string
@@ -444,6 +457,11 @@ func (r *ArticleRepo) UpdateStatus(
 	if opts.SetPublishedAt {
 		sets = append(sets, "published_at = now()")
 	}
+	// 重新审核通过即清除复审逾期标记：否则高风险逾期文章即使重新审核发布，
+	// 仍因 review_overdue=true 被检索层排除（P2）。审核动作本身已代表"已重新复审"。
+	if opts.ClearReviewOverdue {
+		sets = append(sets, "review_overdue = false", "review_overdue_at = NULL")
+	}
 	sql := fmt.Sprintf(`UPDATE articles SET %s WHERE id = $1 AND status = $2 AND is_deleted = false`,
 		strings.Join(sets, ", "))
 	tag, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, args...)
@@ -461,6 +479,8 @@ type StatusUpdateOpts struct {
 	ReviewerID     *int64
 	ReviewComment  *string
 	SetPublishedAt bool // toStatus=published 时设 published_at=now()
+	// ClearReviewOverdue 审核通过时清除复审逾期标记（review_overdue=false, review_overdue_at=NULL）。
+	ClearReviewOverdue bool
 }
 
 func (r *ArticleRepo) SetFeaturedRank(ctx context.Context, id int64, rank int) error {

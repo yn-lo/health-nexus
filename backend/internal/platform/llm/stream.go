@@ -31,6 +31,9 @@ type StreamChunk struct {
 	Token string // LLM 生成的 token 片段
 	Err   error  // 错误（nil 表示正常）
 	Done  bool   // true 表示流正常结束
+	// Truncated true 表示模型因长度限制（max_tokens / 上下文窗口）截断，
+	// 内容不完整——调用方须按"答案不完整"处理（落库 PARTIAL），不得标记为完整回答。
+	Truncated bool
 }
 
 // Streamer 流式聊天接口，用于 RAG 答案流式生成。
@@ -62,10 +65,11 @@ func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan Stream
 				slog.Debug("llm: stream close error", "err", err)
 			}
 		}()
+		truncated := false
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				sendChunk(ctx, ch, StreamChunk{Done: true})
+				sendChunk(ctx, ch, StreamChunk{Done: true, Truncated: truncated})
 				return
 			}
 			if err != nil {
@@ -76,7 +80,15 @@ func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan Stream
 				sendChunk(ctx, ch, StreamChunk{Err: err})
 				return
 			}
-			if len(resp.Choices) > 0 && resp.Choices[0].Delta.Content != "" {
+			if len(resp.Choices) == 0 {
+				continue
+			}
+			// finish_reason=length：模型因 max_tokens/上下文窗口截断，答案不完整。
+			// 需在最终 Done 片段上标识，避免下游把截断答案当作完整回答。
+			if resp.Choices[0].FinishReason == openai.FinishReasonLength {
+				truncated = true
+			}
+			if resp.Choices[0].Delta.Content != "" {
 				if !sendChunk(ctx, ch, StreamChunk{Token: resp.Choices[0].Delta.Content}) {
 					return
 				}

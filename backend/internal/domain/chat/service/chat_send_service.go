@@ -778,10 +778,13 @@ type ragStreamState struct {
 	pending         strings.Builder
 	streamCompleted bool
 	finalized       bool
-	partial         bool // LLM 超时/中断导致答案不完整
+	partial         bool // LLM 超时/中断/长度截断导致答案不完整
 	safetyChanged   bool // 流式过程中输出审查替换过内容
 	// deferred 高风险内容不流式先发：生成结果先累积，经生成后语义审核通过后一次性下发。
 	deferred bool
+	// reviewed 生成后语义审核已通过。deferred 内容只有审核通过才可落库/展示——
+	// 中断路径（defer cleanup）据此判断内容是否经过审核，避免未审核正文绕过审核写入历史。
+	reviewed bool
 }
 
 // len 已产生（含未凑满一句的尾部）的答案长度，用于空流判断。
@@ -1067,6 +1070,11 @@ func (s *ChatSendService) streamLLMTokens(
 			return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
 		}
 		if chunk.Done {
+			// 长度截断（max_tokens / 上下文窗口）：内容不完整，落库须为 PARTIAL，
+			// 不得因"流正常结束"当成本轮生成完成（P2）。
+			if chunk.Truncated {
+				st.partial = true
+			}
 			break
 		}
 		st.pending.WriteString(chunk.Token)
@@ -1152,6 +1160,7 @@ func (s *ChatSendService) finalizeRAGOutput(
 			return swallowRejection(s.finalizeRejection(ctx, sess, st, out, alt))
 		}
 		// 审核通过：完整答案一次性下发（此前刻意未流式发送）。
+		st.reviewed = true
 		if err := out.Write(EventAnswer, answerPayload{Mode: answerModeReplace, Text: content}); err != nil {
 			return err
 		}
@@ -1228,6 +1237,8 @@ func (s *ChatSendService) reviewAnswer(
 // 否则用 context.Background() + 超时执行清理——请求 ctx 可能在客户端断开时已取消，
 // 此时用原 ctx 清理会因 context.Canceled 而失败，留下孤儿消息。
 // 落库内容取 st.content（已经输出审查、且已推送给客户端的内容），保证 DB 与客户端所见一致。
+//   - deferred 内容（高风险）未通过生成后语义审核：一律不落库未审核正文，落安全兜底话术 +
+//     REJECTED——否则中断即绕过语义审核，患者重开会话即可看到未经审核的答案（P1）。
 //   - streamCompleted=true：LLM 流已完成，用真实答案 finalize；partial 表示答案被截断。
 //   - streamCompleted=false：LLM 流未完成，清理为拒答，避免遗留空 content 的孤儿消息。
 //
@@ -1238,6 +1249,17 @@ func (s *ChatSendService) cleanupRAGStream(ctx context.Context, sess *Session, s
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), ragCleanupTimeout)
 	defer cancel()
+	// P1：deferred（高风险）内容要求"生成后语义审核通过才展示/落库"。中断路径未完成语义审核，
+	// 直接落库等于让未审核正文绕过审核进入历史。此处放弃该片段，落安全兜底话术。
+	if st.deferred && !st.reviewed {
+		slog.WarnContext(ctx, "chat: deferred answer interrupted before semantic review, discard unreviewed content")
+		if ferr := sess.store.FinalizeAssistant(
+			cleanupCtx, st.aiMsgID, st.turnID, rag.AssessmentFailedMessage(), constants.ResultRejected, nil,
+		); ferr != nil {
+			slog.ErrorContext(ctx, "cleanup unreviewed deferred answer failed", "err", ferr)
+		}
+		return
+	}
 	content := st.content.String()
 	if st.streamCompleted {
 		out2 := s.safetyOut.Validate(cleanupCtx, content)

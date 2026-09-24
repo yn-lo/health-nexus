@@ -10,6 +10,7 @@ import (
 
 	"health-nexus/internal/domain/chat/entity"
 	"health-nexus/internal/domain/chat/repository"
+	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
 )
 
@@ -32,8 +33,8 @@ type ConversationRepoPort interface {
 type MessageRepoPort interface {
 	ListByConversation(ctx context.Context, convID uuid.UUID, before *uuid.UUID, limit int) ([]*entity.Message, error)
 	UpdateFeedback(ctx context.Context, messageID uuid.UUID, patientID int64, feedback string) (int64, error)
-	FeedbackSummary(ctx context.Context) (repository.FeedbackCountRow, error)
-	RecentFeedback(ctx context.Context, limit int) ([]repository.FeedbackRow, error)
+	FeedbackSummary(ctx context.Context, deptID int64) (repository.FeedbackCountRow, error)
+	RecentFeedback(ctx context.Context, limit int, deptID int64) ([]repository.FeedbackRow, error)
 }
 
 // 消息反馈三态取值（宣教效果口径：回答是否解决患者问题）。
@@ -262,12 +263,20 @@ type FeedbackStats struct {
 
 // FeedbackStats 医护端反馈统计：三态汇总 + 最近反馈（最多 limit 条，按反馈时间倒序）。
 // 仅供 STAFF 角色使用（由 handler 层路由门禁保证）。
-func (s *ConversationService) FeedbackStats(ctx context.Context, limit int) (*FeedbackStats, error) {
-	counts, err := s.msg.FeedbackSummary(ctx)
+// 数据隔离：非超管仅统计本科室会话（按 conversations.locked_dept_id）的反馈，
+// 避免普通医护通过统计接口读到其他科室对话的正文片段与消息标识。
+func (s *ConversationService) FeedbackStats(
+	ctx context.Context, actor CrisisActor, limit int,
+) (*FeedbackStats, error) {
+	deptID := int64(0)
+	if actor.Role != constants.RoleSuperAdmin {
+		deptID = actor.DeptID
+	}
+	counts, err := s.msg.FeedbackSummary(ctx, deptID)
 	if err != nil {
 		return nil, fmt.Errorf("feedback summary: %w", err)
 	}
-	rows, err := s.msg.RecentFeedback(ctx, limit)
+	rows, err := s.msg.RecentFeedback(ctx, limit, deptID)
 	if err != nil {
 		return nil, fmt.Errorf("recent feedback: %w", err)
 	}

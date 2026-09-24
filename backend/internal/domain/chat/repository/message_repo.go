@@ -141,16 +141,20 @@ type FeedbackRow struct {
 }
 
 // FeedbackSummary 汇总三态反馈计数（仅统计 feedback 非空的消息）。
-func (r *MessageRepo) FeedbackSummary(ctx context.Context) (FeedbackCountRow, error) {
+// deptID > 0 时按会话锁定科室过滤（数据隔离：医护仅可见本科室会话的反馈）；
+// deptID == 0 表示不限定（超管）。会话未锁定科室（locked_dept_id IS NULL）时不计入任何科室。
+func (r *MessageRepo) FeedbackSummary(ctx context.Context, deptID int64) (FeedbackCountRow, error) {
 	const sql = `SELECT COUNT(*) AS total,
-	                    COUNT(*) FILTER (WHERE feedback = 'solved')   AS solved,
-	                    COUNT(*) FILTER (WHERE feedback = 'partial')  AS partial,
-	                    COUNT(*) FILTER (WHERE feedback = 'unsolved') AS unsolved
-	             FROM messages
-	             WHERE feedback IS NOT NULL`
+	                    COUNT(*) FILTER (WHERE m.feedback = 'solved')   AS solved,
+	                    COUNT(*) FILTER (WHERE m.feedback = 'partial')  AS partial,
+	                    COUNT(*) FILTER (WHERE m.feedback = 'unsolved') AS unsolved
+	             FROM messages m
+	             JOIN conversations conv ON conv.id = m.conversation_id
+	             WHERE m.feedback IS NOT NULL
+	               AND ($1 = 0 OR conv.locked_dept_id = $1)`
 	var row FeedbackCountRow
 	err := postgres.Q(ctx, r.pool).
-		QueryRow(ctx, sql).
+		QueryRow(ctx, sql, deptID).
 		Scan(&row.Total, &row.Solved, &row.Partial, &row.Unsolved)
 	if err != nil {
 		return FeedbackCountRow{}, fmt.Errorf("feedback summary: %w", err)
@@ -159,13 +163,16 @@ func (r *MessageRepo) FeedbackSummary(ctx context.Context) (FeedbackCountRow, er
 }
 
 // RecentFeedback 最近带反馈的消息（按反馈时间 updated_at 倒序，最多 limit 条）。
-func (r *MessageRepo) RecentFeedback(ctx context.Context, limit int) ([]FeedbackRow, error) {
-	const sql = `SELECT id, conversation_id, feedback, content, created_at
-	             FROM messages
-	             WHERE feedback IS NOT NULL
-	             ORDER BY updated_at DESC
+// deptID 语义同 FeedbackSummary：>0 时按会话锁定科室过滤，0 表示不限定（超管）。
+func (r *MessageRepo) RecentFeedback(ctx context.Context, limit int, deptID int64) ([]FeedbackRow, error) {
+	const sql = `SELECT m.id, m.conversation_id, m.feedback, m.content, m.created_at
+	             FROM messages m
+	             JOIN conversations conv ON conv.id = m.conversation_id
+	             WHERE m.feedback IS NOT NULL
+	               AND ($2 = 0 OR conv.locked_dept_id = $2)
+	             ORDER BY m.updated_at DESC
 	             LIMIT $1`
-	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, limit)
+	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, limit, deptID)
 	if err != nil {
 		return nil, fmt.Errorf("recent feedback: %w", err)
 	}

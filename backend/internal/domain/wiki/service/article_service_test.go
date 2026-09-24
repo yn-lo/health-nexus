@@ -42,6 +42,8 @@ type mockArticleRepo struct {
 	// 落库捕获：Create 的实体 / UpdateFields 的待更新字段，便于断言写入前已被规范化。
 	created      *entity.Article
 	updateFields repository.UpdateFields
+	// UpdateStatus 落库捕获：便于断言审核通过时清除了复审逾期标记（P2）。
+	updateStatusOpts repository.StatusUpdateOpts
 }
 
 func (m *mockArticleRepo) Create(_ context.Context, a *entity.Article) error {
@@ -73,17 +75,25 @@ func (m *mockArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaff
 }
 func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.UpdateFields) (*entity.Article, error) {
 	m.updateFields = f
-	// 模拟 DB 更新：应用状态迁移与版本递增，使 service 能按更新后的状态决定后续联动。
+	// 模拟真实 SQL 更新：应用内容/元数据变化，并按行当前状态处理重新审核（P1）。
 	updated := *m.article
-	if f.Status != nil {
-		updated.Status = *f.Status
+	if f.Content != nil {
+		updated.Content = *f.Content
 	}
-	if f.IncrementVersion {
+	if f.ContentHash != nil {
+		updated.ContentHash = *f.ContentHash
+	}
+	if f.ReReviewOnContentChange && updated.Status == constants.ArticleStatusPublished {
+		// 内容变更且行当前为 published → 回退待审核 + 版本递增（与 SQL CASE 一致）。
+		updated.Status = constants.ArticleStatusPending
+		updated.Version++
+	} else if f.IncrementVersion {
 		updated.Version++
 	}
 	return &updated, nil
 }
-func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, _ repository.StatusUpdateOpts) error {
+func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, opts repository.StatusUpdateOpts) error {
+	m.updateStatusOpts = opts
 	return m.updateStatErr
 }
 func (m *mockArticleRepo) SoftDelete(_ context.Context, id int64) error {
@@ -364,12 +374,12 @@ func TestArticleService_Update_PublishedContentChange_ReturnsToPendingReview(t *
 	if err != nil {
 		t.Fatalf("Update 返回错误: %v", err)
 	}
-	// 状态回到待审核，且写入字段里显式带 status=pending。
+	// 状态回到待审核，且写入字段显式要求"内容变更回退重新审核"。
 	if dto.Status != constants.ArticleStatusPending {
 		t.Errorf("更新后状态 = %q，期望 %q（需重新审核）", dto.Status, constants.ArticleStatusPending)
 	}
-	if d.repo.updateFields.Status == nil || *d.repo.updateFields.Status != constants.ArticleStatusPending {
-		t.Errorf("期望写入 status=pending，实际 %v", d.repo.updateFields.Status)
+	if !d.repo.updateFields.ReReviewOnContentChange {
+		t.Error("期望写入 ReReviewOnContentChange=true（由 SQL 按当前状态回退 pending）")
 	}
 	// 审核通过前不得动旧切片、不得重建向量。
 	if d.chunks.deactivateCall != 0 {
@@ -384,6 +394,40 @@ func TestArticleService_Update_PublishedContentChange_ReturnsToPendingReview(t *
 	// 审计日志须记录真实的 published → pending 迁移。
 	if d.audit.createCnt != 1 {
 		t.Errorf("期望审计写入 1 条，实际 %d", d.audit.createCnt)
+	}
+}
+
+// TestArticleService_Update_ContentChangeEvenIfStalePending_CarriesReReviewGuard P1 并发回归：
+// 作者读到 pending（随后管理员审核发布），内容变更仍必须携带 ReReviewOnContentChange——
+// 由 SQL 按行当前状态回退 pending，避免新正文保持已发布并进入向量化队列。
+func TestArticleService_Update_ContentChangeEvenIfStalePending_CarriesReReviewGuard(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusPending, // 写入时的实际状态可能已变为 published
+		AuthorID:     1,
+		DepartmentID: &deptID,
+		Content:      "old content",
+		ContentHash:  "old_hash",
+	}
+	d := buildSvcWithOutbox(article)
+	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
+
+	newContent := "new content"
+	if _, err := d.svc.Update(context.Background(), UpdateInput{
+		Content:   &newContent,
+		ArticleID: 42,
+		Actor:     actor,
+	}); err != nil {
+		t.Fatalf("Update 返回错误: %v", err)
+	}
+	if !d.repo.updateFields.ReReviewOnContentChange {
+		t.Error("内容变更必须要求 SQL 内重新审核判定，不能依赖读取时的状态快照")
+	}
+	// 待重新审核期间不得失效原切片、不得重建向量。
+	if d.chunks.deactivateCall != 0 || d.outbox.insertCall != 0 || d.vector.enqueueCnt != 0 {
+		t.Errorf("待重新审核期间不得动切片/向量化：deactivate=%d outbox=%d enqueue=%d",
+			d.chunks.deactivateCall, d.outbox.insertCall, d.vector.enqueueCnt)
 	}
 }
 
@@ -519,6 +563,63 @@ func TestArticleService_Unarchive_NonAdmin_ReturnsForbidden(t *testing.T) {
 	}
 }
 
+// TestArticleService_Unarchive_DeptAdmin_CannotCrossDept P1：科室管理员不得恢复其他科室的归档文章
+// （否则他人科室内容会被重新公开并进入向量化队列）。
+func TestArticleService_Unarchive_DeptAdmin_CannotCrossDept(t *testing.T) {
+	otherDept := int64(99)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusArchived,
+		AuthorID:     1,
+		DepartmentID: &otherDept,
+	}
+	d := buildSvcWithOutbox(article)
+	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
+
+	err := d.svc.Unarchive(context.Background(), 42, actor)
+	if err == nil {
+		t.Fatal("科室管理员不应恢复其他科室的归档文章")
+	}
+	assertAppErrCode(t, err, "WIKI_DEPT_MISMATCH")
+	// 越权被拒后不得产生任何副作用。
+	if d.outbox.insertCall != 0 || d.vector.enqueueCnt != 0 || d.audit.createCnt != 0 {
+		t.Errorf("越权拒绝后不应有副作用：outbox=%d enqueue=%d audit=%d",
+			d.outbox.insertCall, d.vector.enqueueCnt, d.audit.createCnt)
+	}
+}
+
+// TestArticleService_Unarchive_DeptAdmin_SameDept_Succeeds 本科室管理员恢复本科室归档文章应成功。
+func TestArticleService_Unarchive_DeptAdmin_SameDept_Succeeds(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusArchived,
+		AuthorID:     1,
+		DepartmentID: &deptID,
+	}
+	d := buildSvcWithOutbox(article)
+	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
+
+	if err := d.svc.Unarchive(context.Background(), 42, actor); err != nil {
+		t.Fatalf("本科室管理员应可恢复本科室归档文章，实际错误: %v", err)
+	}
+	if d.outbox.insertCall != 1 {
+		t.Errorf("恢复归档应写 outbox，实际 %d 次", d.outbox.insertCall)
+	}
+}
+
+// assertAppErrCode 断言 err 为 *AppError 且错误码匹配。
+func assertAppErrCode(t *testing.T, err error, wantCode string) {
+	t.Helper()
+	var appErr *apperrors.AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("期望 *AppError，实际 %T: %v", err, err)
+	}
+	if appErr.Code != wantCode {
+		t.Errorf("期望错误码 %s，实际 %s", wantCode, appErr.Code)
+	}
+}
+
 // ============================================================================
 // Outbox Insert 失败应导致事务回滚
 // ============================================================================
@@ -643,6 +744,28 @@ func TestArticleService_Approve_DoctorCannotReview(t *testing.T) {
 	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
 	if err == nil {
 		t.Fatal("非管理员不应审核文章")
+	}
+}
+
+// TestArticleService_Approve_ClearsReviewOverdue P2：重新审核通过必须清除复审逾期标记，
+// 否则高风险逾期文章即使重新发布仍被检索层排除（患者/患者端无法命中）。
+func TestArticleService_Approve_ClearsReviewOverdue(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:            42,
+		Status:        constants.ArticleStatusPending,
+		AuthorID:      1,
+		DepartmentID:  &deptID,
+		ReviewOverdue: true,
+	}
+	d := buildSvcWithOutbox(article)
+	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
+
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: reviewer}); err != nil {
+		t.Fatalf("Approve 返回错误: %v", err)
+	}
+	if !d.repo.updateStatusOpts.ClearReviewOverdue {
+		t.Error("审核通过时应清除 review_overdue 标记（P2）")
 	}
 }
 

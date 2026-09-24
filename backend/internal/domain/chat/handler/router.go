@@ -130,8 +130,9 @@ func currentPatientID(r *http.Request) (int64, error) {
 	return currentUserID(r)
 }
 
-// currentCrisisActor 从 ctx 提取危机事件操作者上下文（JWTAuth + DataIsolation 注入）。
-func currentCrisisActor(r *http.Request) (service.CrisisActor, error) {
+// currentStaffActor 从 ctx 提取医护端操作者上下文（JWTAuth + DataIsolation 注入）：
+// user_id/role/dept_id 用于危机事件处理与反馈统计的科室数据隔离。
+func currentStaffActor(r *http.Request) (service.CrisisActor, error) {
 	ctx := r.Context()
 	uid, ok := ctx.Value(contextkeys.UserID).(int64)
 	if !ok || uid <= 0 {

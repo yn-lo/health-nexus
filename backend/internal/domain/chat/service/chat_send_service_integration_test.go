@@ -119,6 +119,7 @@ type mockStreamer struct {
 	tokens    []string // 按顺序投递的 token
 	streamErr error    // 非 nil 时 StreamChat 返回此错误
 	midErr    error    // 非 nil 时在 tokens 之后投递 Err chunk（模拟流中途中断）
+	truncated bool     // true 时 Done 片段标记 Truncated（模拟 LLM 因长度限制截断）
 	lastReq   llm.ChatRequest
 }
 
@@ -139,7 +140,7 @@ func (m *mockStreamer) StreamChat(_ context.Context, req llm.ChatRequest) (<-cha
 			ch <- llm.StreamChunk{Err: m.midErr}
 			return
 		}
-		ch <- llm.StreamChunk{Done: true}
+		ch <- llm.StreamChunk{Done: true, Truncated: m.truncated}
 	}()
 	return ch, nil
 }
@@ -1470,6 +1471,129 @@ func TestCleanupRAGStream_AbortedWithEmptyContent(t *testing.T) {
 	}
 	if got.Content == "" {
 		t.Error("empty placeholder should be filled with system error message")
+	}
+}
+
+// TestCleanupRAGStream_DeferredUnreviewed_DiscardsContent P1：deferred（高风险）内容的生成后
+// 语义审核未通过/未执行时，清理路径不得落库未审核正文——否则中断即绕过语义审核写入历史。
+func TestCleanupRAGStream_DeferredUnreviewed_DiscardsContent(t *testing.T) {
+	svc := newTestChatSendService(t,
+		&mockStreamer{ready: true}, &mockKnowledgeSearcher{}, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+
+	convID := uuid.New()
+	msg := &mockMessagePort{}
+	placeholder := &entity.Message{ID: uuid.New(), ConversationID: convID, Role: constants.MessageRoleAssistant}
+	msg.messages = append(msg.messages, placeholder)
+
+	// 模拟"高风险问题生成中途断开"：内容已累积（deferred 未下发），语义审核未执行。
+	unreviewed := "把药量翻倍服用即可。"
+	st := &ragStreamState{aiMsgID: placeholder.ID, deferred: true, partial: true}
+	st.content.WriteString(unreviewed)
+
+	store := newDBSessionStore(&mockConversationPort{}, msg, &mockCrisisPort{}, &noopCrisisNotifier{}, mockTxRunner{}, &entity.Conversation{ID: convID})
+	svc.cleanupRAGStream(context.Background(), &Session{SID: convID.String(), store: store}, st)
+
+	msg.mu.Lock()
+	defer msg.mu.Unlock()
+	got := msg.messages[0]
+	if strings.Contains(got.Content, "翻倍") {
+		t.Errorf("未审核的高风险正文被落库（绕过语义审核）：%q", got.Content)
+	}
+	if got.ResultCode != constants.ResultRejected {
+		t.Errorf("ResultCode = %q, want %q", got.ResultCode, constants.ResultRejected)
+	}
+}
+
+// TestCleanupRAGStream_DeferredReviewed_KeepsContent 语义审核已通过的 deferred 内容，
+// 即使在 finalize 推送阶段中断，仍按已审核内容落库（审核已通过，不应误丢弃）。
+func TestCleanupRAGStream_DeferredReviewed_KeepsContent(t *testing.T) {
+	svc := newTestChatSendService(t,
+		&mockStreamer{ready: true}, &mockKnowledgeSearcher{}, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+
+	convID := uuid.New()
+	msg := &mockMessagePort{}
+	placeholder := &entity.Message{ID: uuid.New(), ConversationID: convID, Role: constants.MessageRoleAssistant}
+	msg.messages = append(msg.messages, placeholder)
+
+	reviewed := "通常建议遵医嘱服用。"
+	st := &ragStreamState{aiMsgID: placeholder.ID, deferred: true, reviewed: true}
+	st.content.WriteString(reviewed)
+
+	store := newDBSessionStore(&mockConversationPort{}, msg, &mockCrisisPort{}, &noopCrisisNotifier{}, mockTxRunner{}, &entity.Conversation{ID: convID})
+	svc.cleanupRAGStream(context.Background(), &Session{SID: convID.String(), store: store}, st)
+
+	msg.mu.Lock()
+	defer msg.mu.Unlock()
+	if got := msg.messages[0].Content; got != reviewed {
+		t.Errorf("已审核内容应保留，实际 %q", got)
+	}
+}
+
+// TestStream_DeferredInterrupted_DoesNotPersistUnreviewedAnswer P1 端到端：
+// 高风险（用药）问题生成中途断开时，未经语义审核的正文不得进入会话历史。
+func TestStream_DeferredInterrupted_DoesNotPersistUnreviewedAnswer(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "降压药能不能加量",
+		RecommendedAction: rag.ActionRetrieve,
+	}}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "资料", Score: 0.9, VecScore: 0.9}},
+	}
+	// 生成中途断开，且已产生越界正文。
+	streamer := &mockStreamer{
+		ready:  true,
+		tokens: []string{"把药量翻倍", "服用即可。"},
+		midErr: errors.New("upstream reset"),
+	}
+	reviewer := &mockOutputReviewer{review: rag.OutputReview{BoundaryOK: true, EvidenceSupported: true}}
+	msg := &mockMessagePort{}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, reviewer, streamer, knowledge, &mockConversationPort{}, msg, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	err := svc.Stream(context.Background(), newStreamInput("降压药剂量要翻倍吗"), out)
+	assertAppError(t, err, 503, "CHAT_LLM_UNAVAILABLE")
+
+	if reviewer.called {
+		t.Error("中断路径未完成语义审核，不应标记为已审核")
+	}
+	msg.mu.Lock()
+	defer msg.mu.Unlock()
+	last := msg.messages[len(msg.messages)-1]
+	if strings.Contains(last.Content, "翻倍") {
+		t.Errorf("未审核的高风险中断正文被落库（绕过语义审核）：%q", last.Content)
+	}
+	if last.ResultCode != constants.ResultRejected {
+		t.Errorf("ResultCode = %q, want %q", last.ResultCode, constants.ResultRejected)
+	}
+}
+
+// TestStream_TruncatedByLength_MarksPartial P2：LLM 因长度限制截断（finish_reason=length）时，
+// 答案不完整，必须落库为 PARTIAL，不得标记为完整回答（ANSWERED）。
+func TestStream_TruncatedByLength_MarksPartial(t *testing.T) {
+	streamer := &mockStreamer{
+		ready:     true,
+		tokens:    []string{"建议您多休息，注意饮食清淡"},
+		truncated: true,
+	}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "t", Content: "c", Score: 0.9, VecScore: 0.9}},
+	}
+	msg := &mockMessagePort{}
+	svc := newTestChatSendService(t, streamer, knowledge, &mockConversationPort{}, msg, &mockCrisisPort{})
+
+	if err := svc.Stream(context.Background(), newStreamInput("高血压怎么控制"), &mockSSEWriter{}); err != nil {
+		t.Fatalf("Stream 返回错误: %v", err)
+	}
+	msg.mu.Lock()
+	defer msg.mu.Unlock()
+	last := msg.messages[len(msg.messages)-1]
+	if last.ResultCode != constants.ResultPartial {
+		t.Errorf("截断答案 resultCode = %q, want %q", last.ResultCode, constants.ResultPartial)
 	}
 }
 

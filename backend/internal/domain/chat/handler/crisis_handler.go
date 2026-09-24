@@ -69,7 +69,7 @@ func (h *CrisisHandler) List(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	actor, err := currentCrisisActor(r)
+	actor, err := currentStaffActor(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -98,7 +98,7 @@ func (h *CrisisHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.ServiceUnavailable("CHAT_CRISIS_UNAVAILABLE", "危机事件服务未初始化"))
 		return
 	}
-	actor, err := currentCrisisActor(r)
+	actor, err := currentStaffActor(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

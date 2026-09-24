@@ -1093,7 +1093,11 @@ func (m *chainArticleRepo) UpdateFields(_ context.Context, _ int64, fields repos
 	if fields.ContentHash != nil {
 		updated.ContentHash = *fields.ContentHash
 	}
-	if fields.IncrementVersion {
+	// 与真实 SQL 一致：内容变更时按行当前状态判定（published → pending + 版本递增，P1）。
+	if fields.ReReviewOnContentChange && updated.Status == constants.ArticleStatusPublished {
+		updated.Status = constants.ArticleStatusPending
+		updated.Version++
+	} else if fields.IncrementVersion {
 		updated.Version++
 	}
 	return &updated, nil
@@ -1180,14 +1184,13 @@ func TestChain_UpdateFlow(t *testing.T) {
 	if !tx.called {
 		t.Error("期望 WithTx 被调用")
 	}
-	if svcChunks.deactivateCall != 1 {
-		t.Fatalf("期望 DeactivateByArticle 调用 1 次（事务内失效旧切片），实际 %d", svcChunks.deactivateCall)
+	// P1：已发布文章内容变更 → 回到待审核。审核通过前继续服务上一次审核通过的切片：
+	// 不得失效旧切片、不得重新向量化（否则未审核内容会进入患者可见的知识库）。
+	if svcChunks.deactivateCall != 0 {
+		t.Errorf("重新审核期间不得失效原切片，实际调用 %d 次", svcChunks.deactivateCall)
 	}
-	if svcChunks.deactivateID != 42 {
-		t.Errorf("期望 DeactivateByArticle(42)，实际 %d", svcChunks.deactivateID)
-	}
-	if len(enqueuer.enqueuedIDs) != 1 || enqueuer.enqueuedIDs[0] != 42 {
-		t.Fatalf("期望 Enqueue(42) 调用 1 次，实际 %v", enqueuer.enqueuedIDs)
+	if len(enqueuer.enqueuedIDs) != 0 {
+		t.Errorf("重新审核期间不得入队向量化，实际 %v", enqueuer.enqueuedIDs)
 	}
 	if audit.cnt != 1 {
 		t.Errorf("期望审计写入 1 条，实际 %d", audit.cnt)
@@ -1222,6 +1225,11 @@ func TestChain_UpdateFlow(t *testing.T) {
 
 	h := &VectorizeHandler{articles: fetcher, chunks: handlerChunks, embed: embed, cfg: cfgProv}
 
+	// Phase 1 不入队（内容变更回到待审核）。此处手动入队以单独验证 Worker 消费链路
+	// （真实路径下由管理员审核通过 Approve 入队）。
+	if err := enqueuer.Enqueue(context.Background(), 42); err != nil {
+		t.Fatalf("Phase2 入队失败: %v", err)
+	}
 	task := makeTask(strconv.FormatInt(enqueuer.enqueuedIDs[0], 10))
 	if err := h.HandleVectorize(context.Background(), task); err != nil {
 		t.Fatalf("Phase2 HandleVectorize 失败: %v", err)

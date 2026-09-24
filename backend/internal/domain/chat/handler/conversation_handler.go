@@ -271,8 +271,14 @@ func truncateRunes(s string, maxRunes int) string {
 
 // FeedbackStats GET /api/staff/chat/feedback/stats
 // 反馈三态汇总（total/solved/partial/unsolved）+ 最近反馈列表。
+// 数据隔离：非超管仅可见本科室会话（按会话锁定科室）的反馈。
 func (h *ConversationHandler) FeedbackStats(w http.ResponseWriter, r *http.Request) {
-	stats, err := h.svc.FeedbackStats(r.Context(), feedbackStatsRecentLimit)
+	actor, err := currentStaffActor(r)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	stats, err := h.svc.FeedbackStats(r.Context(), actor, feedbackStatsRecentLimit)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
