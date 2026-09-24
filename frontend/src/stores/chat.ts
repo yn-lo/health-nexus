@@ -111,12 +111,28 @@ export const useChatStore = defineStore('chat', () => {
     anonSessions.value = loadAnonSessions()
   }
 
-  // ponytail: 请求 epoch — 防止快速切换会话时旧响应覆盖新响应，折中
+  // ponytail: 会话加载代次（fetchEpoch）——从"选择会话"开始统一保护详情、科室、消息。
+  // 快速切换 A→B 时递增；A 的迟到详情/消息响应因代次过期被丢弃，不会覆盖 B 的界面。
+  // 早期实现只在 fetchMessages 开头递增，保护范围太晚：A 的详情仍会覆盖 currentConversation，
+  // 且其触发的消息请求会拿到"更新"的代次而被误判为最新响应（P1）。
   let fetchEpoch = 0
   // 本地写入序号：SSE 期间乐观插入的消息会递增此值。
   // 用于拒绝"过期快照"——生成结束后异步回拉整页消息期间用户又发了新消息时，
   // 旧快照整体覆盖会把刚发送的气泡抹掉（epoch 只防止查询之间互相覆盖，不保护本地写入）。
   let localWriteSeq = 0
+
+  /**
+   * 开始一次会话加载：递增代次并返回本次操作的代次。
+   * 页面在"选择/切换会话"时立即调用（先于详情请求），使详情、科室、消息共享同一代次。
+   */
+  function beginConversationLoad(): number {
+    return ++fetchEpoch
+  }
+
+  /** 本次代次是否仍是最新（未被后续切换取代）。 */
+  function isCurrentLoad(epoch: number): boolean {
+    return epoch === fetchEpoch
+  }
 
   /** 获取会话列表（默认不含已归档）。page=1 替换，page>1 追加 */
   async function fetchConversations(page = 1) {
@@ -138,9 +154,16 @@ export const useChatStore = defineStore('chat', () => {
     await fetchConversations(nextPage)
   }
 
-  /** 加载单个会话详情（含 archived/last_message_at） */
-  async function fetchConversation(conversationId: string) {
+  /**
+   * 加载单个会话详情（含 archived/last_message_at）。
+   * epoch 由调用方在"选择会话"时通过 beginConversationLoad 取得并传入——详情响应迟到
+   * （用户已切到别的会话）时不得覆盖 currentConversation，否则界面显示 A 的上下文而提问发往 B（P1）。
+   * 未传 epoch（非切换场景，如列表刷新）时不做代次校验。
+   */
+  async function fetchConversation(conversationId: string, epoch?: number) {
     const conv = await chatApi.getConversation(conversationId)
+    // 代次已过期（用户已切换到其他会话）→ 丢弃迟到详情，避免污染当前会话的视图与科室。
+    if (epoch !== undefined && !isCurrentLoad(epoch)) return conv
     const idx = conversations.value.findIndex((c) => c.id === conversationId)
     if (idx >= 0) conversations.value[idx] = conv
     else conversations.value.unshift(conv)
@@ -167,19 +190,27 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  /** 获取会话消息（最新一页） — epoch 守卫防止过期响应覆盖，本地写入守卫防止覆盖用户刚发送的消息 */
-  async function fetchMessages(conversationId: string) {
-    const myEpoch = ++fetchEpoch
+  /**
+   * 获取会话消息（最新一页）。
+   * epoch 由调用方在"选择会话"时取得并传入（与详情同一代次）；未传时自行递增（如生成结束后回拉）。
+   * 双重守卫：代次过期（已切换会话）或查询期间用户又发送了消息 → 丢弃过期快照。
+   * 同时校验"结果确实属于目标会话"——避免 A 的迟到响应被当作 B 的消息（P1）。
+   */
+  async function fetchMessages(conversationId: string, epoch?: number) {
+    const myEpoch = epoch ?? ++fetchEpoch
     const myWrites = localWriteSeq
     loading.value = true
     try {
       const res = await chatApi.listMessages(conversationId, { limit: MESSAGE_PAGE_SIZE })
-      // 已被新请求取代，或查询期间用户又发送了消息（本地列表已更新）→ 丢弃过期快照
-      if (myEpoch !== fetchEpoch || myWrites !== localWriteSeq) return
+      // 已被新请求取代、或查询期间用户又发送了消息（本地列表已更新）→ 丢弃过期快照
+      if (!isCurrentLoad(myEpoch) || myWrites !== localWriteSeq) return
+      // 防御：响应若不属于当前目标会话，不得覆盖（服务端按 conversation_id 查询，正常不会发生）
+      const targetId = currentConversation.value?.id
+      if (targetId && res.some((m) => m.conversation_id && m.conversation_id !== targetId)) return
       messages.value = res
       hasMoreMessages.value = res.length >= MESSAGE_PAGE_SIZE
     } finally {
-      if (myEpoch === fetchEpoch) loading.value = false
+      if (isCurrentLoad(myEpoch)) loading.value = false
     }
   }
 
@@ -195,7 +226,7 @@ export const useChatStore = defineStore('chat', () => {
         limit: MESSAGE_PAGE_SIZE,
         before: oldest.id,
       })
-      if (myEpoch !== fetchEpoch) return // 期间切换/刷新过会话，丢弃
+      if (!isCurrentLoad(myEpoch)) return // 期间切换/刷新过会话，丢弃
       if (older.length === 0) {
         hasMoreMessages.value = false
         return
@@ -256,6 +287,8 @@ export const useChatStore = defineStore('chat', () => {
     loadAnonSessionsList,
     fetchConversations,
     loadMoreConversations,
+    beginConversationLoad,
+    isCurrentLoad,
     fetchConversation,
     updateConversation,
     deleteConversation,

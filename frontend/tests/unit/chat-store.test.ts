@@ -106,6 +106,35 @@ describe('useChatStore', () => {
     expect(store.conversations[0].id).toBe('c2')
   })
 
+  // P1 快速切换会话：A 的迟到详情/消息响应不得覆盖已切换到的 B。
+  it('快速切换 A→B：A 的迟到详情不覆盖 B（代次过期丢弃）', async () => {
+    const store = useChatStore()
+    let resolveA!: (value: Conversation) => void
+    apiMocks.getConversation.mockImplementation((id: string) =>
+      id === 'A' ? new Promise<Conversation>((resolve) => { resolveA = resolve }) : Promise.resolve(makeConv({ id: 'B' })),
+    )
+    apiMocks.listMessages.mockImplementation(async (id: string) => [
+      { ...makeMsg(`msg-${id}`, `answer ${id}`), conversation_id: id },
+    ])
+
+    // 与 ChatConversation.openConversation 相同的 await 顺序（详情 → 消息），且共用同一代次。
+    const open = async (id: string) => {
+      const epoch = store.beginConversationLoad()
+      const conv = await store.fetchConversation(id, epoch)
+      if (!store.isCurrentLoad(epoch)) return
+      await store.fetchMessages(id, epoch)
+    }
+
+    const old = open('A')   // A 的详情挂起
+    await open('B')         // 先切到 B 并完成
+    resolveA!(makeConv({ id: 'A' })) // A 的详情此刻才返回
+    await old
+
+    // 界面必须仍是 B：currentConversation 与 messages 均不得被 A 覆盖。
+    expect(store.currentConversation?.id).toBe('B')
+    expect(store.messages[0]?.conversation_id).toBe('B')
+  })
+
   it('updateConversation 同步更新列表和 currentConversation', async () => {
     const updated = makeConv({ id: 'u1', title: '重命名后', archived: true })
     apiMocks.updateConversation.mockResolvedValue(updated)

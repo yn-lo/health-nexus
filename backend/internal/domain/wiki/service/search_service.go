@@ -102,8 +102,9 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 
 	cfg, topK, candidateK := s.resolveSearchParams(ctx, q)
 
-	// 步骤 1：生成查询向量。失败时直接向上返回 error（严禁静默降级）。
-	queryVec, err := s.embedQueryVec(ctx, q.Query)
+	// 步骤 1：生成查询向量（同时取得生成它的模型名，同一客户端快照，P2）。
+	// 失败时直接向上返回 error（严禁静默降级）。
+	queryVec, queryModel, err := s.embedQueryVecWithModel(ctx, q.Query)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
@@ -116,7 +117,7 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 		deptIDs = []int64{*q.DeptID}
 	}
 	hits, err := s.chunks.SearchByVector(
-		ctx, queryVec, candidateK, deptIDs, cfg.SimilarityThreshold, s.embeddingModel())
+		ctx, queryVec, candidateK, deptIDs, cfg.SimilarityThreshold, queryModel)
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
@@ -215,6 +216,30 @@ func (s *SearchService) embeddingModel() string {
 	return ""
 }
 
+// embedQueryVecWithModel 生成查询向量并返回生成它的模型名，二者来自同一客户端快照（P2）。
+// 关键：模型过滤必须用"生成该查询向量的模型"——若分别调用 Embed() 与 EmbeddingModel()，
+// 热切换会在两次 Load 之间改变客户端，导致用 A 生成的查询向量却按 B 过滤切片（向量空间混用）。
+// 支持 EmbedderWithModel 时一次调用完成；否则退化为分两次读取（旧 mock 兼容，仅测试路径）。
+func (s *SearchService) embedQueryVecWithModel(
+	ctx context.Context, query string,
+) (vec []float32, model string, err error) {
+	if em, ok := s.embed.(llm.EmbedderWithModel); ok {
+		embeds, m, eerr := em.EmbedWithModel(ctx, []string{query})
+		if eerr != nil {
+			return nil, "", fmt.Errorf("embed query: %w", eerr)
+		}
+		if len(embeds) == 0 {
+			return nil, "", fmt.Errorf("embed query: API returned empty embeddings")
+		}
+		return embeds[0], m, nil
+	}
+	vec, err = s.embedQueryVec(ctx, query)
+	if err != nil {
+		return nil, "", err
+	}
+	return vec, s.embeddingModel(), nil
+}
+
 // embedQueryVec 生成查询向量。失败时向上返回 error，由调用方决定是否降级。
 // Embedding 是唯一不可降级的关键依赖：API 返回空结果同样视为失败（严禁静默降级）。
 func (s *SearchService) embedQueryVec(ctx context.Context, query string) ([]float32, error) {
@@ -239,6 +264,7 @@ func toRAGChunks(hits []repository.ChunkSearchHit) []rag.Chunk {
 			Content:      h.Content,
 			Score:        h.Score,
 			VecScore:     h.Score,
+			ContentRisk:  h.ContentRisk,
 		})
 	}
 	return out

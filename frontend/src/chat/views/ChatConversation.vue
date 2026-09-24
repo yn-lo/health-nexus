@@ -286,16 +286,23 @@ async function onFeedback(msg: Message, value: MessageFeedback) {
 
 /** 打开已有会话：先恢复会话详情（含锁定科室）再拉取消息。
  * 科室必须恢复成会话锁定值——否则前端仍以默认「全部科室」展示，且后续请求携带错误科室会被
- * 后端以 CHAT_DEPT_LOCKED(409) 拒绝，历史会话无法续聊。 */
+ * 后端以 CHAT_DEPT_LOCKED(409) 拒绝，历史会话无法续聊。
+ *
+ * P1 快速切换：从"开始加载"就分配代次（beginConversationLoad），详情、科室、消息共享同一代次。
+ * A 的迟到详情/消息因代次过期被丢弃，不会覆盖 B 的 currentConversation / messages / 科室。 */
 async function openConversation(id: string, jumpToBottom = false) {
+  const epoch = chatStore.beginConversationLoad()
   try {
-    const conv = await chatStore.fetchConversation(id)
+    const conv = await chatStore.fetchConversation(id, epoch)
+    // 代次已过期（用户已切到其他会话）→ 放弃后续科室/消息更新，避免污染当前视图。
+    if (!chatStore.isCurrentLoad(epoch)) return
     selectDepartment(conv.locked_dept_id ?? 0)
-    await chatStore.fetchMessages(id)
+    await chatStore.fetchMessages(id, epoch)
+    if (!chatStore.isCurrentLoad(epoch)) return
     syncFeedbackFromMessages()
     scrollToBottom(jumpToBottom)
   } catch {
-    showFailToast('加载消息失败')
+    if (chatStore.isCurrentLoad(epoch)) showFailToast('加载消息失败')
   }
 }
 

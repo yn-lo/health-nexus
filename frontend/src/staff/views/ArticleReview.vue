@@ -22,10 +22,10 @@ const loading = ref(false)
 /** 待审核数量 */
 const pendingCount = computed(() => articles.value.length)
 
-/** 通过文章 */
-async function handleApprove(id: number) {
+/** 通过文章 — 携带当前审阅版本，版本漂移由后端返回 409 要求重新审阅 */
+async function handleApprove(id: number, version: number) {
  try {
- await wikiApi.approveArticle(id)
+ await wikiApi.approveArticle(id, version)
  articles.value = articles.value.filter((a) => a.id !== id)
  showSuccessToast('已通过')
  } catch (e) {
@@ -123,7 +123,7 @@ onMounted(async () => {
  type="button"
  class="ds-list-item__action-btn text-[var(--status-success-default)]"
  aria-label="通过"
- @click="handleApprove(article.id)"
+ @click="handleApprove(article.id, article.version)"
  >
  <Check :size="16" />
  </button>

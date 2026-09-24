@@ -86,6 +86,19 @@ func (sc *SwappableClient) Embed(
 	return nil, ErrNotConfigured
 }
 
+// EmbedWithModel 用**同一次 Load() 得到的客户端快照**完成向量生成与模型名读取（P2）。
+// 关键：整个调用只 Load 一次——若分别 Load 读取模型名与生成向量，热切换会在两次 Load
+// 之间改变客户端，导致 A 模型的向量被标成 B 模型（写入/检索向量空间混用）。
+func (sc *SwappableClient) EmbedWithModel(
+	ctx context.Context, texts []string,
+) (embeddings [][]float32, model string, err error) {
+	c := sc.Load()
+	if c == nil {
+		return nil, "", ErrNotConfigured
+	}
+	return c.EmbedWithModel(ctx, texts)
+}
+
 // Rerank 委托给当前客户端。未配置时返回 ErrNotConfigured。
 func (sc *SwappableClient) Rerank(
 	ctx context.Context, query string, documents []string, topK int,
@@ -106,8 +119,9 @@ type SwappableClients struct {
 
 // 编译期断言：SwappableClient 实现全部对外接口。
 var (
-	_ Streamer      = (*SwappableClient)(nil)
-	_ Embedder      = (*SwappableClient)(nil)
-	_ Reranker      = (*SwappableClient)(nil)
-	_ JSONCompleter = (*SwappableClient)(nil)
+	_ Streamer          = (*SwappableClient)(nil)
+	_ Embedder          = (*SwappableClient)(nil)
+	_ EmbedderWithModel = (*SwappableClient)(nil)
+	_ Reranker          = (*SwappableClient)(nil)
+	_ JSONCompleter     = (*SwappableClient)(nil)
 )

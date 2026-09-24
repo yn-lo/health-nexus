@@ -282,13 +282,16 @@ func (h *StaffArticleHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w)
 }
 
-// approveArticleRequest 审核通过请求体（note 可选，契约 §4.8）。
+// approveArticleRequest 审核通过请求体（契约 §4.8）。
+// version 为审核者实际审阅到的文章版本号（必填）：审核期间内容被编辑则返回 409，要求重新审阅。
 type approveArticleRequest struct {
-	Note string `json:"note,omitempty"`
+	Note    string `json:"note,omitempty"`
+	Version int    `json:"version"`
 }
 
 // Approve POST /api/staff/wiki/articles/{article_id}/approve — 审核通过（pending→published，REQ-WIKI-009~012）。
 // 管理员可自审；事务提交后异步入队向量化任务。
+// 必须携带 version：审批绑定实际审阅版本，避免批准未审阅的新版本（P1）。
 func (h *StaffArticleHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	actor, err := currentActor(r)
 	if err != nil {
@@ -301,7 +304,8 @@ func (h *StaffArticleHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req approveArticleRequest
-	// spec §4.8：请求体 {note?: string}，body 可选——空 body 等同 note=""
+	// spec §4.8：请求体 {note?: string, version: int}；body 可选——空 body 会在 service 层
+	// 因缺少审阅版本被判 422，迫使客户端显式带上审阅版本。
 	if r.ContentLength > 0 {
 		if err := decodeJSON(r, &req); err != nil {
 			response.WriteError(w, r, err)
@@ -309,9 +313,10 @@ func (h *StaffArticleHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := h.svc.Approve(r.Context(), service.ApproveInput{
-		ArticleID: id,
-		Note:      req.Note,
-		Actor:     actor,
+		ArticleID:       id,
+		Note:            req.Note,
+		ExpectedVersion: req.Version,
+		Actor:           actor,
 	}); err != nil {
 		response.WriteError(w, r, err)
 		return

@@ -431,7 +431,9 @@ async function publishDirectly() {
     await wikiApi.submitArticle(articleId)
   }
   if (st !== 'published') {
-    await wikiApi.approveArticle(articleId)
+    // 审批绑定当前审阅版本：管理员在编辑页所见版本即审阅版本。
+    // 提交后若版本漂移（他人编辑）后端返回 409，需刷新后重新审阅。
+    await wikiApi.approveArticle(articleId, articleVersion.value ?? undefined)
   }
   showSuccessToast(st === 'published' ? '已保存' : '发布成功')
   router.push({ name: 'staff-articles' })

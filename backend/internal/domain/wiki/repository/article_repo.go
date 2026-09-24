@@ -20,6 +20,10 @@ import (
 // ErrNotFound 通用"未找到"哨兵错误，service 层翻译为 404。
 var ErrNotFound = errors.New("article not found")
 
+// ErrStatusConflict 状态机条件更新不命中：状态已漂移，或审批版本已被编辑覆盖。
+// service 层翻译为 409（重新审阅 / 刷新后重试）。
+var ErrStatusConflict = errors.New("article status conflict")
+
 // ErrVersionConflict 乐观锁冲突：带 ExpectedVersion 更新时当前版本与期望版本不一致（并发编辑）。
 // service 层翻译为 409。
 var ErrVersionConflict = errors.New("article version conflict")
@@ -29,7 +33,16 @@ const articleColumns = `id, title, content, summary, cover_image_url, status, ve
 	content_hash, author_id, department_id, reviewer_id, review_comment, view_count, featured_rank,
 	is_deleted, allow_reference, review_overdue, review_overdue_at, published_at,
 	source, applicable_population, valid_until, content_risk,
+	published_content, published_content_hash, published_version,
 	created_at, updated_at`
+
+// articleScanCols 与 articleColumns 一一对应（两处必须同步修改）。
+const articleScanCols = `i.id, i.title, i.content, i.summary, i.cover_image_url, i.status, i.version,
+	i.content_hash, i.author_id, i.department_id, i.reviewer_id, i.review_comment, i.view_count, i.featured_rank,
+	i.is_deleted, i.allow_reference, i.review_overdue, i.review_overdue_at, i.published_at,
+	i.source, i.applicable_population, i.valid_until, i.content_risk,
+	i.published_content, i.published_content_hash, i.published_version,
+	i.created_at, i.updated_at`
 
 // ArticleRepo 文章仓储。
 type ArticleRepo struct {
@@ -42,6 +55,7 @@ func NewArticleRepo(pool *pgxpool.Pool) *ArticleRepo {
 }
 
 // Create 插入新文章。a.ID/a.CreatedAt/a.UpdatedAt/DepartmentName/AuthorName 由 RETURNING + JOIN 回填。
+// published_content 不在此写入：文章首次审核通过（UpdateStatus → published）时才建立快照。
 func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 	const sql = `WITH ins AS (
 		INSERT INTO articles
@@ -51,11 +65,7 @@ func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING ` + articleColumns + `
 	)
-	SELECT i.id, i.title, i.content, i.summary, i.cover_image_url, i.status, i.version,
-		i.content_hash, i.author_id, i.department_id, i.reviewer_id, i.review_comment, i.view_count, i.featured_rank,
-		i.is_deleted, i.allow_reference, i.review_overdue, i.review_overdue_at, i.published_at,
-		i.source, i.applicable_population, i.valid_until, i.content_risk,
-		i.created_at, i.updated_at,
+	SELECT ` + articleScanCols + `,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM ins i
 	LEFT JOIN departments d ON d.id = i.department_id
@@ -69,6 +79,7 @@ func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
+		&a.PublishedContent, &a.PublishedContentHash,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)
@@ -108,8 +119,9 @@ func (r *ArticleRepo) LockVersion(ctx context.Context, id int64) (int, error) {
 // GetPublishedByID 取已发布文章详情（含 department_name/author_name JOIN）。
 // 原子 +1 阅读量（CTE UPDATE+JOIN）；契约 §4.2 规定每次访问 +1，未定义去重。
 // 可见性与检索层对齐：published，或 pending 且曾发布（published_at 非空）——
-// 后者是"已发布文章被修改、正在重新审核"，其旧切片仍被 RAG 引用，原文必须可读，
-// 否则点击引用会 404（P2）。draft/archived/deleted 一律不可见。
+// 后者是"已发布文章被修改、正在重新审核"，其旧切片仍被 RAG 引用，原文必须可读。
+// P1：正文取 published_content（上次审核通过的快照），绝不返回编辑稿 content——
+// 否则待审核的新正文会直接对患者公开（无需并发即可绕过审核）。
 // 未找到（不存在/不可见/已删除）返回 (nil, ErrNotFound)。
 func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.Article, error) {
 	const sql = `WITH bumped AS (
@@ -118,15 +130,11 @@ func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.A
 		  AND (status = $2 OR (status = $3 AND published_at IS NOT NULL))
 		RETURNING ` + articleColumns + `
 	)
-	SELECT b.id, b.title, b.content, b.summary, b.cover_image_url, b.status, b.version,
-		b.content_hash, b.author_id, b.department_id, b.reviewer_id, b.review_comment, b.view_count, b.featured_rank,
-		b.is_deleted, b.allow_reference, b.review_overdue, b.review_overdue_at, b.published_at,
-		b.source, b.applicable_population, b.valid_until, b.content_risk,
-		b.created_at, b.updated_at,
+	SELECT ` + articleScanCols + `,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
-	FROM bumped b
-	LEFT JOIN departments d ON d.id = b.department_id
-	LEFT JOIN users u ON u.id = b.author_id`
+	FROM bumped i
+	LEFT JOIN departments d ON d.id = i.department_id
+	LEFT JOIN users u ON u.id = i.author_id`
 	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id,
 		constants.ArticleStatusPublished, constants.ArticleStatusPending)
 	a, err := scanArticleWithNames(row)
@@ -136,6 +144,9 @@ func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.A
 	if err != nil {
 		return nil, err
 	}
+	// 患者端只读已审核快照：编辑稿 content 在此替换为 published_content。
+	a.Content = a.PublishedContent
+	a.ContentHash = a.PublishedContentHash
 	return a, nil
 }
 
@@ -181,6 +192,7 @@ func (r *ArticleRepo) ListPublished(
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
+		a.published_content, a.published_content_hash, a.published_version,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -218,6 +230,7 @@ func (r *ArticleRepo) ListFeatured(ctx context.Context, departmentID *int64, lim
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
+		a.published_content, a.published_content_hash, a.published_version,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -280,6 +293,7 @@ func (r *ArticleRepo) ListForStaff(
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
+		a.published_content, a.published_content_hash, a.published_version,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -328,6 +342,7 @@ func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateF
 		u.content_hash, u.author_id, u.department_id, u.reviewer_id, u.review_comment, u.view_count, u.featured_rank,
 		u.is_deleted, u.allow_reference, u.review_overdue, u.review_overdue_at, u.published_at,
 		u.source, u.applicable_population, u.valid_until, u.content_risk,
+		u.published_content, u.published_content_hash, u.published_version,
 		u.created_at, u.updated_at,
 		COALESCE(d.name, ''), COALESCE(u2.username, '')
 	FROM updated u
@@ -400,16 +415,18 @@ func (b *updateBuilder) applyUpdateFields(f UpdateFields) {
 	if f.ContentRisk != nil {
 		b.add("content_risk", contentRiskOrDefault(*f.ContentRisk))
 	}
-	// 内容变更不得停留在已发布状态（P1）：状态迁移必须在 UPDATE 语句内按行**当前**状态判定，
-	// 不能依赖服务端读取时的状态快照——否则"作者读到 pending、管理员随后审核发布、
-	// 作者的写才提交"会让未审核的新正文保持 published 并进入向量化队列，绕过审核。
-	// 仅当行当前为 published 时回退 pending 并递增版本；draft/pending/archived 保持原状态与版本。
+	// 内容变更时按行**当前**状态判定（P1）：
+	//   - published → pending 并递增版本（重新审核）；
+	//   - pending：状态保持，但**同样递增版本**——否则"待审核期间改正文"版本不变，
+	//     审批绑定的版本校验无法发现内容已变，旧审批仍会批准未审阅的新内容（P1）。
+	//   - draft/archived：状态与版本不变（archived 为终态只读，draft 无审核语义）。
+	// 判定必须在 SQL 内完成，不能依赖服务端读取时的状态快照（并发编辑绕过审核）。
 	if f.ReReviewOnContentChange {
 		b.sets = append(b.sets,
 			fmt.Sprintf("status = CASE WHEN status = '%s' THEN '%s' ELSE status END",
 				constants.ArticleStatusPublished, constants.ArticleStatusPending),
-			fmt.Sprintf("version = CASE WHEN status = '%s' THEN version + 1 ELSE version END",
-				constants.ArticleStatusPublished))
+			fmt.Sprintf("version = CASE WHEN status IN ('%s','%s') THEN version + 1 ELSE version END",
+				constants.ArticleStatusPublished, constants.ArticleStatusPending))
 	} else if f.IncrementVersion {
 		b.sets = append(b.sets, "version = version + 1")
 	}
@@ -440,7 +457,12 @@ type UpdateFields struct {
 
 // UpdateStatus 状态机迁移：更新 status，可选设置 reviewer_id/review_comment/published_at。
 // 仅当当前状态匹配 fromStatus 时才更新（乐观锁，防并发状态漂移）。
-// 不存在或状态不匹配返回 ErrNotFound（service 层据 fromStatus 区分 404/409）。
+//
+// 发布（toStatus=published）时建立已发布快照：published_content = content，
+// 使患者端/RAG 读到本轮审核通过的正文；后续编辑只改 content，不再影响已发布版本（P1）。
+//
+// 返回 ErrStatusConflict 表示状态不匹配（service 层区分 404/409）；
+// 带 ExpectedVersion 时版本不匹配同样返回 ErrStatusConflict（审批者看到的是旧版本，需重新审阅，P1）。
 func (r *ArticleRepo) UpdateStatus(
 	ctx context.Context, id int64, fromStatus, toStatus string, opts StatusUpdateOpts,
 ) error {
@@ -457,19 +479,32 @@ func (r *ArticleRepo) UpdateStatus(
 	if opts.SetPublishedAt {
 		sets = append(sets, "published_at = now()")
 	}
+	// 发布：把当前编辑稿固化为已发布快照（与 status 同一条 UPDATE，天然原子）。
+	// published_version 记录快照所属版本，检索据此只命中与审核版本一致的切片（P1）。
+	if toStatus == constants.ArticleStatusPublished {
+		sets = append(sets, "published_content = content", "published_content_hash = content_hash",
+			"published_version = version")
+	}
 	// 重新审核通过即清除复审逾期标记：否则高风险逾期文章即使重新审核发布，
 	// 仍因 review_overdue=true 被检索层排除（P2）。审核动作本身已代表"已重新复审"。
 	if opts.ClearReviewOverdue {
 		sets = append(sets, "review_overdue = false", "review_overdue_at = NULL")
 	}
-	sql := fmt.Sprintf(`UPDATE articles SET %s WHERE id = $1 AND status = $2 AND is_deleted = false`,
-		strings.Join(sets, ", "))
+	// 审批版本守卫：审核者审阅的是 version=$N 的内容；若已被编辑覆盖（版本漂移），
+	// 条件更新不命中 → 拒绝，要求重新审阅（P1：避免批准未审阅的版本）。
+	versionClause := ""
+	if opts.ExpectedVersion != nil {
+		args = append(args, *opts.ExpectedVersion)
+		versionClause = fmt.Sprintf(" AND version = $%d", len(args))
+	}
+	sql := fmt.Sprintf(`UPDATE articles SET %s WHERE id = $1 AND status = $2 AND is_deleted = false%s`,
+		strings.Join(sets, ", "), versionClause)
 	tag, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, args...)
 	if err != nil {
 		return fmt.Errorf("update article status: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return ErrStatusConflict
 	}
 	return nil
 }
@@ -481,6 +516,9 @@ type StatusUpdateOpts struct {
 	SetPublishedAt bool // toStatus=published 时设 published_at=now()
 	// ClearReviewOverdue 审核通过时清除复审逾期标记（review_overdue=false, review_overdue_at=NULL）。
 	ClearReviewOverdue bool
+	// ExpectedVersion 非 nil 时启用审批版本守卫：仅当当前 version 与之相等才更新，
+	// 否则返回 ErrStatusConflict（审核者审阅的版本已被编辑覆盖，需重新审阅）。
+	ExpectedVersion *int
 }
 
 func (r *ArticleRepo) SetFeaturedRank(ctx context.Context, id int64, rank int) error {
@@ -576,6 +614,7 @@ func scanArticle(s postgres.Scanner) (*entity.Article, error) {
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
+		&a.PublishedContent, &a.PublishedContentHash, &a.PublishedVersion,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -591,6 +630,7 @@ func scanArticleWithNames(s postgres.Scanner) (*entity.Article, error) {
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
+		&a.PublishedContent, &a.PublishedContentHash, &a.PublishedVersion,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)

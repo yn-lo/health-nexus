@@ -120,7 +120,10 @@ type mockStreamer struct {
 	streamErr error    // 非 nil 时 StreamChat 返回此错误
 	midErr    error    // 非 nil 时在 tokens 之后投递 Err chunk（模拟流中途中断）
 	truncated bool     // true 时 Done 片段标记 Truncated（模拟 LLM 因长度限制截断）
-	lastReq   llm.ChatRequest
+	// noDone true 时投递完 tokens 后**直接关闭 channel 且不发 Done**
+	// （模拟上游提前断流：代理/网络在 finish_reason 之前关闭连接）。
+	noDone  bool
+	lastReq llm.ChatRequest
 }
 
 func (m *mockStreamer) IsReady() bool { return m.ready }
@@ -139,6 +142,9 @@ func (m *mockStreamer) StreamChat(_ context.Context, req llm.ChatRequest) (<-cha
 		if m.midErr != nil {
 			ch <- llm.StreamChunk{Err: m.midErr}
 			return
+		}
+		if m.noDone {
+			return // 提前断流：无 Done 片段
 		}
 		ch <- llm.StreamChunk{Done: true, Truncated: m.truncated}
 	}()
@@ -202,9 +208,10 @@ func (m *mockConversationPort) TouchLastMessageAt(_ context.Context, id uuid.UUI
 // --- mockMessagePort ---
 
 type mockMessagePort struct {
-	mu            sync.Mutex
-	messages      []*entity.Message
-	lastExcludeID *uuid.UUID
+	mu       sync.Mutex
+	messages []*entity.Message
+	// historyErr 非 nil 时 GetRecentHistory 返回该错误（模拟历史读取失败）。
+	historyErr error
 }
 
 func (m *mockMessagePort) SaveUserMessage(_ context.Context, convID, turnID uuid.UUID, content string) (*entity.Message, error) {
@@ -259,7 +266,9 @@ func (m *mockMessagePort) ListByTurn(_ context.Context, _, turnID uuid.UUID) ([]
 func (m *mockMessagePort) GetRecentHistory(_ context.Context, _ uuid.UUID, _ int, excludeID *uuid.UUID) ([]*entity.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.lastExcludeID = excludeID
+	if m.historyErr != nil {
+		return nil, m.historyErr
+	}
 	// 对齐真实仓储：过滤空 assistant 占位消息（本轮占位先于历史加载创建，不应进入 LLM 上下文）。
 	live := make([]*entity.Message, 0, len(m.messages))
 	for _, msg := range m.messages {
@@ -998,8 +1007,8 @@ func TestStream_SendsConversationEvent(t *testing.T) {
 }
 
 // TestStream_HistoryExcludesCurrentMessage 历史去重：
-// 当前用户消息已先于历史加载持久化，GetRecentHistory 必须排除它，
-// 否则 LLM 上下文出现两条连续 user 消息（原始问题 + 改写问题）。
+// 历史快照在本轮用户消息落库**之前**读取，天然不含当前问题，
+// 因此 LLM 上下文不会出现两条连续 user 消息（原始问题 + 改写问题）。
 func TestStream_HistoryExcludesCurrentMessage(t *testing.T) {
 	streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
 	knowledge := &mockKnowledgeSearcher{
@@ -1022,9 +1031,6 @@ func TestStream_HistoryExcludesCurrentMessage(t *testing.T) {
 		t.Fatalf("Stream 返回错误: %v", err)
 	}
 
-	if msg.lastExcludeID == nil {
-		t.Error("GetRecentHistory 应收到 excludeID（当前用户消息 ID）")
-	}
 	var sawPrev bool
 	for _, m := range streamer.lastReq.History {
 		if m.Content == "高血压怎么控制" {
@@ -1151,6 +1157,55 @@ func TestStream_EmptyMessage(t *testing.T) {
 // ============================================================================
 // 统一理解与审查 → 检索改写 / 审查失败降级
 // ============================================================================
+
+// TestRequiresFullReview_MultiTurnFollowUp P1：多轮追问省略主语（上文问剂量，本轮只问"那晚上呢？"）
+// 时，仍必须要求完整生成 + 语义审核——判定依据完整对话语义与还原问题，不能只匹配当前一句。
+func TestRequiresFullReview_MultiTurnFollowUp(t *testing.T) {
+	// 本轮审查未标记用药（模型只看到省略主语的追问），但历史讨论过剂量。
+	assessment := rag.Assessment{
+		Intent:          rag.IntentPatientEducation,
+		StandaloneQuery: "降压药晚上吃多少剂量", // 审查已还原指代
+	}
+	history := []*entity.Message{
+		{Role: constants.MessageRoleUser, Content: "降压药剂量要翻倍吗"},
+		{Role: constants.MessageRoleAssistant, Content: "请遵医嘱，不要自行调整剂量。"},
+	}
+	if !requiresFullReview(assessment, "那晚上呢？", history, nil) {
+		t.Error("上文讨论剂量、本轮省略主语的追问必须要求审核")
+	}
+}
+
+// TestRequiresFullReview_StandaloneQueryCarriesMedicationIntent 本轮原话无用药词，
+// 但审查还原后的独立问题含用药意图时，仍必须审核。
+func TestRequiresFullReview_StandaloneQueryCarriesMedicationIntent(t *testing.T) {
+	assessment := rag.Assessment{
+		Intent:          rag.IntentPatientEducation,
+		StandaloneQuery: "这个药可以加量吗",
+	}
+	if !requiresFullReview(assessment, "这样可以吗？", nil, nil) {
+		t.Error("还原问题含用药意图时必须要求审核")
+	}
+}
+
+// TestRequiresFullReview_HighRiskChunk 命中高风险资料时，答案涉及用药/检查准备，必须审核。
+func TestRequiresFullReview_HighRiskChunk(t *testing.T) {
+	chunks := []rag.Chunk{{ChunkID: "c1", Content: "用药指导", ContentRisk: "high"}}
+	assessment := rag.Assessment{Intent: rag.IntentPatientEducation, StandaloneQuery: "日常护理"}
+	if !requiresFullReview(assessment, "平时要注意什么", nil, chunks) {
+		t.Error("命中高风险资料时必须要求审核")
+	}
+}
+
+// TestRequiresFullReview_PlainEducation_NoReview 普通宣教（无用药语义、无高风险资料）不要求审核，
+// 避免所有问答都被强制审核（性能与体验）。
+func TestRequiresFullReview_PlainEducation_NoReview(t *testing.T) {
+	assessment := rag.Assessment{Intent: rag.IntentPatientEducation, StandaloneQuery: "高血压日常护理"}
+	history := []*entity.Message{{Role: constants.MessageRoleUser, Content: "高血压平时要注意什么"}}
+	chunks := []rag.Chunk{{ChunkID: "c1", Content: "低盐饮食", ContentRisk: "normal"}}
+	if requiresFullReview(assessment, "饮食要注意什么？", history, chunks) {
+		t.Error("普通宣教不应强制审核")
+	}
+}
 
 func newTestChatSendServiceWithAssessor(
 	t *testing.T,
@@ -1378,6 +1433,114 @@ func TestStream_MedicationQuestion_ReviewPass_ShowsFullAnswer(t *testing.T) {
 	}
 }
 
+// TestStream_ModelProvidedTextMustPassOutputFilter P1：模型生成的"修正答案"与"澄清问题"
+// 都必须经输出安全审查后才能落库/下发——不能仅凭字段名信任，否则越权内容（停药/诊断等）
+// 会经这两个出口绕过审核到达患者。
+func TestStream_ModelProvidedTextMustPassOutputFilter(t *testing.T) {
+	const unsafe = "建议立即停药。"
+	// 前置：该文本确实会被真实输出过滤器拦截（否则测试无意义）。
+	if !rag.NewDefaultOutputSafetyFilter(nil).Validate(context.Background(), unsafe).Blocked {
+		t.Fatal("前置失败：测试文本应触发真实输出过滤器")
+	}
+
+	t.Run("修正答案_越权时退回固定安全话术", func(t *testing.T) {
+		assessor := &mockAssessor{assessment: rag.Assessment{
+			Intent:            rag.IntentPatientEducation,
+			EmergencyRisk:     rag.RiskNotDetected,
+			SelfHarmRisk:      rag.RiskNotDetected,
+			ContextSufficient: true,
+			StandaloneQuery:   "用药注意事项",
+			RecommendedAction: rag.ActionRetrieve,
+		}}
+		reviewer := &mockOutputReviewer{review: rag.OutputReview{
+			BoundaryOK: false, EvidenceSupported: false, RevisedAnswer: unsafe,
+		}}
+		knowledge := &mockKnowledgeSearcher{
+			chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "已审核资料", ContentRisk: "high", Score: 0.9, VecScore: 0.9}},
+		}
+		msg := &mockMessagePort{}
+		svc := newTestChatSendServiceWithAssessor(
+			t, assessor, reviewer, &mockStreamer{ready: true, tokens: []string{"请遵医嘱。"}},
+			knowledge, &mockConversationPort{}, msg, &mockCrisisPort{})
+		out := &mockSSEWriter{}
+
+		if err := svc.Stream(context.Background(), newStreamInput("用药注意事项"), out); err != nil {
+			t.Fatalf("Stream error: %v", err)
+		}
+		if got := out.answerText(); strings.Contains(got, unsafe) {
+			t.Fatalf("越权的模型修正答案绕过输出审查被下发：%q", got)
+		}
+		// 落库内容必须与下发一致，且不得含越权文本。
+		msg.mu.Lock()
+		defer msg.mu.Unlock()
+		last := msg.messages[len(msg.messages)-1]
+		if strings.Contains(last.Content, unsafe) {
+			t.Fatalf("越权的模型修正答案绕过输出审查被落库：%q", last.Content)
+		}
+	})
+
+	t.Run("澄清问题_越权时退回固定澄清话术", func(t *testing.T) {
+		assessor := &mockAssessor{assessment: rag.Assessment{
+			Intent:                rag.IntentPatientEducation,
+			EmergencyRisk:         rag.RiskNotDetected,
+			SelfHarmRisk:          rag.RiskNotDetected,
+			ContextSufficient:     false,
+			RecommendedAction:     rag.ActionClarify,
+			ClarificationQuestion: unsafe,
+		}}
+		msg := &mockMessagePort{}
+		svc := newTestChatSendServiceWithAssessor(
+			t, assessor, nil, &mockStreamer{ready: true}, &mockKnowledgeSearcher{},
+			&mockConversationPort{}, msg, &mockCrisisPort{})
+		out := &mockSSEWriter{}
+
+		if err := svc.Stream(context.Background(), newStreamInput("那我该怎么做"), out); err != nil {
+			t.Fatalf("Stream error: %v", err)
+		}
+		if got := out.answerText(); strings.Contains(got, unsafe) {
+			t.Fatalf("越权的模型澄清问题绕过输出审查被下发：%q", got)
+		}
+		// 应退回代码内固定澄清话术。
+		if got := out.answerText(); !strings.Contains(got, rag.ClarificationFallback()) {
+			t.Errorf("期望退回固定澄清话术，实际 %q", got)
+		}
+		msg.mu.Lock()
+		defer msg.mu.Unlock()
+		last := msg.messages[len(msg.messages)-1]
+		if strings.Contains(last.Content, unsafe) {
+			t.Fatalf("越权的模型澄清问题绕过输出审查被落库：%q", last.Content)
+		}
+	})
+}
+
+// TestStream_HistoryLoadFailure_DegradesToAssessmentUnavailable P1：历史读取失败必须按
+// "审查不可用"降级（固定安全兜底），不能当作"没有历史"继续做风险分流——
+// 否则追问依赖的上文危机/急症语境会丢失，漏掉本应进入危机/受限的处置。
+func TestStream_HistoryLoadFailure_DegradesToAssessmentUnavailable(t *testing.T) {
+	assessor := &mockAssessor{}
+	msg := &mockMessagePort{historyErr: errors.New("transient history failure")}
+	convID := uuid.New()
+	conv := &mockConversationPort{conv: &entity.Conversation{ID: convID, PatientID: 100}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, &mockStreamer{ready: true, tokens: []string{"回答"}},
+		&mockKnowledgeSearcher{}, conv, msg, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	in := newStreamInput("那现在可以吗？")
+	in.ConversationID = &convID
+	if err := svc.Stream(context.Background(), in, out); err != nil {
+		t.Fatalf("Stream 不应返回错误（应降级为固定兜底），实际 %v", err)
+	}
+
+	// 历史读取失败时不得调用审查器做风险分流（避免用空历史误判）。
+	if assessor.called {
+		t.Error("历史读取失败时不应继续调用审查器（应用空历史做风险判断）")
+	}
+	if got := out.answerText(); got != rag.AssessmentFailedMessage() {
+		t.Errorf("期望固定安全兜底话术 %q，实际 %q", rag.AssessmentFailedMessage(), got)
+	}
+}
+
 // TestCleanupRAGStream_AbortedWithSafePartialContent 用户中断流式输出，
 // 已累积内容通过输出安全审查 → 保存实际内容 + PARTIAL。
 func TestCleanupRAGStream_AbortedWithSafePartialContent(t *testing.T) {
@@ -1594,6 +1757,40 @@ func TestStream_TruncatedByLength_MarksPartial(t *testing.T) {
 	last := msg.messages[len(msg.messages)-1]
 	if last.ResultCode != constants.ResultPartial {
 		t.Errorf("截断答案 resultCode = %q, want %q", last.ResultCode, constants.ResultPartial)
+	}
+}
+
+// TestStream_UpstreamClosedBeforeDone_MarksPartial P1：上游在 finish_reason 之前提前断流
+// （channel 关闭但无完成证据）时，已有内容必须落库为 PARTIAL 并下发截断提示，
+// 不能被标记为完整回答——否则患者看到残缺答案且无任何提示。
+func TestStream_UpstreamClosedBeforeDone_MarksPartial(t *testing.T) {
+	streamer := &mockStreamer{
+		ready:  true,
+		tokens: []string{"建议您多休息。", "注意饮食清淡"},
+		noDone: true, // 提前断流：无 Done 片段
+	}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "t", Content: "c", Score: 0.9, VecScore: 0.9}},
+	}
+	msg := &mockMessagePort{}
+	svc := newTestChatSendService(t, streamer, knowledge, &mockConversationPort{}, msg, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("高血压怎么控制"), out); err != nil {
+		t.Fatalf("Stream 返回错误: %v", err)
+	}
+	msg.mu.Lock()
+	defer msg.mu.Unlock()
+	last := msg.messages[len(msg.messages)-1]
+	if last.ResultCode != constants.ResultPartial {
+		t.Errorf("提前断流答案 resultCode = %q, want %q", last.ResultCode, constants.ResultPartial)
+	}
+	if !strings.Contains(last.Content, "建议您多休息") {
+		t.Errorf("提前断流应保留已产生内容，实际 %q", last.Content)
+	}
+	// 必须下发截断提示（患者可感知答案不完整），不得静默成功。
+	if !out.hasEvent(EventNotice) {
+		t.Error("提前断流应下发截断提示事件")
 	}
 }
 

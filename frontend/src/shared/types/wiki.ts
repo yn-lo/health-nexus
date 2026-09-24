@@ -45,7 +45,10 @@ export interface ArticleDetail {
 export interface ArticleStaff {
   id: number;
   title: string;
+  /** 编辑稿：作者最新提交的正文（待重新审核期间可能是未审核内容，仅医护端可见） */
   content: string;
+  /** 最近审核通过的正文快照（患者端所见版本）；与 content 不同表示有待审核的新版本 */
+  published_content: string;
   summary: string;
   cover_url: string;
   status: ArticleStatus;

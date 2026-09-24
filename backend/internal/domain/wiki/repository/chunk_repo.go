@@ -126,12 +126,20 @@ type ChunkSearchHit struct {
 	entity.ArticleChunk
 	ArticleTitle string
 	Score        float64
+	// ContentRisk 来源文章的内容风险等级（high=用药/检查准备/高风险护理），
+	// 供 chat 域判定本轮答案是否必须经生成后语义审核（P1）。
+	ContentRisk string
 }
 
 // chunkSearchColumns 检索 SQL 共用的 SELECT 列（含 article_title 与 score）。
+// content 取**命中切片本身** c.content（与该行向量一一对应）——
+// 不能返回 a.published_content（全文）：那样返回的内容与命中的向量不对应，
+// 且全文重复占用上下文，长文章尾部的有效证据会被挤掉（P1）。
+// 切片内容来源于审核通过时写入的版本（切片仅在 Approve/重建时写入，见 vectorize handler），
+// 故命中的切片即"已审核版本"的切片；文章当前是否 pending 由可见性条件约束。
 const chunkSearchColumns = `c.id, c.article_id, c.chunk_index, c.content, c.content_hash,
 	c.embedding, c.embedding_model, c.is_active, c.version, c.created_at,
-	COALESCE(a.title, '')`
+	COALESCE(a.title, ''), a.content_risk`
 
 // deptVisibilitySQL 生成科室可见性子条件：deptIDs 为 nil/空时不限制，非空时
 // 允许文章所属科室命中 OR 文章被 approved 引用授权给该科室。
@@ -190,6 +198,8 @@ func (r *ChunkRepo) SearchByVector(
 	//   - pending 且曾发布（published_at 非空）：这是"已发布文章被修改、正在重新审核"的状态，
 	//     其有效切片仍是上一次审核通过的版本，应继续服务（新内容审核通过前不生效）；
 	//   - 其它状态（draft/archived/deleted）的有效切片不存在或已失效，天然排除。
+	// 绑定审核版本：切片 version 必须等于文章的 published_version（快照版本），
+	// 避免并发重建写入的超前版本切片（新内容尚未审核）被检索命中。
 	// 有效期与逾期策略：显式过期（valid_until）的资料一律退出检索；
 	// 高风险（用药/检查准备等）且已逾期的资料同样退出（普通宣教逾期仅标记待复审，仍可命中）。
 	sql := fmt.Sprintf(`SELECT %s,
@@ -199,6 +209,8 @@ func (r *ChunkRepo) SearchByVector(
 		WHERE c.is_active = true
 		  AND c.content != ''
 		  AND a.is_deleted = false
+		  AND a.published_version > 0
+		  AND c.version = a.published_version
 		  AND (a.status = '%s' OR (a.status = '%s' AND a.published_at IS NOT NULL))
 		  AND (a.valid_until IS NULL OR a.valid_until > now())
 		  AND NOT (a.content_risk = '%s' AND a.review_overdue = true)
@@ -224,7 +236,7 @@ func scanChunkSearchHits(rows pgx.Rows) ([]ChunkSearchHit, error) {
 		if err := rows.Scan(
 			&hit.ID, &hit.ArticleID, &hit.ChunkIndex, &hit.Content, &hit.ContentHash,
 			&hit.Embedding, &hit.EmbeddingModel, &hit.IsActive, &hit.Version, &hit.CreatedAt,
-			&hit.ArticleTitle,
+			&hit.ArticleTitle, &hit.ContentRisk,
 			&hit.Score,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

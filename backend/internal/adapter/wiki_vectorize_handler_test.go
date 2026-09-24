@@ -121,6 +121,35 @@ type mockModelEmbedder struct {
 
 func (m *mockModelEmbedder) EmbeddingModel() string { return m.model }
 
+// switchingModelEmbedder 模拟 Embedding 模型热切换：Embed 调用时把当前模型名切到 onEmbed，
+// 用于验证切片记录的模型标识取"任务开始时的快照"而非提交时的当前模型。
+type switchingModelEmbedder struct {
+	mockEmbedder
+	model   string
+	onEmbed string
+}
+
+func (m *switchingModelEmbedder) EmbeddingModel() string { return m.model }
+
+func (m *switchingModelEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	m.model = m.onEmbed // 热切换：Embedding 期间当前模型已变为新模型
+	return m.mockEmbedder.Embed(ctx, texts)
+}
+
+// EmbedWithModel 模拟真实客户端（*SwappableClient）：单次调用内固定客户端快照，
+// 用**切换前**的模型生成向量并返回同一模型名，二者必然一致。
+func (m *switchingModelEmbedder) EmbedWithModel(
+	ctx context.Context, texts []string,
+) (embeddings [][]float32, model string, err error) {
+	modelAtStart := m.model // 快照：本次调用使用的模型
+	embeddings, err = m.mockEmbedder.Embed(ctx, texts)
+	m.model = m.onEmbed // 调用结束后才发生热切换
+	if err != nil {
+		return nil, "", err
+	}
+	return embeddings, modelAtStart, nil
+}
+
 // mockTxRunner 模拟 TxRunner，直接同步执行 fn 并记录调用。
 type mockTxRunner struct {
 	called bool
@@ -660,7 +689,7 @@ func TestHandleVectorize(t *testing.T) {
 		}
 	})
 
-	t.Run("仅图片正文_跳过向量化", func(t *testing.T) {
+	t.Run("仅图片正文_清除旧切片不报错", func(t *testing.T) {
 		fetcher := &mockArticleFetcher{article: &entity.Article{
 			ID:      13,
 			Status:  constants.ArticleStatusPublished,
@@ -681,9 +710,17 @@ func TestHandleVectorize(t *testing.T) {
 		if len(chunks.createdChunks) != 0 {
 			t.Errorf("期望 0 个 chunk，实际 %d", len(chunks.createdChunks))
 		}
+		// P1：纯图片新版是有效重建结果——必须清除旧切片，否则旧指引持续被检索命中。
+		if chunks.deactivateCall != 1 || chunks.deactivatedID != 13 {
+			t.Errorf("期望清除文章 13 的旧切片，实际 deactivateCall=%d id=%d",
+				chunks.deactivateCall, chunks.deactivatedID)
+		}
+		if chunks.deleteInactiveCall != 1 {
+			t.Errorf("期望物理删除失效切片，实际 %d", chunks.deleteInactiveCall)
+		}
 	})
 
-	t.Run("空内容_跳过不报错", func(t *testing.T) {
+	t.Run("空内容_清除旧切片不报错", func(t *testing.T) {
 		fetcher := &mockArticleFetcher{article: &entity.Article{
 			ID:      2,
 			Status:  constants.ArticleStatusPublished,
@@ -701,16 +738,18 @@ func TestHandleVectorize(t *testing.T) {
 		if embed.called {
 			t.Error("期望 embed 未被调用（空内容）")
 		}
-		if chunks.deactivateCall != 0 {
-			t.Error("期望 DeactivateByArticle 未被调用（空内容）")
+		// P1：空正文版本必须清除旧切片（否则旧内容残留）。
+		if chunks.deactivateCall != 1 || chunks.deactivatedID != 2 {
+			t.Errorf("期望清除文章 2 的旧切片，实际 deactivateCall=%d id=%d",
+				chunks.deactivateCall, chunks.deactivatedID)
 		}
 		if len(chunks.createdChunks) != 0 {
 			t.Errorf("期望 0 个 chunk，实际 %d", len(chunks.createdChunks))
 		}
 	})
 
-	t.Run("纯空白内容_跳过不报错", func(t *testing.T) {
-		// content 为纯空白字符（空格/换行/制表符）时，也应跳过：不调用 embed、不创建 chunk。
+	t.Run("纯空白内容_清除旧切片不报错", func(t *testing.T) {
+		// content 为纯空白字符（空格/换行/制表符）时，也应清除旧切片：不调用 embed、不创建 chunk。
 		fetcher := &mockArticleFetcher{article: &entity.Article{
 			ID:      11,
 			Status:  constants.ArticleStatusPublished,
@@ -728,8 +767,9 @@ func TestHandleVectorize(t *testing.T) {
 		if embed.called {
 			t.Error("期望 embed 未被调用（纯空白内容）")
 		}
-		if chunks.deactivateCall != 0 {
-			t.Error("期望 DeactivateByArticle 未被调用（纯空白内容）")
+		if chunks.deactivateCall != 1 || chunks.deactivatedID != 11 {
+			t.Errorf("期望清除文章 11 的旧切片，实际 deactivateCall=%d id=%d",
+				chunks.deactivateCall, chunks.deactivatedID)
 		}
 		if len(chunks.createdChunks) != 0 {
 			t.Errorf("期望 0 个 chunk（纯空白内容），实际 %d", len(chunks.createdChunks))
@@ -928,6 +968,32 @@ func TestHandleVectorize(t *testing.T) {
 		}
 		if got := chunks.createdChunks[0].EmbeddingModel; got != "text-embedding-3-large" {
 			t.Errorf("切片 EmbeddingModel = %q，期望 %q", got, "text-embedding-3-large")
+		}
+	})
+
+	t.Run("Embedding热切换_向量模型标识取任务开始快照", func(t *testing.T) {
+		// P1：模型 A 生成向量期间切换到模型 B。切片必须标记为 A（生成向量的模型），
+		// 否则 A 的向量被标成 B，检索空间混用且自动重建无法识别。
+		fetcher := &mockArticleFetcher{article: &entity.Article{
+			ID: 24, Status: constants.ArticleStatusPublished, Content: "内容", Version: 1,
+		}}
+		chunks := &mockChunkWriter{}
+		embed := &switchingModelEmbedder{
+			mockEmbedder: mockEmbedder{vectors: [][]float32{{0.1}}},
+			model:        "model-A",
+			onEmbed:      "model-B", // Embed 调用即发生热切换
+		}
+		h := &VectorizeHandler{articles: fetcher, chunks: chunks, embed: embed}
+
+		if err := h.HandleVectorize(context.Background(), makeTask("24")); err != nil {
+			t.Fatalf("期望 nil error，实际 %v", err)
+		}
+		if len(chunks.createdChunks) != 1 {
+			t.Fatalf("期望 1 个切片，实际 %d", len(chunks.createdChunks))
+		}
+		if got := chunks.createdChunks[0].EmbeddingModel; got != "model-A" {
+			t.Errorf("切片 EmbeddingModel = %q，期望 %q（任务开始快照，不得用提交时的当前模型）",
+				got, "model-A")
 		}
 	})
 

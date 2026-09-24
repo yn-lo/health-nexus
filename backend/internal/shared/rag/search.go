@@ -30,6 +30,9 @@ type Chunk struct {
 	Content      string  `json:"content"`
 	Score        float64 `json:"score"`
 	VecScore     float64 `json:"vec_score,omitempty"` // 向量相似度分数（1 - cosine_distance），用于 OOD 检测
+	// ContentRisk 文章来源的内容风险等级（high=用药/检查准备/高风险护理）。
+	// 命中高风险资料时本轮答案必须完整生成后经语义审核再展示（REQ-CHAT-012~014）。
+	ContentRisk string `json:"content_risk,omitempty"`
 }
 
 // SearchQuery 检索请求。

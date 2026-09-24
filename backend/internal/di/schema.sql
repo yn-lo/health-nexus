@@ -107,6 +107,34 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_risk VARCHAR(20) NOT NULL 
 ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_content_risk_chk;
 ALTER TABLE articles ADD CONSTRAINT articles_content_risk_chk CHECK (content_risk IN ('normal','high'));
 
+-- P1 修复：分离「编辑稿」与「已发布快照」。
+-- content 始终是编辑稿（作者最新提交，可能是未审核内容）；published_content 是最近一次
+-- 审核通过的正文快照。患者详情与 RAG 检索一律读 published_content——
+-- 否则已发布文章被编辑后（status=pending），待审核的新正文会直接对患者公开（绕过审核）。
+--
+-- 存量回填**仅限当前确为 published 的文章**：status='published' 表示当前 content 就是
+-- 审核通过的正文。pending（已发布文章被编辑、待重新审核）的 content 已是**未审核的新稿**，
+-- 其 published_at 仅代表"历史上发布过"，此时把 content 回填为快照 = 直接公开未审核草稿（P1）。
+-- pending 的旧审核版本在本迁移前已被覆盖、无法从本表还原，故不做回填：
+-- 快照保持空串 → 患者详情/检索读不到内容（安全失败），由管理员重新审核发布后建立快照。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_content TEXT NOT NULL DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_content_hash CHAR(64) NOT NULL DEFAULT '';
+-- published_version：快照对应的文章版本号。切片携带写入时的 version，
+-- 检索据此只命中"与审核版本一致的切片"，避免并发重建产生的超前版本切片被检索命中（P1 绑定审核版本）。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_version INT NOT NULL DEFAULT 0;
+UPDATE articles
+   SET published_content = content, published_content_hash = content_hash, published_version = version
+ WHERE status = 'published' AND published_content = '' AND content <> '';
+
+-- 污染修复：修正此前按"published_at 非空"误回填的 pending 文章快照。
+-- 这些文章的 published_content 是未审核的新稿，必须清空（宁可暂时不可读，也不公开未审核内容）。
+-- 幂等：仅在快照与当前编辑稿一致（即确为误回填）时清空，已重新审核发布的文章不受影响。
+UPDATE articles
+   SET published_content = '', published_content_hash = '', published_version = 0
+ WHERE status = 'pending'
+   AND published_content <> ''
+   AND published_content = content;
+
 CREATE TABLE IF NOT EXISTS article_chunks (
     id            BIGSERIAL   PRIMARY KEY,
     article_id    BIGINT      NOT NULL REFERENCES articles(id) ON DELETE CASCADE,

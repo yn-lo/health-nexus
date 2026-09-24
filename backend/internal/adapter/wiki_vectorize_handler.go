@@ -118,14 +118,24 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	// embedding，成为检索噪声（且图片本身不参与向量化）。
 	plainText := htmlToPlainText(article.Content)
 	chunkTexts := chunkContent(plainText, chunkSize, chunkOverlap)
+	// P1：纯图片/空正文是**有效重建结果**（新版正文不含可检索文本），必须清除旧切片——
+	// 直接 return nil 会让已被替换的旧指引持续被检索命中（患者收到过期内容）。
+	// 走与正常路径相同的版本复核 + 事务性清除，只是不写入新切片。
 	if len(chunkTexts) == 0 {
-		slog.InfoContext(ctx, "wiki: vectorize empty content, skip", "article_id", id)
+		if err := h.clearChunks(ctx, id, article.Version); err != nil {
+			return err
+		}
+		slog.WarnContext(ctx, "wiki: vectorize empty content, cleared stale chunks",
+			"article_id", id, "version", article.Version)
 		return nil
 	}
 	slog.InfoContext(ctx, "wiki: vectorize chunking",
 		"article_id", id, "chunk_size", chunkSize, "chunk_overlap", chunkOverlap, "chunks", len(chunkTexts))
 
-	embeddings, err := h.embed.Embed(ctx, chunkTexts)
+	// P2：用**同一客户端快照**完成"生成向量 + 读取模型标识"。
+	// EmbedWithModel 在单次调用内固定客户端，消除"读取模型名 / 生成向量"两次 Load 之间
+	// 发生热切换导致 A 模型向量被标成 B 模型的问题（向量空间混用、自动重建失效）。
+	embeddings, model, err := h.embedWithModel(ctx, chunkTexts)
 	if err != nil {
 		// LLM 未配置或调用失败：触发 asynq 重试；持续失败由 asynq 兜底进入死信。
 		return fmt.Errorf("embed article %d: %w", id, err)
@@ -141,10 +151,10 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	swap := func(ctx context.Context) error {
 		if h.tx == nil {
 			// 未注入事务管理器（单测）时不具备行锁，仍执行版本复核。
-			return h.swapChunks(ctx, id, article.Version, chunkTexts, embeddings)
+			return h.swapChunks(ctx, id, article.Version, model, chunkTexts, embeddings)
 		}
 		return h.tx.WithTx(ctx, func(ctx context.Context) error {
-			return h.swapChunks(ctx, id, article.Version, chunkTexts, embeddings)
+			return h.swapChunks(ctx, id, article.Version, model, chunkTexts, embeddings)
 		})
 	}
 	if err := swap(ctx); err != nil {
@@ -156,11 +166,68 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	return nil
 }
 
+// embedWithModel 生成向量并返回生成它们的模型名，二者来自同一客户端快照。
+// 若 embedder 支持 EmbedderWithModel（*SwappableClient / *Client）则一次调用完成；
+// 否则退化为"先读模型名再 Embed"（旧 mock 兼容，存在热切换不一致窗口，仅测试路径）。
+func (h *VectorizeHandler) embedWithModel(
+	ctx context.Context, texts []string,
+) (embeddings [][]float32, model string, err error) {
+	if em, ok := h.embed.(llm.EmbedderWithModel); ok {
+		return em.EmbedWithModel(ctx, texts)
+	}
+	embeddings, err = h.embed.Embed(ctx, texts)
+	if err != nil {
+		return nil, h.embeddingModel(), err
+	}
+	return embeddings, h.embeddingModel(), nil
+}
+
+// embeddingModel 返回当前生效的向量模型名；实现未暴露时返回空串（视为未知，检索侧不过滤）。
+func (h *VectorizeHandler) embeddingModel() string {
+	if p, ok := h.embed.(llm.EmbeddingModelNamer); ok {
+		return p.EmbeddingModel()
+	}
+	return ""
+}
+
+// clearChunks 纯图片/空正文版本重建：版本复核后事务性清除旧切片（不写入新切片）。
+// 与 swapChunks 相同的版本守卫，避免 embedding 期间文章被再次更新后误清白更新的切片。
+func (h *VectorizeHandler) clearChunks(ctx context.Context, id int64, version int) error {
+	doClear := func(ctx context.Context) error {
+		return h.clearChunksTx(ctx, id, version)
+	}
+	if h.tx == nil {
+		return doClear(ctx)
+	}
+	return h.tx.WithTx(ctx, doClear)
+}
+
+// clearChunksTx 在调用方事务内完成版本复核 + 旧切片清除。
+func (h *VectorizeHandler) clearChunksTx(ctx context.Context, id int64, version int) error {
+	cur, err := h.articles.LockVersion(ctx, id)
+	if err != nil {
+		return fmt.Errorf("lock article %d version: %w", id, err)
+	}
+	if cur != version {
+		slog.WarnContext(ctx, "wiki: article version changed during embedding, skip clearing chunks",
+			"article_id", id, "embedded_version", version, "current_version", cur)
+		return fmt.Errorf("article %d version changed %d -> %d during embedding: %w",
+			id, version, cur, asynqlib.SkipRetry)
+	}
+	if _, err := h.chunks.DeactivateByArticle(ctx, id); err != nil {
+		return fmt.Errorf("deactivate chunks for article %d: %w", id, err)
+	}
+	if _, err := h.chunks.DeleteInactiveByArticle(ctx, id); err != nil {
+		return fmt.Errorf("delete inactive chunks for article %d: %w", id, err)
+	}
+	return nil
+}
+
 // swapChunks 在调用方事务内完成版本复核 + 切片原子替换。
 // 版本已变化（embedding 期间文章被更新）时放弃本次写入：新版本自有其入队任务负责重建，
 // 本任务返回 SkipRetry 避免重复覆盖（重试也仍会被版本复核拦下）。
 func (h *VectorizeHandler) swapChunks(
-	ctx context.Context, id int64, version int, chunkTexts []string, embeddings [][]float32,
+	ctx context.Context, id int64, version int, model string, chunkTexts []string, embeddings [][]float32,
 ) error {
 	cur, err := h.articles.LockVersion(ctx, id)
 	if err != nil {
@@ -182,7 +249,7 @@ func (h *VectorizeHandler) swapChunks(
 		return fmt.Errorf("delete inactive chunks for article %d: %w", id, err)
 	}
 	// 记录向量所属模型：模型切换后据此识别需重建的切片（检索侧按模型过滤，避免新旧向量混用）。
-	model := h.embeddingModel()
+	// model 为任务开始时的快照，与 embeddings 实际使用的模型一致（P1）。
 	for i, text := range chunkTexts {
 		chunk := &entity.ArticleChunk{
 			ArticleID:      id,
@@ -199,14 +266,6 @@ func (h *VectorizeHandler) swapChunks(
 		}
 	}
 	return nil
-}
-
-// embeddingModel 返回当前生效的向量模型名；实现未暴露时返回空串（视为未知，检索侧不过滤）。
-func (h *VectorizeHandler) embeddingModel() string {
-	if p, ok := h.embed.(llm.EmbeddingModelNamer); ok {
-		return p.EmbeddingModel()
-	}
-	return ""
 }
 
 // reHTMLBlockTags 匹配块级标签（含 <br>），转纯文本时替换为空格以保留语义边界，

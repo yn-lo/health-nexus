@@ -30,7 +30,10 @@ type ChatRequest struct {
 type StreamChunk struct {
 	Token string // LLM 生成的 token 片段
 	Err   error  // 错误（nil 表示正常）
-	Done  bool   // true 表示流正常结束
+	// Done true 表示流**正常完成**（已确认模型给出完成信号 finish_reason=stop/tool_calls）。
+	// 上游提前断流（代理/网络在 finish_reason 之前关闭）不会发送 Done——
+	// 调用方据 channel 关闭且未收到 Done 判定为中断，避免把残缺答案标记为完整回答（P1）。
+	Done bool
 	// Truncated true 表示模型因长度限制（max_tokens / 上下文窗口）截断，
 	// 内容不完整——调用方须按"答案不完整"处理（落库 PARTIAL），不得标记为完整回答。
 	Truncated bool
@@ -65,37 +68,66 @@ func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan Stream
 				slog.Debug("llm: stream close error", "err", err)
 			}
 		}()
-		truncated := false
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
+		pumpStream(ctx, ch, stream)
+	}()
+	return ch, nil
+}
+
+// pumpStream 消费供应商流并转发为 StreamChunk，直至正常完成、出错或上游关闭。
+// 完成语义：仅当见到模型的完成信号（finish_reason=stop/tool_calls/function_call/content_filter）
+// 或长度截断（length）时才发送 Done；否则（上游提前关闭，EOF 但无完成证据）不发 Done，
+// 由消费方据"channel 关闭且无 Done"判定为中断（P1）。
+func pumpStream(ctx context.Context, ch chan<- StreamChunk, stream *openai.ChatCompletionStream) {
+	var completed, truncated bool
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			if completed || truncated {
 				sendChunk(ctx, ch, StreamChunk{Done: true, Truncated: truncated})
 				return
 			}
-			if err != nil {
-				// context 取消视为正常收尾，不向消费者投递错误
-				if ctx.Err() != nil {
-					return
-				}
-				sendChunk(ctx, ch, StreamChunk{Err: err})
+			// 未确认完成：不发 Done，仅关闭 channel。
+			slog.Warn("llm: stream ended without finish_reason (premature disconnect)")
+			return
+		}
+		if err != nil {
+			if ctx.Err() != nil { // context 取消视为正常收尾，不投递错误
 				return
 			}
-			if len(resp.Choices) == 0 {
-				continue
-			}
-			// finish_reason=length：模型因 max_tokens/上下文窗口截断，答案不完整。
-			// 需在最终 Done 片段上标识，避免下游把截断答案当作完整回答。
-			if resp.Choices[0].FinishReason == openai.FinishReasonLength {
-				truncated = true
-			}
-			if resp.Choices[0].Delta.Content != "" {
-				if !sendChunk(ctx, ch, StreamChunk{Token: resp.Choices[0].Delta.Content}) {
-					return
-				}
+			sendChunk(ctx, ch, StreamChunk{Err: err})
+			return
+		}
+		if len(resp.Choices) == 0 {
+			continue
+		}
+		if done, trunc := classifyFinishReason(resp.Choices[0].FinishReason); done || trunc {
+			completed = completed || done
+			truncated = truncated || trunc
+		}
+		if resp.Choices[0].Delta.Content != "" {
+			if !sendChunk(ctx, ch, StreamChunk{Token: resp.Choices[0].Delta.Content}) {
+				return
 			}
 		}
-	}()
-	return ch, nil
+	}
+}
+
+// classifyFinishReason 把模型的 finish_reason 归类为"正常完成"与"长度截断"。
+//   - stop/tool_calls/function_call：正常完成（模型主动收尾）；
+//   - length：模型因 max_tokens/上下文窗口截断——已给出完成信号但内容不完整；
+//   - content_filter：内容被供应商安全过滤终止，视为完成（不标记截断）；
+//   - 空/未知（含提前断流时的 null）：既非完成也非截断，由调用方按"无完成证据"处理。
+func classifyFinishReason(reason openai.FinishReason) (completed, truncated bool) {
+	switch reason {
+	case openai.FinishReasonLength:
+		return false, true
+	case openai.FinishReasonStop, openai.FinishReasonToolCalls, openai.FinishReasonFunctionCall:
+		return true, false
+	case openai.FinishReasonContentFilter:
+		return true, false
+	default:
+		return false, false
+	}
 }
 
 // sendChunk 向 channel 投递片段，context 取消时返回 false。

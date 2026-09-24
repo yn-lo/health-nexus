@@ -72,4 +72,5 @@ backend/uploads/
 docs/
 tmp/
 .tmp-golangci-cache/
-.tmp-npm-cache/
+*/.tmp-npm-cache/
+*/.golangci-cache/

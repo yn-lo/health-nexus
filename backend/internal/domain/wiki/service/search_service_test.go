@@ -352,6 +352,27 @@ func TestToRAGChunks(t *testing.T) {
 			t.Errorf("期望空切片，实际 %d", len(got))
 		}
 	})
+
+	t.Run("Content为命中切片内容_非全文", func(t *testing.T) {
+		// P1：返回内容必须是命中切片本身（与向量一一对应），不能是全文；
+		// 否则全文重复占用上下文，长文章尾部的有效证据会被挤掉。
+		chunkContent := "高血压患者应低盐饮食，每日食盐不超过5克。"
+		hits := []repository.ChunkSearchHit{
+			{
+				ArticleChunk: entity.ArticleChunk{ID: 7, ArticleID: 42, Content: chunkContent},
+				ArticleTitle: "高血压宣教",
+				ContentRisk:  "normal",
+				Score:        0.9,
+			},
+		}
+		got := toRAGChunks(hits)
+		if len(got) != 1 {
+			t.Fatalf("期望 1 条，实际 %d", len(got))
+		}
+		if got[0].Content != chunkContent {
+			t.Errorf("Content = %q, want 命中切片内容 %q", got[0].Content, chunkContent)
+		}
+	})
 }
 
 // ============================================================================

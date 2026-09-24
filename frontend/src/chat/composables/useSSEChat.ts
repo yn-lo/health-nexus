@@ -26,8 +26,17 @@ interface UseSSEChatOptions {
 const MAX_RETRIES = 2
 /** 重连基础延迟（ms），指数退避 */
 const RETRY_BASE_DELAY = 1000
-/** 流式读取超时（ms）：超过此时间未收到任何数据则判定连接中断 */
+/**
+ * 空闲超时（ms）：超过此时间未收到任何数据（含心跳 ping）则判定连接中断。
+ * 后端每 15s 下发一次 ping，故 60s 足以容忍若干次丢包/抖动。
+ */
 const STREAM_IDLE_TIMEOUT = 60_000
+/**
+ * 总超时（ms）：覆盖"生成 + 语义审核"的整轮上限。
+ * 后端高风险答案先生成、经语义审核后才下发，最长约 4 分钟（llmStreamTimeout），
+ * 故总超时须显著大于该值——空闲超时无法覆盖此阶段（心跳会持续刷新空闲计时）。
+ */
+const STREAM_TOTAL_TIMEOUT = 5 * 60_000
 
 /** 独立提示（notice 事件） */
 interface ChatNotice {
@@ -67,6 +76,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
     const requestId = crypto.randomUUID()
 
     let idleTimer: ReturnType<typeof setTimeout> | null = null
+    let totalTimer: ReturnType<typeof setTimeout> | null = null
 
     const resetIdleTimer = () => {
       if (idleTimer) clearTimeout(idleTimer)
@@ -74,6 +84,15 @@ export function useSSEChat(options: UseSSEChatOptions) {
         error.value = '连接超时，请重试'
         controller.value?.abort()
       }, STREAM_IDLE_TIMEOUT)
+    }
+
+    // 总超时覆盖"生成 + 审核"整轮：心跳只刷新空闲计时，无法覆盖这一阶段。
+    const startTotalTimer = () => {
+      if (totalTimer) clearTimeout(totalTimer)
+      totalTimer = setTimeout(() => {
+        error.value = '回答生成超时，请重试'
+        controller.value?.abort()
+      }, STREAM_TOTAL_TIMEOUT)
     }
 
     try {
@@ -144,6 +163,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
           if (!reader) throw new Error('无法读取响应流')
 
           resetIdleTimer()
+          startTotalTimer()
 
           const decoder = new TextDecoder()
           let buffer = ''
@@ -179,6 +199,8 @@ export function useSSEChat(options: UseSSEChatOptions) {
               try { evt = { type: 'result', data: JSON.parse(raw) as TurnResult } } catch { /* ignore */ }
             } else if (eventName === 'error') {
               try { evt = { type: 'error', data: JSON.parse(raw) as { message: string } } } catch { /* ignore */ }
+            } else if (eventName === 'ping') {
+              evt = { type: 'ping', data: raw }
             }
 
             if (!evt) return
@@ -217,6 +239,9 @@ export function useSSEChat(options: UseSSEChatOptions) {
                 break
               case 'error':
                 error.value = e.data.message
+                break
+              case 'ping':
+                // 心跳：仅用于刷新空闲计时（在读取循环中已完成），不改动任何展示状态。
                 break
             }
           }
@@ -287,6 +312,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
       }
     } finally {
       if (idleTimer) clearTimeout(idleTimer)
+      if (totalTimer) clearTimeout(totalTimer)
       isStreaming.value = false
       controller.value = null
     }

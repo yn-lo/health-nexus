@@ -76,6 +76,7 @@ func (m *mockArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaff
 func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.UpdateFields) (*entity.Article, error) {
 	m.updateFields = f
 	// 模拟真实 SQL 更新：应用内容/元数据变化，并按行当前状态处理重新审核（P1）。
+	// 注意：真实 UPDATE 会改写行本身，故此处同步回写 m.article（供后续 GetByID 读到新版本）。
 	updated := *m.article
 	if f.Content != nil {
 		updated.Content = *f.Content
@@ -83,18 +84,36 @@ func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.
 	if f.ContentHash != nil {
 		updated.ContentHash = *f.ContentHash
 	}
-	if f.ReReviewOnContentChange && updated.Status == constants.ArticleStatusPublished {
-		// 内容变更且行当前为 published → 回退待审核 + 版本递增（与 SQL CASE 一致）。
-		updated.Status = constants.ArticleStatusPending
-		updated.Version++
+	if f.ReReviewOnContentChange {
+		switch updated.Status {
+		case constants.ArticleStatusPublished:
+			// 内容变更且行当前为 published → 回退待审核 + 版本递增（与 SQL CASE 一致）。
+			updated.Status = constants.ArticleStatusPending
+			updated.Version++
+		case constants.ArticleStatusPending:
+			// pending 期间内容变更：状态不变，但同样递增版本（P1，与 SQL CASE 一致）。
+			updated.Version++
+		}
 	} else if f.IncrementVersion {
 		updated.Version++
 	}
+	*m.article = updated
 	return &updated, nil
 }
-func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, opts repository.StatusUpdateOpts) error {
+func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, fromStatus, toStatus string, opts repository.StatusUpdateOpts) error {
 	m.updateStatusOpts = opts
-	return m.updateStatErr
+	if m.updateStatErr != nil {
+		return m.updateStatErr
+	}
+	// 模拟条件更新：状态不匹配或审批版本漂移时不命中，返回 ErrStatusConflict（P1）。
+	if m.article == nil || m.article.Status != fromStatus {
+		return repository.ErrStatusConflict
+	}
+	if opts.ExpectedVersion != nil && m.article.Version != *opts.ExpectedVersion {
+		return repository.ErrStatusConflict
+	}
+	m.article.Status = toStatus
+	return nil
 }
 func (m *mockArticleRepo) SoftDelete(_ context.Context, id int64) error {
 	m.softDeleteID = id
@@ -179,7 +198,11 @@ type svcDeps struct {
 }
 
 // buildSvcWithOutbox 构造带 outbox 的 ArticleService。
+// 文章 version 未显式设置时补为 1（审批版本守卫要求 ExpectedVersion>0，多数用例默认审阅 v1）。
 func buildSvcWithOutbox(article *entity.Article) svcDeps {
+	if article != nil && article.Version == 0 {
+		article.Version = 1
+	}
 	repo := &mockArticleRepo{article: article}
 	audit := &mockAuditRepo{}
 	chunks := &mockChunkRepo{}
@@ -295,8 +318,9 @@ func TestArticleService_Approve_WritesOutboxInTx(t *testing.T) {
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
 	if err := d.svc.Approve(context.Background(), ApproveInput{
-		ArticleID: 42,
-		Actor:     reviewer,
+		ArticleID:       42,
+		Actor:           reviewer,
+		ExpectedVersion: 1,
 	}); err != nil {
 		t.Fatalf("Approve 返回错误: %v", err)
 	}
@@ -332,8 +356,9 @@ func TestArticleService_Approve_EnqueueFails_OutboxGuaranteesDelivery(t *testing
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
 	err := d.svc.Approve(context.Background(), ApproveInput{
-		ArticleID: 42,
-		Actor:     reviewer,
+		ArticleID:       42,
+		Actor:           reviewer,
+		ExpectedVersion: 1,
 	})
 	// 入队失败不应导致 Approve 失败——outbox 兜底。
 	if err != nil {
@@ -637,8 +662,9 @@ func TestArticleService_Approve_OutboxInsertFails_RollsBack(t *testing.T) {
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
 	err := d.svc.Approve(context.Background(), ApproveInput{
-		ArticleID: 42,
-		Actor:     reviewer,
+		ArticleID:       42,
+		Actor:           reviewer,
+		ExpectedVersion: 1,
 	})
 	if err == nil {
 		t.Fatal("期望 Approve 返回错误（outbox 写入失败应中断事务）")
@@ -660,7 +686,7 @@ func TestArticleService_Approve_SuperAdmin_CanReviewOwnArticle(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}
 
-	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1}); err != nil {
 		t.Fatalf("超级管理员应可审核自己的文章，实际错误: %v", err)
 	}
 }
@@ -676,7 +702,7 @@ func TestArticleService_Approve_SuperAdmin_CanReviewAnyDept(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 10}
 
-	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1}); err != nil {
 		t.Fatalf("超级管理员应可审核任意科室文章，实际错误: %v", err)
 	}
 }
@@ -692,7 +718,7 @@ func TestArticleService_Approve_DeptAdmin_CanReviewOwnArticle(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1}); err != nil {
 		t.Fatalf("科室管理员应可审核自己的文章，实际错误: %v", err)
 	}
 }
@@ -708,7 +734,7 @@ func TestArticleService_Approve_DeptAdmin_CanReviewSameDept(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1}); err != nil {
 		t.Fatalf("科室管理员应可审核本科室文章，实际错误: %v", err)
 	}
 }
@@ -724,7 +750,7 @@ func TestArticleService_Approve_DeptAdmin_CannotReviewOtherDept(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
+	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1})
 	if err == nil {
 		t.Fatal("科室管理员不应审核其他科室文章")
 	}
@@ -741,7 +767,7 @@ func TestArticleService_Approve_DoctorCannotReview(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
-	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor})
+	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: actor, ExpectedVersion: 1})
 	if err == nil {
 		t.Fatal("非管理员不应审核文章")
 	}
@@ -761,11 +787,106 @@ func TestArticleService_Approve_ClearsReviewOverdue(t *testing.T) {
 	d := buildSvcWithOutbox(article)
 	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
 
-	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: reviewer}); err != nil {
+	if err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: reviewer, ExpectedVersion: 1}); err != nil {
 		t.Fatalf("Approve 返回错误: %v", err)
 	}
 	if !d.repo.updateStatusOpts.ClearReviewOverdue {
 		t.Error("审核通过时应清除 review_overdue 标记（P2）")
+	}
+}
+
+// TestArticleService_Approve_VersionMismatch_Returns409 P1：审核者审阅版本与当前版本不一致
+// （审阅期间被作者改成新内容）必须拒绝，要求重新审阅，不得批准未审阅的版本。
+func TestArticleService_Approve_VersionMismatch_Returns409(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusPending,
+		Version:      2, // 审阅后又被编辑，版本已升到 2
+		AuthorID:     1,
+		DepartmentID: &deptID,
+	}
+	d := buildSvcWithOutbox(article)
+	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
+
+	err := d.svc.Approve(context.Background(), ApproveInput{
+		ArticleID:       42,
+		Actor:           reviewer,
+		ExpectedVersion: 1, // 审阅者看到的是 v1
+	})
+	if err == nil {
+		t.Fatal("版本不一致时应拒绝审批")
+	}
+	assertAppErrCode(t, err, "WIKI_REVIEW_VERSION_CONFLICT")
+	if d.outbox.insertCall != 0 || d.vector.enqueueCnt != 0 {
+		t.Errorf("版本冲突时不得发布/入队：outbox=%d enqueue=%d", d.outbox.insertCall, d.vector.enqueueCnt)
+	}
+}
+
+// TestArticleService_Approve_MissingVersion_Returns422 缺少审阅版本号时必须拒绝（强制客户端带版本）。
+func TestArticleService_Approve_MissingVersion_Returns422(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID: 42, Status: constants.ArticleStatusPending, AuthorID: 1, DepartmentID: &deptID,
+	}
+	d := buildSvcWithOutbox(article)
+	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
+
+	err := d.svc.Approve(context.Background(), ApproveInput{ArticleID: 42, Actor: reviewer})
+	if err == nil {
+		t.Fatal("缺少审阅版本时应拒绝")
+	}
+	assertAppErrCode(t, err, "WIKI_REVIEW_VERSION_REQUIRED")
+}
+
+// TestArticleService_PendingEditThenApprove_StaleVersionRejected P1 端到端：
+// 待审核（pending）期间作者改了正文（版本递增），管理员基于旧版本审批必须被拒——
+// 否则"pending 编辑不递增版本"会让审批的版本校验形同虚设，旧审批仍能批准未审阅的新内容。
+func TestArticleService_PendingEditThenApprove_StaleVersionRejected(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID:           42,
+		Status:       constants.ArticleStatusPending,
+		Version:      1, // 管理员审阅的是 v1
+		AuthorID:     1,
+		DepartmentID: &deptID,
+		Content:      "旧正文",
+		ContentHash:  "old_hash",
+	}
+	d := buildSvcWithOutbox(article)
+	author := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
+
+	// 作者在 pending 期间修改正文 → 版本应递增到 2。
+	newContent := "新正文（未审阅）"
+	dto, err := d.svc.Update(context.Background(), UpdateInput{
+		Content:   &newContent,
+		ArticleID: 42,
+		Actor:     author,
+	})
+	if err != nil {
+		t.Fatalf("Update 返回错误: %v", err)
+	}
+	if dto.Version != 2 {
+		t.Fatalf("pending 内容变更后版本 = %d，期望 2（须递增）", dto.Version)
+	}
+	if dto.Status != constants.ArticleStatusPending {
+		t.Fatalf("pending 内容变更后状态 = %q，期望仍为 pending", dto.Status)
+	}
+
+	// 管理员仍基于审阅时的 v1 审批 → 必须 409，不得批准未审阅的新正文。
+	reviewer := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: 10}
+	err = d.svc.Approve(context.Background(), ApproveInput{
+		ArticleID:       42,
+		Actor:           reviewer,
+		ExpectedVersion: 1,
+	})
+	if err == nil {
+		t.Fatal("待审核期间内容已变更，旧版本审批必须被拒绝")
+	}
+	assertAppErrCode(t, err, "WIKI_REVIEW_VERSION_CONFLICT")
+	// 不得发布/入队（未审阅内容不得进入知识库）。
+	if d.outbox.insertCall != 0 || d.vector.enqueueCnt != 0 {
+		t.Errorf("版本冲突时不得发布/入队：outbox=%d enqueue=%d", d.outbox.insertCall, d.vector.enqueueCnt)
 	}
 }
 

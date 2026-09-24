@@ -7,27 +7,35 @@ import "time"
 // 状态机：draft → pending → published → archived → deleted（软删除 is_deleted=true，REQ-WIKI-001）。
 // View 字段（DepartmentName/AuthorName）由 JOIN 查询填充，仅用于读模型，不写入表。
 type Article struct {
-	ID              int64
-	Title           string
-	Content         string
-	Summary         string
-	CoverImageURL   string
-	Status          string
-	Version         int
-	ContentHash     string
-	AuthorID        int64
-	DepartmentID    *int64
-	ReviewerID      *int64
-	ReviewComment   string
-	ViewCount       int64
-	FeaturedRank    int
-	IsDeleted       bool
-	AllowReference  bool
-	ReviewOverdue   bool
-	ReviewOverdueAt *time.Time
-	PublishedAt     *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID            int64
+	Title         string
+	Content       string // 编辑稿：作者最新提交的正文，可能是未审核内容（仅医护端可读）
+	Summary       string
+	CoverImageURL string
+	Status        string
+	Version       int
+	ContentHash   string
+	// PublishedContent 最近一次审核通过的正文快照；患者端详情与 RAG 检索一律读它，
+	// 使"已发布文章正在重新审核"期间不会把未审核的新正文展示给患者（P1）。
+	// 从未发布的文章为空串。
+	PublishedContent     string
+	PublishedContentHash string
+	// PublishedVersion 快照对应的文章版本号（published_content 写入时的 version）。
+	// 检索据此只命中与该版本一致的切片，避免并发重建产生的超前版本切片被命中。0 表示无快照。
+	PublishedVersion int
+	AuthorID         int64
+	DepartmentID     *int64
+	ReviewerID       *int64
+	ReviewComment    string
+	ViewCount        int64
+	FeaturedRank     int
+	IsDeleted        bool
+	AllowReference   bool
+	ReviewOverdue    bool
+	ReviewOverdueAt  *time.Time
+	PublishedAt      *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 
 	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级。
 	// ContentRisk 决定逾期策略与检索可见性：high 的资料有效期更短，

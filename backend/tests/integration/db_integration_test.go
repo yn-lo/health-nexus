@@ -293,8 +293,11 @@ func TestRetrievalVisibility(t *testing.T) {
 		validPast  bool
 		everPubbed bool
 		model      string
-		wantPlain  bool
-		wantModel  bool
+		// chunkVersion 切片版本；0 表示与 published_version 一致（默认 1）。
+		// 用于验证"切片必须绑定审核版本"——超前版本（未审核新内容的切片）不得被命中。
+		chunkVersion int
+		wantPlain    bool
+		wantModel    bool
 	}
 	specs := []spec{
 		{name: "已发布_正常", status: "published", risk: "normal", everPubbed: true, model: "m1", wantPlain: true, wantModel: true},
@@ -303,22 +306,31 @@ func TestRetrievalVisibility(t *testing.T) {
 		{name: "已发布_高风险逾期", status: "published", risk: "high", overdue: true, everPubbed: true, model: "m1"},
 		{name: "已发布_有效期已过", status: "published", risk: "normal", validPast: true, everPubbed: true, model: "m1"},
 		{name: "已发布_其他模型", status: "published", risk: "normal", everPubbed: true, model: "other-model", wantPlain: true},
+		// P1：待重新审核 + 切片版本超前（并发重建写入未审核新内容的切片）→ 不得命中。
+		{name: "待重新审核_超前切片版本", status: "pending", risk: "normal", everPubbed: true, model: "m1", chunkVersion: 2},
 	}
 
 	err := txm.WithTx(context.Background(), func(ctx context.Context) error {
 		ids := map[string]int64{}
 		for i, s := range specs {
 			pubAt, validUntil := "NULL", "NULL"
+			// published_version 与首次发布版本一致（越早发布过则为 1）；从未发布为 0。
+			publishedVersion := 0
 			if s.everPubbed {
 				pubAt = "now()"
+				publishedVersion = 1
 			}
 			if s.validPast {
 				validUntil = "now() - interval '1 day'"
 			}
+			chunkVersion := s.chunkVersion
+			if chunkVersion == 0 {
+				chunkVersion = 1
+			}
 			var id int64
 			sql := fmt.Sprintf(`INSERT INTO articles
-				(title, content, status, version, content_hash, author_id, content_risk, published_at, valid_until, review_overdue)
-				VALUES ($1, $2, $3, 1, '', $4, $5, %s, %s, $6) RETURNING id`, pubAt, validUntil)
+				(title, content, status, version, content_hash, author_id, content_risk, published_at, valid_until, review_overdue, published_version)
+				VALUES ($1, $2, $3, 1, '', $4, $5, %s, %s, $6, %d) RETURNING id`, pubAt, validUntil, publishedVersion)
 			if err := postgres.Q(ctx, pool).QueryRow(ctx, sql,
 				fmt.Sprintf("集成校验文章-%d", i), "集成校验内容", s.status, authorID, s.risk, s.overdue,
 			).Scan(&id); err != nil {
@@ -329,7 +341,7 @@ func TestRetrievalVisibility(t *testing.T) {
 				ArticleID: id, ChunkIndex: 0, Content: "集成校验切片",
 				ContentHash: contenthash.SHA256("集成校验切片"),
 				Embedding:   pgvector.NewVector(onesVector()), EmbeddingModel: s.model,
-				IsActive: true, Version: 1,
+				IsActive: true, Version: chunkVersion,
 			}); err != nil {
 				t.Fatalf("插入切片 %s 失败: %v", s.name, err)
 			}

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -128,9 +129,33 @@ func TestSwappableClients_SwapEachCapability(t *testing.T) {
 
 // --- 编译期断言 ---
 
+// TestSwappableClient_EmbedWithModel_SingleSnapshot P2：EmbedWithModel 在单次调用内只 Load 一次，
+// 保证"生成向量 + 返回模型名"来自同一客户端快照（热切换下不得混用模型）。
+// 未配置 client 时 fail-closed（返回 ErrNotConfigured + 空模型），绝不返回与实际向量不符的模型名。
+func TestSwappableClient_EmbedWithModel_SingleSnapshot(t *testing.T) {
+	sc := NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{EmbeddingModel: "embed-A"}})
+
+	_, model, err := sc.EmbedWithModel(context.Background(), []string{"x"})
+	if !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("未配置时 EmbedWithModel err = %v, want ErrNotConfigured", err)
+	}
+	// 生成失败时不得返回任何模型标识（避免下游按"未生成向量的模型"记录/检索）。
+	if model != "" {
+		t.Errorf("未配置时 model 应为空串，实际 %q", model)
+	}
+
+	// Swap 到未配置客户端同样 fail-closed（不存在"读到旧模型名"的窗口）。
+	sc.Swap(nil)
+	_, model, err = sc.EmbedWithModel(context.Background(), []string{"x"})
+	if !errors.Is(err, ErrNotConfigured) || model != "" {
+		t.Errorf("Swap(nil) 后应为 (ErrNotConfigured, \"\")，实际 err=%v model=%q", err, model)
+	}
+}
+
 func TestSwappableClient_ImplementsInterfaces(t *testing.T) {
 	var _ Streamer = (*SwappableClient)(nil)
 	var _ Embedder = (*SwappableClient)(nil)
+	var _ EmbedderWithModel = (*SwappableClient)(nil)
 	var _ Reranker = (*SwappableClient)(nil)
 	var _ JSONCompleter = (*SwappableClient)(nil)
 }

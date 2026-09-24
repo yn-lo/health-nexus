@@ -88,4 +88,6 @@ export type SSEEvent =
   | { type: 'crisis'; data: { answer: string } }
   | { type: 'result'; data: TurnResult }
   | { type: 'error'; data: { message: string } }
+  /** 心跳：长时间无业务数据（高风险答案先生成、后审核）时后端周期性下发，用于判定连接存活 */
+  | { type: 'ping'; data: string }
   | { type: 'done'; data: '[DONE]' };

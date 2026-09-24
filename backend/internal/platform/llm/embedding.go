@@ -21,8 +21,31 @@ type Embedder interface {
 // EmbeddingModelNamer 可选接口：Embedder 自报当前生效的向量模型名（*Client / *SwappableClient 均实现）。
 // 用于记录切片向量所属模型版本，并在检索侧过滤不同模型的向量（P0：模型版本一致性）。
 // 定义为可选接口而非扩展 Embedder——避免强制所有实现（含测试 mock）同步改造。
+//
+// 注意：EmbeddingModel() 与 Embed() 是两次独立调用，热切换客户端上二者之间可能发生模型切换，
+// 导致"用 A 生成向量、却按 B 记录/检索模型"（P2）。需要强一致时用 EmbedWithModel。
 type EmbeddingModelNamer interface {
 	EmbeddingModel() string
+}
+
+// EmbedderWithModel 可选接口：一次调用内用**同一客户端快照**完成"生成向量 + 返回模型标识"，
+// 消除热切换下两次 Load() 的不一致窗口（P2 向量空间混用）。
+// 写入侧据此记录切片模型、查询侧据此按同模型检索。
+type EmbedderWithModel interface {
+	// EmbedWithModel 生成向量并返回生成它们的模型名（同一客户端快照内完成）。
+	EmbedWithModel(ctx context.Context, texts []string) (embeddings [][]float32, model string, err error)
+}
+
+// EmbedWithModel 用当前客户端快照一次完成向量生成与模型名读取（*Client）。
+// Model 名来自 c.cfg.EmbeddingModel，与实际请求使用的模型必然一致（同一 c）。
+func (c *Client) EmbedWithModel(
+	ctx context.Context, texts []string,
+) (embeddings [][]float32, model string, err error) {
+	embeddings, err = c.Embed(ctx, texts)
+	if err != nil {
+		return nil, "", err
+	}
+	return embeddings, c.EmbeddingModel(), nil
 }
 
 // Embed 批量生成向量，每批最多 100 个文本，返回与输入顺序一致的向量切片。

@@ -155,23 +155,26 @@ type ArticleDetailDTO struct {
 
 // ArticleStaffDTO 医护端文章视图（含所有状态）。
 type ArticleStaffDTO struct {
-	ID             int64      `json:"id"`
-	Title          string     `json:"title"`
-	Content        string     `json:"content"`
-	Summary        string     `json:"summary"`
-	CoverURL       string     `json:"cover_url"`
-	Status         string     `json:"status"`
-	Version        int        `json:"version"`
-	DepartmentID   *int64     `json:"department_id"`
-	DepartmentName string     `json:"department_name"`
-	AuthorID       int64      `json:"author_id"`
-	AuthorName     string     `json:"author_name"`
-	ReviewerID     *int64     `json:"reviewer_id"`
-	ReviewComment  string     `json:"review_comment"`
-	ViewCount      int64      `json:"view_count"`
-	AllowReference bool       `json:"allow_reference"`
-	FeaturedRank   int        `json:"featured_rank"`
-	PublishedAt    *time.Time `json:"published_at"`
+	ID      int64  `json:"id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	// PublishedContent 最近审核通过的正文快照（患者端所见版本）。
+	// 待重新审核期间与 Content 不同，供审核页对比"当前生效版本 / 待审核版本"。
+	PublishedContent string     `json:"published_content"`
+	Summary          string     `json:"summary"`
+	CoverURL         string     `json:"cover_url"`
+	Status           string     `json:"status"`
+	Version          int        `json:"version"`
+	DepartmentID     *int64     `json:"department_id"`
+	DepartmentName   string     `json:"department_name"`
+	AuthorID         int64      `json:"author_id"`
+	AuthorName       string     `json:"author_name"`
+	ReviewerID       *int64     `json:"reviewer_id"`
+	ReviewComment    string     `json:"review_comment"`
+	ViewCount        int64      `json:"view_count"`
+	AllowReference   bool       `json:"allow_reference"`
+	FeaturedRank     int        `json:"featured_rank"`
+	PublishedAt      *time.Time `json:"published_at"`
 	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级 / 复审逾期。
 	Source               string     `json:"source"`
 	ApplicablePopulation string     `json:"applicable_population"`
@@ -739,12 +742,20 @@ type ApproveInput struct {
 	ArticleID int64
 	Note      string // 可选审核备注
 	Actor     Actor
+	// ExpectedVersion 审核者实际审阅到的版本号（必填，由前端从列表/详情带上）。
+	// 条件更新：版本不一致（审核期间被作者改成新内容）返回 409，要求重新审阅——
+	// 避免"管理员看过 A 后作者改成 B，旧页面仍能批准 B"（P1）。
+	ExpectedVersion int
 }
 
 // Approve 审核通过（pending → published，契约 §4.8）。
 // 管理员可自审（含自己的文章）；非本科室不可审核（超管除外）。
 // 事务内写 outbox 记录 + 事务外直接入队向量化任务（快速路径），保证最终一致性。
+// 审批绑定审阅版本：ExpectedVersion 与当前 version 不一致返回 409，要求重新审阅（P1）。
 func (s *ArticleService) Approve(ctx context.Context, in ApproveInput) error {
+	if in.ExpectedVersion <= 0 {
+		return apperrors.Validation("WIKI_REVIEW_VERSION_REQUIRED", "缺少审阅版本号，请刷新后重新审阅")
+	}
 	article, err := s.repo.GetByID(ctx, in.ArticleID)
 	if err != nil {
 		return translateArticleErr(err)
@@ -755,16 +766,22 @@ func (s *ArticleService) Approve(ctx context.Context, in ApproveInput) error {
 	if article.Status != constants.ArticleStatusPending {
 		return apperrors.Conflict("WIKI_INVALID_STATUS", "仅待审核文章可审核通过")
 	}
+	// 快速失败：读取时版本已与审阅版本不符，无需进入事务（并发编辑场景）。
+	if article.Version != in.ExpectedVersion {
+		return apperrors.Conflict("WIKI_REVIEW_VERSION_CONFLICT",
+			"文章内容已被修改，请刷新后重新审阅")
+	}
 	reviewerID := in.Actor.UserID
 	err = s.tx.WithTx(ctx, func(ctx context.Context) error {
 		if err := s.repo.UpdateStatus(ctx, in.ArticleID,
 			constants.ArticleStatusPending, constants.ArticleStatusPublished,
 			repository.StatusUpdateOpts{
-				ReviewerID:     &reviewerID,
-				ReviewComment:  strPtrOrNil(in.Note),
-				SetPublishedAt: true,
-				// 重新审核通过即清除复审逾期标记，否则高风险逾期文章仍无法被检索（P2）。
+				ReviewerID:         &reviewerID,
+				ReviewComment:      strPtrOrNil(in.Note),
+				SetPublishedAt:     true,
 				ClearReviewOverdue: true,
+				// 审批版本守卫：事务内再校验一次，覆盖"读取后、事务前"被编辑的窗口（P1）。
+				ExpectedVersion: &in.ExpectedVersion,
 			}); err != nil {
 			return s.translateArticleStatusErr(ctx, in.ArticleID, err)
 		}
@@ -1054,6 +1071,7 @@ func toStaffDTO(a *entity.Article) ArticleStaffDTO {
 		ID:                   a.ID,
 		Title:                a.Title,
 		Content:              a.Content,
+		PublishedContent:     a.PublishedContent,
 		Summary:              a.Summary,
 		CoverURL:             a.CoverImageURL,
 		Status:               a.Status,
@@ -1122,14 +1140,14 @@ func translateArticleErr(err error) error {
 	return err
 }
 
-// translateStatusErr 区分 UpdateStatus 的"行不存在(404)"与"状态不匹配(409)"（article/reference 通用）。
-// UpdateStatus 用 WHERE status=$from 乐观锁，RowsAffected==0 可能是不存在或并发状态漂移；
-// 在同事务内二次 GetByID 区分：存在则 409，不存在则 404。
+// translateStatusErr 区分 UpdateStatus 的"行不存在(404)"与"条件不命中(409)"（article/reference 通用）。
+// UpdateStatus 用 WHERE status=$from（+可选 version）条件更新，RowsAffected==0 可能是不存在、
+// 状态并发漂移，或审批版本已被编辑覆盖；在同事务内二次 GetByID 区分：存在则 409，不存在则 404。
 func translateStatusErr[T any](ctx context.Context, id int64, err error,
 	get func(context.Context, int64) (T, error),
 	notFoundCode, notFoundMsg, conflictCode, conflictMsg string,
 ) error {
-	if !errors.Is(err, repository.ErrNotFound) {
+	if !errors.Is(err, repository.ErrStatusConflict) {
 		return err
 	}
 	if _, getErr := get(ctx, id); errors.Is(getErr, repository.ErrNotFound) {

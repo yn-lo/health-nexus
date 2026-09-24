@@ -79,11 +79,15 @@ export function deleteArticle(articleId: number) {
   return apiClient<{ success: boolean }>(`/staff/wiki/articles/${articleId}`, { method: 'DELETE' });
 }
 
-/** 审核通过文章（契约 §4.8，pending → published） */
-export function approveArticle(articleId: number, note?: string) {
+/**
+ * 审核通过文章（契约 §4.8，pending → published）。
+ * version 为审核者实际审阅到的文章版本号（必填）：审核期间内容被编辑则后端返回 409，
+ * 需刷新后重新审阅——避免"看过 A 后作者改成 B，旧页面仍批准 B"。
+ */
+export function approveArticle(articleId: number, version: number, note?: string) {
   return apiClient<{ success: boolean }>(`/staff/wiki/articles/${articleId}/approve`, {
     method: 'POST',
-    body: note ? { note } : undefined,
+    body: note ? { version, note } : { version },
   });
 }
 

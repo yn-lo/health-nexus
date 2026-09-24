@@ -3,11 +3,14 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -67,6 +70,12 @@ func (h *StreamHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sse := &sseWriter{w: w, flusher: flusher}
+
+	// P2：SSE 心跳。高风险问题要"完整生成 + 语义审核"后才返回，最长可达 4 分钟，
+	// 期间可能长时间无 token；前端仅靠"有无数据"判断存活会误判连接断开。
+	// 独立 goroutine 周期性写 ping 事件（不进入答案正文），使连接活跃状态可观测。
+	stopHeartbeat := sse.startHeartbeat(r.Context())
+	defer stopHeartbeat()
 
 	// 客户端断开时 r.Context() 自动 cancel，service 内的 LLM 流停止
 	if err := h.chat.Stream(r.Context(), in, sse); err != nil {
@@ -183,6 +192,34 @@ type sseWriter struct {
 	w        http.ResponseWriter
 	flusher  http.Flusher
 	wroteAny bool
+	// mu 保护 w/flusher/wroteAny：心跳 goroutine 与主流写线程可能并发写同一 ResponseWriter。
+	mu sync.Mutex
+}
+
+// heartbeatInterval SSE 心跳间隔：远小于前端空闲超时（60s），确保长审核期间连接被判存活。
+const heartbeatInterval = 15 * time.Second
+
+// startHeartbeat 启动周期性 ping 事件写入，返回停止函数（幂等）。
+// 心跳使"连接是否存活"与"是否收到业务数据"解耦——生成 + 审核阶段可能长时间无 token。
+func (s *sseWriter) startHeartbeat(ctx context.Context) func() {
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// 心跳载荷为时间戳字符串，前端仅用于刷新空闲计时，不解析语义。
+				_ = s.Write(service.EventPing, time.Now().UTC().Format(time.RFC3339))
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
 }
 
 // sseDataReplacer 将 data 中的换行拆成多条 data: 行（SSE spec 要求）。
@@ -207,6 +244,8 @@ func (s *sseWriter) Write(event string, data any) error {
 			return fmt.Errorf("marshal sse payload: %w", err)
 		}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, err := fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", event, payload); err != nil {
 		return err
 	}

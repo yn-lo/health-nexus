@@ -225,25 +225,25 @@ describe('wikiApi 接口契约', () => {
   })
 
   // ── 审核接口 ──────────────────────────────────────────────────────
-  it('approveArticle(articleId) 无 note → POST /api/staff/wiki/articles/{id}/approve 无 body', async () => {
+  it('approveArticle(articleId, version) → POST 且 body 含审阅版本（审批绑定版本）', async () => {
     const { approveArticle } = await import('@/shared/api/wiki')
-    await approveArticle(8)
+    await approveArticle(8, 3)
 
     const last = router.lastCall()!
     expect(last.url).toBe('/api/staff/wiki/articles/8/approve')
     expect(last.init?.method).toBe('POST')
-    expect(last.init?.body).toBeUndefined()
+    expect(JSON.parse(last.init?.body as string)).toEqual({ version: 3 })
   })
 
-  it('approveArticle(articleId, note) → POST 且 body 含 note', async () => {
+  it('approveArticle(articleId, version, note) → POST 且 body 含 version + note', async () => {
     const { approveArticle } = await import('@/shared/api/wiki')
-    await approveArticle(8, '通过')
+    await approveArticle(8, 3, '通过')
 
     const last = router.lastCall()!
     expect(last.url).toBe('/api/staff/wiki/articles/8/approve')
     expect(last.init?.method).toBe('POST')
     const body = JSON.parse(last.init?.body as string)
-    expect(body).toEqual({ note: '通过' })
+    expect(body).toEqual({ version: 3, note: '通过' })
   })
 
   it('rejectArticle(articleId, reason) → POST /api/staff/wiki/articles/{id}/reject 且 body 含 reason', async () => {

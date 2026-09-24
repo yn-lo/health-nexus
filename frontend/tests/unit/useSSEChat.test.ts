@@ -143,6 +143,43 @@ describe('useSSEChat', () => {
 
   // ── answer_replaced（正文修正）/ notice（独立提示）/ result（权威结果） ──
 
+  // ── ping 心跳（P2：生成 + 审核期间保持连接存活） ──
+
+  it('ping 心跳事件 → 不改动正文与提示（仅刷新空闲计时）', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        'event: ping\ndata: 2026-01-01T00:00:00Z\n\n',
+        'event: token\ndata: 回答\n\n',
+        'event: ping\ndata: 2026-01-01T00:00:15Z\n\n',
+        'event: done\ndata: [DONE]\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { currentContent, notices, error, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    // 心跳不得进入正文/提示，也不触发错误
+    expect(currentContent.value).toBe('回答')
+    expect(notices.value).toEqual([])
+    expect(error.value).toBeNull()
+  })
+
+  it('仅心跳无 done → 视为连接中断（心跳不替代 done）', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        'event: ping\ndata: 2026-01-01T00:00:00Z\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { error, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    // 未收到 done 时仍判为连接中断（心跳只证明连接活跃，不表示本轮完成）
+    expect(error.value).toBe('连接中断，回答可能不完整')
+  })
+
   it('notice 事件 → 独立提示，不进入答案正文', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       makeOkResponse(makeSSEStream([

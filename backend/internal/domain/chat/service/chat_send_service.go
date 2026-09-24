@@ -43,6 +43,9 @@ const (
 	// EventResult 本轮权威结果：真实消息 ID、最终 result_code、最终引用。
 	// 前端据此替换本地乐观消息，无需"猜结果码 + 整页回拉"。
 	EventResult = "result"
+	// EventPing SSE 心跳：长时间无业务数据（高风险答案先生成、后审核）时保持连接可观测，
+	// 前端据此判定"连接存活"，不进入答案正文。
+	EventPing = "ping"
 )
 
 // notice 事件的 kind（前端据此选择展示样式）。
@@ -224,11 +227,11 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 	}
 
 	// (7) 统一理解与审查（每轮执行）：意图 + 多分类风险 + 是否缺关键信息 + 检索改写。
-	// 不再"命中少量关键词片段才让 LLM 审查"——首轮可能是普通宣教，风险常出现在后续轮次。
-	// AI 负责判断，后端按固定优先级执行动作（Assessment.Action）。
-	assessment, aerr := s.assess(ctx, sess, in)
+	// 先一次性读取历史快照（供审查 / 检索 / 生成三阶段复用），再据此审查。
+	history, assessment, aerr := s.loadSnapshotAndAssess(ctx, in, sess)
 	if aerr != nil {
-		// 审查不可用（超时/解析失败/字段非法）：按"无法判断"降级，绝不回退为"安全放行"。
+		// 审查不可用（历史读取失败 / 超时 / 解析失败 / 字段非法）：按"无法判断"降级，
+		// 绝不回退为"安全放行"，也不用空历史做风险判断（P1）。
 		slog.WarnContext(ctx, "chat: assessment unavailable, degrading to restricted reply", "err", aerr)
 		if err := s.registerTurn(ctx, in, sess, st.turnID); err != nil {
 			return err
@@ -241,11 +244,30 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		return derr
 	}
 
-	// 普通宣教：登记本轮后进入检索 + 生成链路。
+	// 普通宣教：登记本轮后进入检索 + 生成链路。复用同一历史快照，避免二次读取的时序漂移。
 	if err := s.registerTurn(ctx, in, sess, st.turnID); err != nil {
 		return err
 	}
-	return s.stageRAG(ctx, in, sess, out, st, assessment)
+	return s.stageRAG(ctx, in, sess, out, st, assessment, history)
+}
+
+// loadSnapshotAndAssess 读取本轮历史快照并执行统一理解与审查。
+// 历史在本轮用户消息落库之前一次性读取（无需排除当前轮），供审查 / 检索 / 生成三阶段复用。
+// 读取失败**必须**作为错误返回（调用方按"审查不可用"降级），不能静默降级为空历史——
+// 追问常依赖上文语境（上一轮已触发危机/急症，本轮只说"那现在呢"），
+// 用空历史做安全判断会丢失语境、误判为普通宣教放行（P1）。
+func (s *ChatSendService) loadSnapshotAndAssess(
+	ctx context.Context, in StreamInput, sess *Session,
+) ([]*entity.Message, rag.Assessment, error) {
+	history, err := sess.store.History(ctx, constants.HistoryTurns, nil)
+	if err != nil {
+		return nil, rag.Assessment{}, fmt.Errorf("%w: load history: %w", rag.ErrAssessmentInvalid, err)
+	}
+	assessment, err := s.assess(ctx, in, history)
+	if err != nil {
+		return nil, rag.Assessment{}, err
+	}
+	return history, assessment, nil
 }
 
 // acquireStreamLock 获取会话防并发锁，返回释放函数。
@@ -314,8 +336,10 @@ func (s *ChatSendService) dispatchByAssessment(
 		if err := register(); err != nil {
 			return true, err
 		}
-		return true, s.handleFixedReply(ctx, in, sess, out,
-			clarificationText(assessment.ClarificationQuestion), constants.ResultRejected, st)
+		// 澄清问题由模型生成，落库/下发前必须经输出审查；越权则退回代码内固定澄清话术（P1）。
+		reply := s.sanitizeModelText(ctx,
+			clarificationText(assessment.ClarificationQuestion), rag.ClarificationFallback())
+		return true, s.handleFixedReply(ctx, in, sess, out, reply, constants.ResultRejected, st)
 	}
 	return false, nil
 }
@@ -339,18 +363,38 @@ func clarificationText(question string) string {
 	return rag.ClarificationPrompt() + q
 }
 
+// sanitizeModelText 对模型给出的动态文本（澄清问题 / 修正答案）做输出安全审查后再使用。
+//
+// 这两个字段由模型生成、会被落库并向患者展示，绝不能直接信任：模型可能借"澄清"或
+// "修正答案"的出口输出越权内容（停药 / 诊断 / 延误就医等），绕过正常输出审查。
+// 语义：
+//   - 内容被替换/拦截（Blocked）：说明含越权表述，放弃模型文本，改用调用方提供的固定安全话术；
+//   - 审查输出为空：异常，同样回退安全话术；
+//   - 通过：返回审查后的文本（可能与原文相同，或已追加免责声明）。
+//
+// fallback 必须为代码内固定安全话术（不得再来自模型）。
+func (s *ChatSendService) sanitizeModelText(ctx context.Context, text, fallback string) string {
+	if strings.TrimSpace(text) == "" {
+		return fallback
+	}
+	res := s.safetyOut.Validate(ctx, text)
+	if res.Blocked {
+		slog.WarnContext(ctx, "chat: model-provided text blocked by output safety, using safe fallback")
+		return fallback
+	}
+	if strings.TrimSpace(res.Final) == "" {
+		return fallback
+	}
+	return res.Final
+}
+
 // assess 执行统一理解与审查。
-// 历史在用户消息落库之前读取（本轮尚未写入，无需排除）；历史加载失败不阻断审查，降级为仅当前输入。
+// history 为本轮统一读取的历史快照（由 Stream 一次性加载并复用），此处不再二次读取。
 func (s *ChatSendService) assess(
-	ctx context.Context, sess *Session, in StreamInput,
+	ctx context.Context, in StreamInput, history []*entity.Message,
 ) (rag.Assessment, error) {
 	if s.assessor == nil {
 		return rag.Assessment{}, fmt.Errorf("%w: assessor not injected", rag.ErrAssessmentInvalid)
-	}
-	history, err := sess.store.History(ctx, constants.HistoryTurns, nil)
-	if err != nil {
-		slog.WarnContext(ctx, "chat: load history for assess failed, use current message only", "err", err)
-		history = nil
 	}
 	return s.assessor.AssessAndRewrite(ctx, in.Message, toAssessTurns(history))
 }
@@ -859,7 +903,8 @@ func (s *ChatSendService) emitReviewed(
 // 编排各子阶段：prepareRAGContext（历史/改写/检索）→ streamLLMTokens（流式审查推送）→ finalizeRAGOutput（复核 + 落库），
 // defer 委托 cleanupRAGStream 处理中断路径的孤儿占位消息清理。
 func (s *ChatSendService) stageRAG(
-	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, st *ragStreamState, assessment rag.Assessment,
+	ctx context.Context, in StreamInput, sess *Session, out SSEWriter, st *ragStreamState,
+	assessment rag.Assessment, snapshot []*entity.Message,
 ) error {
 	// 阶段 1：用户消息 + assistant 占位在同一事务内落库（DB 实现含科室锁定；Redis 实现入环），
 	// 两者共享本轮 turn_id。本轮自创建起即为 user + assistant 一对：检索/改写/生成中途失败时
@@ -873,10 +918,10 @@ func (s *ChatSendService) stageRAG(
 	st.userMsgID, st.aiMsgID = userMsg.ID, aiMsgID
 	defer func() { s.cleanupRAGStream(ctx, sess, st) }()
 
-	// 阶段 2.1~2.4：历史加载/裁剪 + 检索（检索失败/空结果在内部降级为拒答）
-	// 传入当前用户消息 ID：历史加载须排除它（已单独作为 UserMessage 传入 LLM，避免重复提问）。
+	// 阶段 2.1~2.4：历史裁剪 + 检索（检索失败/空结果在内部降级为拒答）。
+	// 复用 Stream 一次性读取的历史快照（先于本轮用户消息落库，天然不含当前轮，无需再排除）。
 	// 检索用统一审查给出的独立问题（assessment.StandaloneQuery）；生成用患者原话（originalQuery）。
-	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, userMsg.ID, st, assessment)
+	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, st, assessment, snapshot)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
 			return nil // finalizeRejection 已写终态并推送 result + done，无需继续
@@ -898,7 +943,8 @@ func (s *ChatSendService) stageRAG(
 
 	// 高风险内容（涉及用药/个体化）不做流式先发：st.deferred=true 时完整生成后在 finalizeRAGOutput
 	// 统一做语义审核，通过才展示——流式内容一旦下发，事后修正无法消除先前影响。
-	st.deferred = requiresFullReview(assessment, in.Message)
+	// 判定依据完整对话语义 + 还原问题 + 知识风险等级（不只看当前这一句，P1）。
+	st.deferred = requiresFullReview(assessment, in.Message, history, chunks)
 
 	slog.InfoContext(ctx, "chat: LLM stream started",
 		"history_turns", len(history)/2, "chunks", len(chunks), "deferred", st.deferred)
@@ -925,19 +971,53 @@ func (s *ChatSendService) stageRAG(
 	return nil
 }
 
-// medicationIntentRe 患者提问中出现用药相关意图的信号（剂量/加量/停药等）。
-// 用于判断本轮是否必须"完整生成 + 审核后展示"：这类问题的答案一旦越界（给出个体化剂量方案），
+// medicationIntentRe 对话中出现用药相关意图的信号（剂量/加量/停药等）。
+// 用于判断本轮是否必须"完整生成 + 审核后展示"：这类答案一旦越界（给出个体化剂量方案），
 // 事后修正无法消除已展示内容的影响。
 var medicationIntentRe = regexp.MustCompile(
 	`(剂量|用量|加量|减量|停药|换药|加倍|翻倍|加服|少吃|多吃|mg|毫克|几片|吃几)`)
 
-// requiresFullReview 判断本轮答案是否必须完整生成并审核通过后再展示。
-func requiresFullReview(a rag.Assessment, message string) bool {
+// requiresFullReview 判断本轮答案是否必须完整生成、经生成后语义审核通过再展示。
+//
+// P1：不能只匹配"当前这一句"的关键词——多轮追问常省略主语（上文问剂量，下一轮只问"那晚上呢？"）。
+// 判定依据三类信号，任一命中即需审核：
+//  1. 本轮统一审查的语义结论（用药调整 / 个体化诊疗）；
+//  2. 完整对话语义：历史消息 + 本轮统一审查产出的独立问题（StandaloneQuery，已还原指代）
+//     出现用药/剂量意图——覆盖"上文讨论剂量、本轮省略主语的追问"；
+//  3. 知识风险等级：命中高风险（high）资料时答案涉及用药/检查准备等，必须审核。
+func requiresFullReview(a rag.Assessment, message string, history []*entity.Message, chunks []rag.Chunk) bool {
 	if a.MedicationChange || a.IndividualizedDx {
 		return true
 	}
-	return medicationIntentRe.MatchString(message)
+	if hasHighRiskChunk(chunks) {
+		return true
+	}
+	// 对话语义：当前原话 + 还原后的独立问题。
+	if medicationIntentRe.MatchString(message) || medicationIntentRe.MatchString(a.StandaloneQuery) {
+		return true
+	}
+	// 历史：任一轮（用户或助手）讨论过用药即认为本轮处于用药语境。
+	for _, m := range history {
+		if medicationIntentRe.MatchString(m.Content) {
+			return true
+		}
+	}
+	return false
 }
+
+// hasHighRiskChunk 命中的资料中是否存在高风险（用药/检查准备/高风险护理）文章。
+// 与 wiki 域 entity.ContentRiskHigh 取值一致；此处用字面量避免 chat 域反向依赖 wiki 域。
+func hasHighRiskChunk(chunks []rag.Chunk) bool {
+	for _, c := range chunks {
+		if c.ContentRisk == contentRiskHigh {
+			return true
+		}
+	}
+	return false
+}
+
+// contentRiskHigh 高风险内容等级取值（对齐 wiki 域 articles.content_risk='high'）。
+const contentRiskHigh = "high"
 
 // handleEmptyStream LLM 流正常结束但未产生任何 token：显式 finalize placeholder 为拒答。
 // finalized=true 阻止 defer 重复清理（否则 cleanupRAGStream 会再次清理并产生误导日志）。
@@ -965,21 +1045,18 @@ func (s *ChatSendService) handleEmptyStream(
 	return out.Write(EventDone, donePayload())
 }
 
-// prepareRAGContext 阶段 2.1~2.4：加载并裁剪历史、按统一审查给出的独立问题检索。
-// currentUserMsgID 为当前轮用户消息 ID：阶段 1 已将其持久化，历史加载须排除，
-// 否则 LLM 上下文出现两条连续 user 消息（原始问题 + 改写问题）。
+// prepareRAGContext 阶段 2.1~2.4：裁剪历史快照、按统一审查给出的独立问题检索。
+// snapshot 为 Stream 一次性读取的历史快照（先于本轮用户消息落库，天然不含当前轮），
+// 此处直接复用而非二次读取——避免"审查用历史 A、生成用历史 B"的时序漂移，也减少一次 IO。
 // 检索问题来自 assessment.StandaloneQuery（审查阶段已保留否定/时间/人群等限定），
 // 生成侧仍用患者原话（in.Message）——改写偏差不污染答案。
 // 检索失败或无结果时降级为拒答（finalizeRejection），返回其错误供 stageRAG 直接透传。
 func (s *ChatSendService) prepareRAGContext(
 	ctx context.Context, in StreamInput, sess *Session,
-	out SSEWriter, currentUserMsgID uuid.UUID, st *ragStreamState, assessment rag.Assessment,
+	out SSEWriter, st *ragStreamState, assessment rag.Assessment, snapshot []*entity.Message,
 ) (originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
-	// 阶段 2.1：历史消息（最近 N 轮，排除当前轮用户消息）
-	history, err = sess.store.History(ctx, constants.HistoryTurns, &currentUserMsgID)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("load history: %w", err)
-	}
+	// 阶段 2.1：历史消息（最近 N 轮，复用本轮快照）
+	history = snapshot
 
 	// 阶段 2.1b：生成阶段 Token 预算兜底（REQ-CHAT-006-A）。
 	// 检索改写已移至统一审查（其内部分别裁剪历史），故此处按生成预算对历史做一次 FIFO 裁剪。
@@ -1056,6 +1133,8 @@ func (s *ChatSendService) streamLLMTokens(
 	if streamErr != nil {
 		return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
 	}
+	// doneSeen 记录是否收到模型的**完成证据**（Done 片段）。channel 关闭但未见 Done 即上游提前断流。
+	doneSeen := false
 	for chunk := range streamCh {
 		if chunk.Err != nil {
 			slog.ErrorContext(ctx, "llm stream error", "err", chunk.Err)
@@ -1071,10 +1150,11 @@ func (s *ChatSendService) streamLLMTokens(
 		}
 		if chunk.Done {
 			// 长度截断（max_tokens / 上下文窗口）：内容不完整，落库须为 PARTIAL，
-			// 不得因"流正常结束"当成本轮生成完成（P2）。
+			// 不得因"流正常结束"当成本轮生成完成。
 			if chunk.Truncated {
 				st.partial = true
 			}
+			doneSeen = true
 			break
 		}
 		st.pending.WriteString(chunk.Token)
@@ -1084,10 +1164,29 @@ func (s *ChatSendService) streamLLMTokens(
 			return err
 		}
 	}
-	// LLM 流正常结束（Done break 或 channel 关闭）：审查并推送尾部不足一句的内容。
+	// 审查并推送尾部不足一句的内容。
 	if err := s.flushPendingTail(ctx, out, st); err != nil {
 		st.partial = true
 		return err
+	}
+	// 上游提前断流（channel 关闭但未收到完成证据）：已有内容按中断处理（PARTIAL + 截断提示），
+	// 不得标记为完整回答——否则患者看到残缺答案且无任何提示（P1）。
+	if !doneSeen {
+		if st.content.Len() > 0 {
+			st.partial = true
+			slog.WarnContext(ctx, "chat: upstream stream closed before completion, marking partial",
+				"tokens", st.content.Len())
+			if err := out.Write(EventNotice, noticePayload{
+				Kind: NoticeTimeout,
+				Text: "（连接中断，以上为部分内容，完整回答请稍后重试）",
+			}); err != nil {
+				return err
+			}
+		} else {
+			// 无任何内容：走拒答路径（defer 用 streamCompleted=false 清理为固定兜底话术）。
+			st.streamCompleted = false
+			return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
+		}
 	}
 	// 后续终止原因检测委托 checkStreamTermination。
 	st.streamCompleted = true
@@ -1150,10 +1249,10 @@ func (s *ChatSendService) finalizeRAGOutput(
 			return swallowRejection(s.finalizeRejection(ctx, sess, st, out, rag.AssessmentFailedMessage()))
 		}
 		if !review.Pass() {
-			alt := strings.TrimSpace(review.RevisedAnswer)
-			if alt == "" {
-				alt = rag.RestrictedCareMessage()
-			}
+			// 修正答案由模型生成：落库/下发前必须经输出审查，绝不可直接信任——
+			// 否则模型可借"修正答案"出口输出越权内容（停药/诊断等），绕过输出审核（P1）。
+			// 审查不通过或无修正文本时，退回代码内固定安全话术。
+			alt := s.sanitizeModelText(ctx, review.RevisedAnswer, rag.RestrictedCareMessage())
 			slog.WarnContext(ctx, "chat: deferred answer rejected by semantic review",
 				"boundary_ok", review.BoundaryOK, "evidence_supported", review.EvidenceSupported,
 				"reason", review.Reason)
