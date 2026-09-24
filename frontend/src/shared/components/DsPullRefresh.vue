@@ -32,22 +32,29 @@ const statusText = computed(() => {
   return '下拉刷新'
 })
 
-/** __scroller 自身不滚动；真实滚动容器是最近的 overflow-y 祖先（如 .knowledge-list） */
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+/**
+ * 所有可滚动祖先（含文档）都在顶部时才允许下拉。
+ * 注意：仅 overflow-y:auto 不足以判定可滚动——内容不溢出时 scrollTop 恒为 0，
+ * 那样的“假滚动容器”（如内容刚好撑满的 .knowledge-list）会让判定永远成立，
+ * 从而在页面中部也拦掉原生滚动。故必须同时校验 scrollHeight > clientHeight。
+ */
+function isAtScrollTop(el: HTMLElement | null): boolean {
   let p = el?.parentElement ?? null
   while (p) {
     const oy = getComputedStyle(p).overflowY
-    if (oy === 'auto' || oy === 'scroll') return p
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight && p.scrollTop > 0) {
+      return false
+    }
     p = p.parentElement
   }
-  return null
+  const se = document.scrollingElement
+  return !se || se.scrollTop <= 0
 }
 
 function onTouchStart(e: TouchEvent) {
   if (props.loading) return
-  // 仅当真实滚动容器在顶部时启用下拉，否则列表中部下拉会与页面滚动叠加冲突
-  const sp = findScrollParent(e.currentTarget as HTMLElement)
-  if (sp && sp.scrollTop > 0) return
+  // 仅在滚动容器（含文档）都在顶部时启用下拉，否则与原生滚动叠加冲突
+  if (!isAtScrollTop(e.currentTarget as HTMLElement)) return
   const touch = e.touches[0]
   startY = touch.clientY
   startX = touch.clientX
