@@ -853,6 +853,12 @@
   color: var(--text-tertiary);
 }
 
+/* MiSans 的掩码圆点（U+2022）是全角字形（advance = 1em），掩码时字距比正文宽一倍。
+   前置系统拉丁字体接管圆点字形（半角宽）；掩码态全是圆点，中文占位符仍回退 MiSans。 */
+.ds-field-wrap input[type="password"] {
+  font-family: system-ui, var(--font-family-heading);
+}
+
 .ds-field-wrap--secondary {
   background: var(--bg-base-secondary);
 }
@@ -1707,6 +1713,11 @@
 .ai-input-card:focus-within {
   border-color: var(--brand-glow-border-strong);
   box-shadow: var(--shadow-glow-input-focus);
+}
+
+/* 焦点光晕由外层 .ai-input-card:focus-within 承担，textarea 不再单独亮环 */
+.ai-textarea:focus-visible {
+  outline: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -355,9 +355,15 @@ func (h *ConfigHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entityType := r.URL.Query().Get("entity_type")
-	entityID, _ := strconv.ParseInt(r.URL.Query().Get("entity_id"), 10, 64)
-	if entityID < 0 {
-		entityID = 0
+	// entity_id 三态：未传=不按实体过滤；0=只查单例配置；>0=按实体 ID 过滤。
+	var entityID *int64
+	if v := r.URL.Query().Get("entity_id"); v != "" {
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || parsed < 0 {
+			response.WriteError(w, r, apperrors.Validation("CONFIG_INVALID_ID", "entity_id 参数无效"))
+			return
+		}
+		entityID = &parsed
 	}
 	list, total, err := h.svc.ListAuditLogs(r.Context(), entityType, entityID, p)
 	if err != nil {

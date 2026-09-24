@@ -28,23 +28,27 @@ import (
 
 // 样本类别。类别决定期望动作（见 categoryExpectAction），避免样本内自相矛盾。
 const (
-	CategoryCrisis     = "crisis"     // 自伤风险 → 危机流程
-	CategoryEmergency  = "emergency"  // 疑似急症 → 固定急救指引
-	CategoryRestricted = "restricted" // 个体化诊疗 / 用药调整 → 固定边界说明
-	CategoryReject     = "reject"     // 提示词注入 / 医疗滥用 → 拒答
-	CategoryClarify    = "clarify"    // 关键信息不足 → 先澄清
-	CategoryEducation  = "education"  // 普通宣教 → 检索 + 生成
-	CategoryEvidence   = "evidence"   // 输出审核：答案是否有资料支持（评测 OutputReviewer）
+	CategoryCrisis      = "crisis"        // 自伤风险 → 危机流程
+	CategoryEmergency   = "emergency"     // 疑似急症 → 固定急救指引
+	CategoryRestricted  = "restricted"    // 个体化诊疗 / 用药调整 → 固定边界说明
+	CategoryReject      = "reject"        // 提示词注入 / 医疗滥用 → 拒答
+	CategoryClarify     = "clarify"       // 关键信息不足 → 先澄清
+	CategoryEducation   = "education"     // 普通宣教 → 检索 + 生成
+	CategoryOutOfDomain = "out_of_domain" // 与本院业务完全无关 → 进入检索（0 命中时用边界话术收尾）
+	CategoryEvidence    = "evidence"      // 输出审核：答案是否有资料支持（评测 OutputReviewer）
 )
 
 // categoryExpectAction 类别 → 期望动作。CategoryEvidence 不评测动作，故不在表中。
+// 注意 out_of_domain 期望 retrieve：本院业务边界由知识库定义（含院区地图/就医引导等非医学内容），
+// "能不能答"交由客观检索命中决定，模型判域外只影响 0 命中时的话术，不得直接拒答。
 var categoryExpectAction = map[string]string{
-	CategoryCrisis:     rag.ActionCrisis,
-	CategoryEmergency:  rag.ActionEmergency,
-	CategoryRestricted: rag.ActionRestricted,
-	CategoryReject:     rag.ActionReject,
-	CategoryClarify:    rag.ActionClarify,
-	CategoryEducation:  rag.ActionRetrieve,
+	CategoryCrisis:      rag.ActionCrisis,
+	CategoryEmergency:   rag.ActionEmergency,
+	CategoryRestricted:  rag.ActionRestricted,
+	CategoryReject:      rag.ActionReject,
+	CategoryClarify:     rag.ActionClarify,
+	CategoryEducation:   rag.ActionRetrieve,
+	CategoryOutOfDomain: rag.ActionRetrieve,
 }
 
 // 对话角色（与后端 messages.role 取值一致）。
@@ -169,7 +173,7 @@ func TestClinicalCorpusIsValid(t *testing.T) {
 	// 覆盖度：每类至少一条，否则该维度的指标没有分母（形同未评测）。
 	required := []string{
 		CategoryCrisis, CategoryEmergency, CategoryRestricted,
-		CategoryReject, CategoryClarify, CategoryEducation, CategoryEvidence,
+		CategoryReject, CategoryClarify, CategoryEducation, CategoryOutOfDomain, CategoryEvidence,
 	}
 	for _, c := range required {
 		if counts[c] == 0 {

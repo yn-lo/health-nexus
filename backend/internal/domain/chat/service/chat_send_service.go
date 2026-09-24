@@ -329,11 +329,12 @@ func assessmentCrisisKeywords(a rag.Assessment) []string {
 	return []string{llmSelfHarmMarker}
 }
 
-// clarificationText 拼装澄清话术：固定前缀 + 具体澄清问题（问题为空时省略前缀）。
+// clarificationText 拼装澄清话术：固定前缀 + 具体澄清问题。
+// 模型未给出具体问题时退回通用澄清话术（审查已成功，不得误报为"审查失败"）。
 func clarificationText(question string) string {
 	q := strings.TrimSpace(question)
 	if q == "" {
-		return rag.AssessmentFailedMessage()
+		return rag.ClarificationFallback()
 	}
 	return rag.ClarificationPrompt() + q
 }
@@ -1008,11 +1009,20 @@ func (s *ChatSendService) prepareRAGContext(
 		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, s.safetyIn.SystemErrorMessage())
 	}
 
-	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）——此时才是真正的"知识库无相关内容"。
+	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）。
+	// 0 命中分两种话术，用审查的 out_of_domain 分流：
+	//   - 域外问题 → 说清能力边界并引导回业务范围（"知识库暂无内容"会让患者以为资料缺失）；
+	//   - 业务内问题但缺资料 → 提示知识库暂无相关内容。
+	// 注意"能不能答"始终由检索命中这一客观事实决定，模型的域外判定只决定措辞，
+	// 因此模型误判域外也不会丢掉本院本可回答的内容（如院区地图/就医引导）。
 	if len(chunks) == 0 {
+		noHitMsg := s.safetyIn.NoKnowledgeMessage()
+		if assessment.OutOfDomain {
+			noHitMsg = rag.OutOfDomainMessage()
+		}
 		slog.WarnContext(ctx, "knowledge search returned 0 chunks, degrading to rejection",
-			"query_len", len(retrievalQuery), "dept_id", sess.DeptID)
-		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, s.safetyIn.NoKnowledgeMessage())
+			"query_len", len(retrievalQuery), "dept_id", sess.DeptID, "out_of_domain", assessment.OutOfDomain)
+		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, noHitMsg)
 	}
 
 	slog.InfoContext(ctx, "chat: RAG search completed",

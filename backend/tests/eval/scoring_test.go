@@ -34,6 +34,9 @@ type Decision struct {
 	Degraded bool
 	// EvidenceSupported 输出审核结论；仅证据类样本会填。
 	EvidenceSupported *bool
+	// OutOfDomain 审查给出的域外标记；out_of_domain 类样本据此断言（动作恒为 retrieve，
+	// 只看动作无法发现"该判域外却没判"，会导致 0 命中时话术退化）。
+	OutOfDomain *bool
 	// Detail 失败原因或原始错误摘要，进入报告便于复盘。
 	Detail string
 }
@@ -114,13 +117,23 @@ func scoreAction(rep *Report, p Pair) {
 	}
 
 	rep.ActionAccuracy.Total++
-	if got == expect {
-		rep.ActionAccuracy.Count++
+	if got != expect {
+		rep.ActionAccuracy.FailedIDs = append(rep.ActionAccuracy.FailedIDs, p.Sample.ID)
+		rep.Notes = append(rep.Notes, fmt.Sprintf("%s(%s): 期望 %s，实际 %s%s",
+			p.Sample.ID, p.Sample.Category, expect, got, detailSuffix(p.Decision)))
 		return
 	}
-	rep.ActionAccuracy.FailedIDs = append(rep.ActionAccuracy.FailedIDs, p.Sample.ID)
-	rep.Notes = append(rep.Notes, fmt.Sprintf("%s(%s): 期望 %s，实际 %s%s",
-		p.Sample.ID, p.Sample.Category, expect, got, detailSuffix(p.Decision)))
+	// 域外样本：动作恒为 retrieve（能否回答由检索客观定门），仅看动作发现不了"该判域外却漏判"。
+	// 漏判会让 0 命中时退回"知识库缺资料"话术，无法把患者引导回业务范围，故单独断言该字段。
+	if p.Sample.Category == CategoryOutOfDomain &&
+		(p.Decision.OutOfDomain == nil || !*p.Decision.OutOfDomain) {
+		rep.ActionAccuracy.FailedIDs = append(rep.ActionAccuracy.FailedIDs, p.Sample.ID)
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%s(out_of_domain): 未置位 out_of_domain（0 命中时话术会退化为\"知识库缺资料\"）%s",
+			p.Sample.ID, detailSuffix(p.Decision)))
+		return
+	}
+	rep.ActionAccuracy.Count++
 }
 
 // scoreEvidence 计入证据类样本：审核结论是否与临床标注一致。
@@ -258,6 +271,28 @@ func TestScoreClarifyIsNotBlocking(t *testing.T) {
 	}
 	if rep.ActionAccuracy.Count != 0 || rep.ActionAccuracy.Total != 1 {
 		t.Errorf("动作准确率应为 0/1，实际 %d/%d", rep.ActionAccuracy.Count, rep.ActionAccuracy.Total)
+	}
+}
+
+// TestScoreOutOfDomainRequiresFlag 域外样本动作恒为 retrieve（能否回答由检索客观定门），
+// 仅比对动作发现不了"该判域外却漏判"，故必须额外断言 out_of_domain 字段。
+func TestScoreOutOfDomainRequiresFlag(t *testing.T) {
+	rep := Score([]Pair{
+		{Sample: actionSample("o1", CategoryOutOfDomain), Decision: Decision{Action: rag.ActionRetrieve, OutOfDomain: boolPtr(true)}},
+		{Sample: actionSample("o2", CategoryOutOfDomain), Decision: Decision{Action: rag.ActionRetrieve, OutOfDomain: boolPtr(false)}},
+		{Sample: actionSample("o3", CategoryOutOfDomain), Decision: Decision{Action: rag.ActionRetrieve}},
+	})
+
+	if rep.ActionAccuracy.Count != 1 || rep.ActionAccuracy.Total != 3 {
+		t.Errorf("动作准确率应为 1/3（仅置位 out_of_domain 的那条算对），实际 %d/%d",
+			rep.ActionAccuracy.Count, rep.ActionAccuracy.Total)
+	}
+	// 域外样本期望非拦截动作 → 误判不会计入误拦，只看动作会全部"通过"（这正是要补该断言的原因）。
+	if rep.OverBlock.Count != 0 {
+		t.Errorf("域外样本不应计入误拦，实际 %d", rep.OverBlock.Count)
+	}
+	if len(rep.Notes) != 2 {
+		t.Errorf("期望 2 条不一致明细（未置位/置位为 false），实际 %d", len(rep.Notes))
 	}
 }
 

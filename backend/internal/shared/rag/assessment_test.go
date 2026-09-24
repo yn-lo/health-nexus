@@ -79,6 +79,33 @@ func TestAssessmentAction_Priority(t *testing.T) {
 			want: ActionRetrieve,
 		},
 		{
+			// 回归：域外问题曾被当作"信息不足"去追问（对"如何写爬虫"追问"请描述您的症状"毫无意义）。
+			// 域外时跳过澄清，改为进入检索——能否回答由客观命中决定。
+			name: "域外问题不追问澄清，改为进入检索",
+			in: Assessment{
+				Intent: IntentOther, EmergencyRisk: RiskNotDetected, SelfHarmRisk: RiskNotDetected,
+				OutOfDomain: true, ContextSufficient: false,
+			},
+			want: ActionRetrieve,
+		},
+		{
+			// 本院知识库允许收录院区地图、就医引导等非医学内容，模型判域外也不得直接拒答，
+			// 否则会把"你们医院怎么走"这类本院能答的问题误拦。
+			name: "域外问题交由检索判定，不直接拒答",
+			in: Assessment{
+				Intent: IntentOther, EmergencyRisk: RiskNotDetected, SelfHarmRisk: RiskNotDetected,
+				OutOfDomain: true, ContextSufficient: true, StandaloneQuery: "如何用 Python 写爬虫",
+			},
+			want: ActionRetrieve,
+		},
+		{
+			name: "域外标记不压过自伤风险",
+			in: Assessment{
+				Intent: IntentOther, SelfHarmRisk: RiskConfirmed, OutOfDomain: true, ContextSufficient: true,
+			},
+			want: ActionCrisis,
+		},
+		{
 			name: "风险为 uncertain 时保守处理（按疑似急症）",
 			in: Assessment{
 				Intent: IntentPatientEducation, EmergencyRisk: RiskUncertain, SelfHarmRisk: RiskNotDetected,
@@ -105,6 +132,16 @@ func TestAssessmentValidate(t *testing.T) {
 	}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("合法结果不应报错: %v", err)
+	}
+
+	// 域外问题不强制要求检索改写：模型不会为它产出 standalone_query，
+	// 检索侧会退回用患者原话（见 chat 域 prepareRAGContext），不应因此判为"审查不可用"。
+	outOfDomain := Assessment{
+		Intent: IntentOther, EmergencyRisk: RiskNotDetected, SelfHarmRisk: RiskNotDetected,
+		OutOfDomain: true, ContextSufficient: true,
+	}
+	if err := outOfDomain.Validate(); err != nil {
+		t.Fatalf("域外结果缺少 standalone_query 不应报错: %v", err)
 	}
 
 	cases := []struct {

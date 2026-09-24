@@ -60,7 +60,7 @@ func NewSearchService(
 // 配置兜底默认值（与 config/entity.DefaultRAGConfig 对齐）。
 const (
 	defaultTopK                = 5
-	defaultSimilarityThreshold = 0.75
+	defaultSimilarityThreshold = 0.5
 	defaultRerankThreshold     = 0.5
 	defaultMaxChunks           = 10
 	defaultChunkSize           = 500

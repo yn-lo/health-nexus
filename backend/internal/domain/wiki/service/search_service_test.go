@@ -159,8 +159,8 @@ func TestDefaultRAGSearchConfig(t *testing.T) {
 	if !defaultRAGSearchConfig.RerankEnabled {
 		t.Errorf("期望 defaultRAGSearchConfig.RerankEnabled=true（默认启用 rerank），实际 false")
 	}
-	if defaultRAGSearchConfig.SimilarityThreshold != 0.75 {
-		t.Errorf("期望默认 SimilarityThreshold=0.75，实际 %v", defaultRAGSearchConfig.SimilarityThreshold)
+	if defaultRAGSearchConfig.SimilarityThreshold != 0.5 {
+		t.Errorf("期望默认 SimilarityThreshold=0.5，实际 %v", defaultRAGSearchConfig.SimilarityThreshold)
 	}
 }
 
@@ -473,12 +473,12 @@ func TestSearchSimilarChunks(t *testing.T) {
 	})
 
 	t.Run("配置阈值为0_回退默认阈值仍过滤", func(t *testing.T) {
-		// 纯向量单闸：SimilarityThreshold=0（关闭过滤）时回退默认 0.75，低分命中仍被裁剪。
+		// 纯向量单闸：SimilarityThreshold=0（关闭过滤）时回退默认 0.5，低分命中仍被裁剪。
 		chunks := &mockChunkSearcher{
 			vecHits: []repository.ChunkSearchHit{
-				makeHit(1, 0.9, "v1", "t1"),  // >= 0.75 -> 保留
-				makeHit(2, 0.5, "v2", "t2"),  // < 0.75 -> 过滤
-				makeHit(3, 0.74, "v3", "t3"), // < 0.75 -> 过滤
+				makeHit(1, 0.9, "v1", "t1"),  // >= 0.5 -> 保留
+				makeHit(2, 0.4, "v2", "t2"),  // < 0.5 -> 过滤
+				makeHit(3, 0.49, "v3", "t3"), // < 0.5 -> 过滤
 			},
 		}
 		embed := &mockEmbedder{vectors: [][]float32{{0.1}}}
@@ -491,13 +491,13 @@ func TestSearchSimilarChunks(t *testing.T) {
 
 		got, _ := svc.SearchSimilarChunks(context.Background(), rag.SearchQuery{Query: "q"})
 		if len(got) != 1 {
-			t.Fatalf("期望 1 条（阈值 0 回退默认 0.75），实际 %d", len(got))
+			t.Fatalf("期望 1 条（阈值 0 回退默认 0.5），实际 %d", len(got))
 		}
 		if got[0].ChunkID != "1" {
 			t.Errorf("期望保留 id=1，实际 %s", got[0].ChunkID)
 		}
-		if chunks.lastVecThreshold != 0.75 {
-			t.Errorf("期望 SearchByVector 收到回退阈值 0.75，实际 %v", chunks.lastVecThreshold)
+		if chunks.lastVecThreshold != 0.5 {
+			t.Errorf("期望 SearchByVector 收到回退阈值 0.5，实际 %v", chunks.lastVecThreshold)
 		}
 	})
 
@@ -578,11 +578,11 @@ func TestSearchSimilarChunks(t *testing.T) {
 	})
 
 	t.Run("cfgProv返回error_用默认配置兜底", func(t *testing.T) {
-		// cfgProv 返回 error，应使用 defaultRAGSearchConfig（SimThreshold=0.75）
+		// cfgProv 返回 error，应使用 defaultRAGSearchConfig（SimThreshold=0.5）
 		chunks := &mockChunkSearcher{
 			vecHits: []repository.ChunkSearchHit{
-				makeHit(1, 0.9, "v1", "t1"), // 0.9 >= 0.75 → 保留
-				makeHit(2, 0.6, "v2", "t2"), // 0.6 < 0.75 → 过滤
+				makeHit(1, 0.9, "v1", "t1"), // 0.9 >= 0.5 → 保留
+				makeHit(2, 0.3, "v2", "t2"), // 0.3 < 0.5 → 过滤
 			},
 		}
 		embed := &mockEmbedder{vectors: [][]float32{{0.1}}}

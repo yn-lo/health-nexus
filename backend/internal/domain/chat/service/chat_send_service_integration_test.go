@@ -1876,6 +1876,63 @@ func TestStream_AssessedSelfHarm_RoutesToCrisis(t *testing.T) {
 	}
 }
 
+// TestStream_ZeroHitMessageByOutOfDomain 0 命中时按审查的域外标记分流话术：
+// 域外问题说清业务边界并引导回范围；业务内缺资料才提示"知识库暂无相关内容"。
+// 关键前提：能否回答由客观检索命中决定，因此模型判域外也不得跳过检索——
+// 否则本院收录的院区地图/就医引导类内容会被误拦（误拦代价远高于多跑一次向量检索）。
+func TestStream_ZeroHitMessageByOutOfDomain(t *testing.T) {
+	cases := []struct {
+		name        string
+		outOfDomain bool
+		wantMsg     string
+		wantNotMsg  string
+	}{
+		{
+			name:        "域外问题用业务边界话术",
+			outOfDomain: true,
+			wantMsg:     rag.OutOfDomainMessage(),
+			wantNotMsg:  "知识库中暂无",
+		},
+		{
+			name:        "业务内缺资料用知识库话术",
+			outOfDomain: false,
+			wantMsg:     "知识库中暂无",
+			wantNotMsg:  rag.OutOfDomainMessage(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assessor := &mockAssessor{assessment: rag.Assessment{
+				Intent: rag.IntentOther, EmergencyRisk: rag.RiskNotDetected, SelfHarmRisk: rag.RiskNotDetected,
+				OutOfDomain: tc.outOfDomain, ContextSufficient: true,
+			}}
+			knowledge := &mockKnowledgeSearcher{} // 0 命中
+			streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
+			svc := newTestChatSendServiceWithAssessor(
+				t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+			out := &mockSSEWriter{}
+
+			if err := svc.Stream(context.Background(), newStreamInput("如何用 Python 写爬虫"), out); err != nil {
+				t.Fatalf("Stream error: %v", err)
+			}
+			if knowledge.lastQuery == "" {
+				t.Error("期望仍执行检索（域外判定只影响话术，不决定是否回答）")
+			}
+			got := out.answerText()
+			if !strings.Contains(got, tc.wantMsg) {
+				t.Errorf("answerText = %q，期望包含 %q", got, tc.wantMsg)
+			}
+			if strings.Contains(got, tc.wantNotMsg) {
+				t.Errorf("answerText = %q，不应包含 %q", got, tc.wantNotMsg)
+			}
+			if rp := out.resultPayload(t); rp.ResultCode != constants.ResultRejected {
+				t.Errorf("result_code = %q, want %q", rp.ResultCode, constants.ResultRejected)
+			}
+		})
+	}
+}
+
 // TestStream_MedicalAbuse_RejectedNotCrisis 非自伤类风险仍按拒答处理，不误触危机链路。
 func TestStream_MedicalAbuse_RejectedNotCrisis(t *testing.T) {
 	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}

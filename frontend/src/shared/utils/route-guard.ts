@@ -31,11 +31,20 @@ function getUserRole(): UserRole | null {
 }
 
 /**
+ * 跨 MPA 跳转到统一登录页，并保留原目标路径（登录成功后回跳该页）。
+ * 不保留 redirect 会导致医护被踢回患者端首页，需重新导航。
+ */
+function redirectToLogin(to: RouteLocationNormalized): void {
+  // ponytail:allow-location 跨 MPA 跳转
+  window.location.href = `/login?redirect=${encodeURIComponent(to.fullPath)}`
+}
+
+/**
  * 医护端路由守卫
  * 只允许医护角色访问，患者角色会被重定向到患者端
  */
 export function staffRouteGuard(
-  _to: RouteLocationNormalized,
+  to: RouteLocationNormalized,
   _from: RouteLocationNormalized,
   next: NavigationGuardNext,
 ): void {
@@ -43,7 +52,7 @@ export function staffRouteGuard(
 
   // 未登录，跳转到统一登录页（跨 MPA）
   if (!userRole) {
-    window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+    redirectToLogin(to)
     return
   }
 
@@ -60,7 +69,7 @@ export function staffRouteGuard(
   }
 
   // 其他情况，跳转到登录页（跨 MPA）
-  window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+  redirectToLogin(to)
 }
 
 /**
@@ -68,7 +77,7 @@ export function staffRouteGuard(
  * SUPER_ADMIN / DEPT_ADMIN 均可访问；非管理员医护回退到工作台
  */
 export function adminRouteGuard(
-  _to: RouteLocationNormalized,
+  to: RouteLocationNormalized,
   _from: RouteLocationNormalized,
   next: NavigationGuardNext,
 ): void {
@@ -76,13 +85,13 @@ export function adminRouteGuard(
 
   // 未登录，跳转到统一登录页（跨 MPA）
   if (!userRole) {
-    window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+    redirectToLogin(to)
     return
   }
 
   // 非医护角色，跳转到登录页（跨 MPA）
   if (!hasRole(userRole, STAFF_ROLES)) {
-    window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+    redirectToLogin(to)
     return
   }
 
@@ -100,19 +109,19 @@ export function adminRouteGuard(
  * 仅 SUPER_ADMIN 可访问；DEPT_ADMIN 回退到工作台
  */
 export function superAdminRouteGuard(
-  _to: RouteLocationNormalized,
+  to: RouteLocationNormalized,
   _from: RouteLocationNormalized,
   next: NavigationGuardNext,
 ): void {
   const userRole = getUserRole()
 
   if (!userRole) {
-    window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+    redirectToLogin(to)
     return
   }
 
   if (!hasRole(userRole, STAFF_ROLES)) {
-    window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
+    redirectToLogin(to)
     return
   }
 

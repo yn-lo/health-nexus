@@ -321,9 +321,12 @@ run_p2() {
   fi
 
   # P2-3 禁外网 CDN / 硬编码内网绕过（卫生，仅扫描非测试 go 文件）
+  # 必须排除 _test.go：测试夹具常用 cdn.example.com 之类的占位 URL 构造样例 HTML，
+  # 不是生产代码的 CDN 依赖（与 P2-2 的 TODO 检查保持一致的排除口径）。
   local cdn_out
   cdn_out="$(grep -rn -E 'https?://(cdn\.|unpkg\.|cdnjs\.)' --include='*.go' \
-    --exclude-dir=testdata --exclude-dir=vendor internal/ cmd/ 2>/dev/null || true)"
+    --exclude-dir=testdata --exclude-dir=vendor internal/ cmd/ 2>/dev/null | \
+    grep -v -E '_test\.go' || true)"
   if [ -n "$cdn_out" ]; then
     fail "生产代码引用外网 CDN（P2 卫生）" "改为本地资源或经审核的白名单域名" "CLAUDE.md"
     echo "$cdn_out" | head -n 10 | sed 's/^/    /'

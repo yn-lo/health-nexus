@@ -66,9 +66,11 @@ type SafetyMessagePort interface {
 }
 
 // AuditLogPort 配置审计日志仓储能力。
+// entityID 为 nil 表示不按实体 ID 过滤；指向 0 表示只查单例配置（entity_id IS NULL）；
+// 指向正整数表示按该实体 ID 过滤。
 type AuditLogPort interface {
 	Create(ctx context.Context, l *entity.ConfigAuditLog) error
 	ListByEntity(
-		ctx context.Context, entityType string, entityID int64, page, pageSize int,
+		ctx context.Context, entityType string, entityID *int64, page, pageSize int,
 	) ([]*entity.ConfigAuditLog, int, error)
 }

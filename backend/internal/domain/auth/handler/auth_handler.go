@@ -407,7 +407,7 @@ func (h *AuthHandler) ListInviteCodes(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
-	codes, total, err := h.svc.ListInviteCodes(r.Context(), actorRole, params.Page, params.PageSize)
+	codes, total, err := h.svc.ListInviteCodes(r.Context(), actorRole, params.PageSize, params.Offset())
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

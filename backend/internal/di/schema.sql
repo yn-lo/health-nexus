@@ -362,7 +362,7 @@ CREATE TABLE IF NOT EXISTS rag_configs (
     chunk_overlap         INT          NOT NULL DEFAULT 50,
     max_chunks            INT          NOT NULL DEFAULT 10,
     top_k                 INT          NOT NULL DEFAULT 5,
-    similarity_threshold  NUMERIC(4,3) NOT NULL DEFAULT 0.750,
+    similarity_threshold  NUMERIC(4,3) NOT NULL DEFAULT 0.500,
     rerank_enabled        BOOLEAN      NOT NULL DEFAULT FALSE,
     rerank_threshold      NUMERIC(4,3) NOT NULL DEFAULT 0.500,
     updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),

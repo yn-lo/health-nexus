@@ -211,7 +211,9 @@ export function useSSEChat(options: UseSSEChatOptions) {
                 break
               case 'result':
                 result.value = e.data
-                if (e.data.references?.length) references.value = e.data.references
+                // result 是本轮权威结果：引用以它为准（为空也要覆盖），
+                // 否则"先推 references、后生成失败"的回合会残留引用卡片（与落库 refs=0 不一致）。
+                references.value = e.data.references ?? []
                 break
               case 'error':
                 error.value = e.data.message

@@ -230,6 +230,30 @@ describe('useSSEChat', () => {
     expect(references.value).toEqual(refs)
   })
 
+  it('result 的 references 为空时清空已渲染引用（生成失败回合不得残留引用卡片）', async () => {
+    const refs = [{ chunk_id: 'c1', article_id: 'a1', article_title: 't', content: 'x', score: 0.9 }]
+    const payload = {
+      turn_id: 'turn-1',
+      user_message_id: 'user-1',
+      assistant_message_id: 'ai-1',
+      result_code: 'REJECTED',
+      references: [] as typeof refs,
+    }
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        `event: references\ndata: ${JSON.stringify(refs)}\n\n`,
+        `event: result\ndata: ${JSON.stringify(payload)}\n\n`,
+        'event: done\ndata: [DONE]\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { references, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    expect(references.value).toEqual([])
+  })
+
   it('同一发送的自动重试复用同一 request_id（服务端据此幂等回放）', async () => {
     let callCount = 0
     const fetchSpy = vi.fn().mockImplementation(() => {

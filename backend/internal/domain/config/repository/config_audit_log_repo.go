@@ -30,18 +30,26 @@ func (r *ConfigAuditLogRepo) Create(ctx context.Context, log *entity.ConfigAudit
 }
 
 // ListByEntity 按 (entity_type, entity_id) 分页查询审计日志。
-// entityID 为 0 时按 entity_type + entity_id IS NULL 过滤（单例配置审计记录的 entity_id 为 NULL）。
+// entityType 为空串表示不按类型过滤（"全部类型"）。
+// entityID 为 nil 表示不按实体 ID 过滤（该类型下的全部记录，含单例与按实体记录）；
+// 指向 0 表示只查单例配置（entity_id IS NULL）；指向正整数表示按该实体 ID 过滤。
 func (r *ConfigAuditLogRepo) ListByEntity(
-	ctx context.Context, entityType string, entityID int64, page, pageSize int,
+	ctx context.Context, entityType string, entityID *int64, page, pageSize int,
 ) ([]*entity.ConfigAuditLog, int, error) {
-	where := " WHERE entity_type = $1"
-	args := []any{entityType}
-	if entityID > 0 {
-		args = append(args, entityID)
-		where += fmt.Sprintf(" AND entity_id = $%d", len(args))
-	} else {
-		// 单例审计（rag_config/safety_messages 等仅 1 行的配置）：entity_id 列为 NULL。
-		where += " AND entity_id IS NULL"
+	where := " WHERE 1=1"
+	args := []any{}
+	if entityType != "" {
+		args = append(args, entityType)
+		where += fmt.Sprintf(" AND entity_type = $%d", len(args))
+	}
+	if entityID != nil {
+		if *entityID > 0 {
+			args = append(args, *entityID)
+			where += fmt.Sprintf(" AND entity_id = $%d", len(args))
+		} else {
+			// 单例审计（rag_config/safety_messages 等仅 1 行的配置）：entity_id 列为 NULL。
+			where += " AND entity_id IS NULL"
+		}
 	}
 
 	var total int

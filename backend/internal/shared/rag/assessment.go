@@ -66,6 +66,7 @@ type Assessment struct {
 	PromptInjection       bool     `json:"prompt_injection"`
 	IndividualizedDx      bool     `json:"individualized_diagnosis"`
 	MedicationChange      bool     `json:"medication_change_request"`
+	OutOfDomain           bool     `json:"out_of_domain"`
 	ContextSufficient     bool     `json:"context_sufficient"`
 	MissingCritical       []string `json:"missing_critical_information"`
 	StandaloneQuery       string   `json:"standalone_query"`
@@ -81,7 +82,7 @@ type Assessment struct {
 var ErrAssessmentInvalid = errors.New("rag: assessment unavailable")
 
 // Action 按固定优先级计算最终动作。
-// 优先级：自伤 > 急症 > 注入/滥用 > 个体化诊疗·用药调整 > 信息不足 > 正常检索。
+// 优先级：自伤 > 急症 > 注入/滥用 > 个体化诊疗·用药调整 > 域外问题(跳过澄清) > 信息不足 > 正常检索。
 // 同一句可能同时命中多个分类（如"胸痛还能不能加药"），固定优先级保证不会因模型只选了一个主意图
 // 而忽略其他风险；不确定状态按保守方向处理（救命场景宁可误报不可漏报）。
 func (a Assessment) Action() string {
@@ -97,6 +98,15 @@ func (a Assessment) Action() string {
 	if a.IndividualizedDx || a.MedicationChange ||
 		a.Intent == IntentIndividualized || a.Intent == IntentMedicationChange {
 		return ActionRestricted
+	}
+	// 域外问题：只跳过"澄清"，**不跳过检索**。
+	// 原因：本院业务边界由知识库定义，不由模型的"健康"概念定义——知识库允许收录院区地图、
+	// 就医引导、挂号流程、探视规定等非医学内容，若按模型的域外判定直接拒答，
+	// 会把"你们医院怎么走"这类本院能答的问题误拦（误拦代价远高于多跑一次向量检索）。
+	// 因此"能不能答"交由客观检索命中决定；模型的 out_of_domain 只用于 0 命中时选择话术
+	// （见 chat 域 prepareRAGContext 的 0 命中分支）。
+	if a.OutOfDomain {
+		return ActionRetrieve
 	}
 	if !a.ContextSufficient {
 		return ActionClarify
@@ -143,7 +153,8 @@ func (a Assessment) Validate() error {
 		}
 	}
 	// 需要检索时必须给出可检索的改写问题（否则检索会退化为空查询）。
-	if a.Action() == ActionRetrieve && strings.TrimSpace(a.StandaloneQuery) == "" {
+	// 域外问题例外：模型不会为它产出检索改写，检索侧退回用患者原话（见 chat 域 prepareRAGContext）。
+	if a.Action() == ActionRetrieve && !a.OutOfDomain && strings.TrimSpace(a.StandaloneQuery) == "" {
 		return fmt.Errorf("%w: standalone_query required for retrieve", ErrAssessmentInvalid)
 	}
 	return nil
@@ -191,6 +202,16 @@ const (
 		"在等待或前往医院途中，请保持安静休息，不要自行加减药物；如已昏迷或无法呼吸，请立即呼叫身边人协助。"
 	// defaultClarificationPrompt 关键信息不足时的澄清话术前缀（后接具体澄清问题）。
 	defaultClarificationPrompt = "为了给您更准确的宣教信息，还需要您补充一点情况："
+	// defaultClarificationFallback 判定为"信息不足需澄清"但模型未给出具体问题时的兜底话术。
+	// 不得复用"审查失败"话术：审查其实成功，误报会让患者以为系统故障并掩盖真实状态。
+	defaultClarificationFallback = "为了给您更准确的宣教信息，请补充更具体的健康问题" +
+		"（例如症状、持续时间或您想了解的内容），我再为您解答。"
+	// defaultOutOfDomain 域外问题（与健康宣教完全无关）的固定边界话术。
+	// 需要同时做到两件事：说清能力边界 + 引导用户提出真正想问的健康问题。
+	// 不得复用注入/滥用的拒答话术——对"如何写爬虫"这类问题"建议咨询主治医生"答非所问。
+	// 固定文案而非让 LLM 现生成：LLM 会默认假设用户在问健康问题，容易生成"请描述症状"这种错误框架的澄清。
+	defaultOutOfDomain = "我是医院健康宣教助手，只能回答健康相关的问题。" +
+		"如果您有健康方面的疑问（比如症状、用药、检查、康复或生活方式），直接告诉我，我再为您解答。"
 	// defaultAssessmentFailed 审查不可用时的固定兜底话术（按"无法判断"降级，不等于安全放行）。
 	defaultAssessmentFailed = "为确保回答安全，本次未能完成必要的安全审查，暂时无法回答这个问题。" +
 		"请稍后重试，或直接咨询您的主治医生。"
@@ -212,6 +233,12 @@ func EmergencyGuidance() string { return defaultEmergencyGuidance }
 
 // ClarificationPrompt 澄清话术前缀。
 func ClarificationPrompt() string { return defaultClarificationPrompt }
+
+// ClarificationFallback 需澄清但模型未给出具体问题时的兜底话术。
+func ClarificationFallback() string { return defaultClarificationFallback }
+
+// OutOfDomainMessage 域外问题（与健康宣教完全无关）的固定边界话术。
+func OutOfDomainMessage() string { return defaultOutOfDomain }
 
 // AssessmentFailedMessage 审查不可用时的固定兜底话术。
 func AssessmentFailedMessage() string { return defaultAssessmentFailed }

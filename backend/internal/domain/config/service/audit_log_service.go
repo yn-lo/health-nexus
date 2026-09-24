@@ -12,11 +12,12 @@ import (
 // ============ Audit Log ============
 
 // ListAuditLogs 列出配置变更审计日志，可选 entity_type / entity_id 过滤，分页。
-// entityID 为 0 时按 entity_id IS NULL 过滤（单例配置审计记录）。
+// entityType 为空串表示不按类型过滤；entityID 为 nil 表示不按实体 ID 过滤
+// （指向 0 表示只查单例配置审计记录）。
 // ponytail: 不做角色级数据隔离——config 域已统一 RequireAdmin，DEPT_ADMIN 可见全部审计记录，折中。
 // 上限：跨科室变更可见；升级路径：在表上加 department_id 列 + 中间件注入 dept 过滤。
 func (s *ConfigService) ListAuditLogs(
-	ctx context.Context, entityType string, entityID int64, p pagination.Params,
+	ctx context.Context, entityType string, entityID *int64, p pagination.Params,
 ) ([]ConfigAuditLogResponse, int64, error) {
 	if entityType != "" && !slices.Contains(auditEntityTypes, entityType) {
 		return nil, 0, apperrors.Validation("CONFIG_INVALID_ENTITY_TYPE", "entity_type 无效")

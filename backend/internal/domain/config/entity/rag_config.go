@@ -33,11 +33,13 @@ const (
 
 // RAG 配置默认值（与 SQL DEFAULT 对齐）。
 const (
-	DefaultChunkSize           = 500
-	DefaultChunkOverlap        = 50
-	DefaultMaxChunks           = 10
-	DefaultTopK                = 5
-	DefaultSimilarityThreshold = 0.75
+	DefaultChunkSize    = 500
+	DefaultChunkOverlap = 50
+	DefaultMaxChunks    = 10
+	DefaultTopK         = 5
+	// 0.5：bge-m3 下「短问句 ↔ 长文章切片」的相关命中实测约 0.68，0.75 会把相关切片全部裁掉
+	// 导致「有知识也答不出」（e2e 实测），故默认下调至 0.5 留出余量。
+	DefaultSimilarityThreshold = 0.5
 	DefaultRerankThreshold     = 0.5
 )
 

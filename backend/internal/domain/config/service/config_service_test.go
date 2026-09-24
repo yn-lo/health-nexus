@@ -575,7 +575,7 @@ func (m *mockAuditLogRepo) Create(ctx context.Context, l *entity.ConfigAuditLog)
 	return nil
 }
 
-func (m *mockAuditLogRepo) ListByEntity(ctx context.Context, entityType string, entityID int64, page, pageSize int) ([]*entity.ConfigAuditLog, int, error) {
+func (m *mockAuditLogRepo) ListByEntity(ctx context.Context, entityType string, entityID *int64, page, pageSize int) ([]*entity.ConfigAuditLog, int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.listErr != nil {
@@ -585,6 +585,16 @@ func (m *mockAuditLogRepo) ListByEntity(ctx context.Context, entityType string, 
 	for _, l := range m.logs {
 		if entityType != "" && l.EntityType != entityType {
 			continue
+		}
+		// 与真实仓储语义对齐：nil=不按实体过滤；0=仅单例（entity_id IS NULL）；>0=按 ID。
+		if entityID != nil {
+			if *entityID > 0 {
+				if l.EntityID == nil || *l.EntityID != *entityID {
+					continue
+				}
+			} else if l.EntityID != nil {
+				continue
+			}
 		}
 		result = append(result, l)
 	}
@@ -1934,7 +1944,7 @@ func TestListAuditLogs(t *testing.T) {
 		svc := newTestService(nil, nil, nil, nil, nil, nil, auditRepo)
 
 		result, total, err := svc.ListAuditLogs(
-			ctxWithOperator(), "", 0, pagination.Params{Page: 1, PageSize: 10},
+			ctxWithOperator(), "", nil, pagination.Params{Page: 1, PageSize: 10},
 		)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1956,7 +1966,7 @@ func TestListAuditLogs(t *testing.T) {
 		svc := newTestService(nil, nil, nil, nil, nil, nil, auditRepo)
 
 		result, total, err := svc.ListAuditLogs(
-			ctxWithOperator(), entity.AuditEntityAIProvider, 0, pagination.Params{Page: 1, PageSize: 10},
+			ctxWithOperator(), entity.AuditEntityAIProvider, nil, pagination.Params{Page: 1, PageSize: 10},
 		)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1977,7 +1987,7 @@ func TestListAuditLogs(t *testing.T) {
 		svc := newTestService(nil, nil, nil, nil, nil, nil, auditRepo)
 
 		_, _, err := svc.ListAuditLogs(
-			ctxWithOperator(), "invalid_type", 0, pagination.Params{Page: 1, PageSize: 10},
+			ctxWithOperator(), "invalid_type", nil, pagination.Params{Page: 1, PageSize: 10},
 		)
 		assertAppErrCode(t, err, "CONFIG_INVALID_ENTITY_TYPE")
 	})
@@ -1987,7 +1997,7 @@ func TestListAuditLogs(t *testing.T) {
 		svc := newTestService(nil, nil, nil, nil, nil, nil, auditRepo)
 
 		result, total, err := svc.ListAuditLogs(
-			ctxWithOperator(), "", 0, pagination.Params{Page: 1, PageSize: 10},
+			ctxWithOperator(), "", nil, pagination.Params{Page: 1, PageSize: 10},
 		)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1997,6 +2007,38 @@ func TestListAuditLogs(t *testing.T) {
 		}
 		if len(result) != 0 {
 			t.Errorf("expected 0 items, got %d", len(result))
+		}
+	})
+
+	// 回归：entity_id 未传（nil）时不得被当作"仅单例"，否则带实体 ID 的审计记录
+	// （ai_provider / sensitive_word / prompt_template / safety_rule）在"全部类型"下恒为空。
+	t.Run("entity_id_nil_returns_both_singleton_and_entity_records", func(t *testing.T) {
+		auditRepo := newMockAuditLogRepo()
+		auditRepo.logs = []*entity.ConfigAuditLog{
+			{ID: 1, EntityType: entity.AuditEntityAIProvider, EntityID: int64Ptr(7), CreatedAt: time.Now()},
+			{ID: 2, EntityType: entity.AuditEntityRAGConfig, EntityID: nil, CreatedAt: time.Now()},
+		}
+		svc := newTestService(nil, nil, nil, nil, nil, nil, auditRepo)
+
+		result, total, err := svc.ListAuditLogs(
+			ctxWithOperator(), "", nil, pagination.Params{Page: 1, PageSize: 10},
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 2 || len(result) != 2 {
+			t.Errorf("expected 2 records (含带实体 ID 的记录)，got total=%d items=%d", total, len(result))
+		}
+
+		// 显式传 0 才收敛为"仅单例配置审计记录"。
+		result, total, err = svc.ListAuditLogs(
+			ctxWithOperator(), "", int64Ptr(0), pagination.Params{Page: 1, PageSize: 10},
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 || len(result) != 1 {
+			t.Errorf("expected 1 singleton record，got total=%d items=%d", total, len(result))
 		}
 	})
 }

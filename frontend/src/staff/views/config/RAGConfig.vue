@@ -25,7 +25,7 @@ const form = reactive({
  chunk_overlap: 50,
  max_chunks: 10,
  top_k: 5,
- similarity_threshold: 0.75,
+ similarity_threshold: 0.5,
  rerank_enabled: true,
  rerank_threshold: 0.5,
 })
@@ -38,7 +38,7 @@ const chunkFields: { key: keyof Pick<RAGConfigUpdateRequest, 'chunk_size' | 'chu
 
 const retrievalFields: { key: keyof Pick<RAGConfigUpdateRequest, 'top_k' | 'similarity_threshold' | 'rerank_threshold'>; label: string; step: number; isFloat: boolean; hint: string }[] = [
  { key: 'top_k', label: '检索数量 (top_k)', step: 1, isFloat: false, hint: '纯向量检索（pgvector ANN）的候选数。推荐 5。医疗场景建议 3-10，影响召回率和性能。' },
- { key: 'similarity_threshold', label: '相似度阈值', step: 0.05, isFloat: true, hint: '向量相似度过滤阈值 (0-1)。推荐 0.75。低于此值的切片不被采用。医疗场景建议 0.7-0.85，过高导致漏答，过低导致误答。设为 0 视作未配置，回退默认 0.75（不推荐）。' },
+ { key: 'similarity_threshold', label: '相似度阈值', step: 0.05, isFloat: true, hint: '向量相似度过滤阈值 (0-1)。推荐 0.5。低于此值的切片不被采用。bge-m3 下相关命中通常落在 0.6-0.8，阈值过高会导致漏答（有知识也答不出）。设为 0 视作未配置，回退默认 0.5（不推荐）。' },
  { key: 'rerank_threshold', label: 'Rerank 阈值', step: 0.05, isFloat: true, hint: 'Rerank 重排后的过滤阈值。推荐 0.5。低于此值的切片在 rerank 后被剔除。仅在启用 Rerank 时生效。' },
 ]
 
@@ -124,7 +124,7 @@ onMounted(load)
  <div class="mb-[var(--spacer-16)] rounded-[var(--radius-card-soft)] bg-[var(--ai-gradient-soft)] p-[var(--spacer-16)]">
  <h2 class="text-[var(--body-lg-strong-font-size)] font-semibold text-text">RAG 参数配置</h2>
  <p class="mt-[var(--spacer-4)] text-body-sm text-text-secondary">单例配置，影响检索与重排行为。所有字段范围与后端 CHECK 约束一致。</p>
- <p class="mt-[var(--spacer-8)] text-body-sm text-[var(--status-warning-default)]">⚠️ 医疗场景推荐配置：相似度阈值 ≥ 0.75，启用 Rerank。不合理配置可能导致误答或漏答。</p>
+ <p class="mt-[var(--spacer-8)] text-body-sm text-[var(--status-warning-default)]">⚠️ 医疗场景推荐配置：相似度阈值 ≥ 0.5，启用 Rerank。不合理配置可能导致误答或漏答。</p>
  </div>
 
  <div class="flex flex-col gap-[var(--spacer-16)]">

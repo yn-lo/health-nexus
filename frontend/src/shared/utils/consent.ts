@@ -6,10 +6,10 @@
  */
 
 /** 告知版本号 — 与告知内容同源维护，内容实质变更时递增（建议用日期） */
-const CONSENT_VERSION = '2026-09-23'
+export const CONSENT_VERSION = '2026-09-23'
 
 /** localStorage 键 — 保存用户已确认的告知版本号 */
-const CONSENT_STORAGE_KEY = 'hn_consent_version'
+export const CONSENT_STORAGE_KEY = 'hn_consent_version'
 
 /** 是否已确认当前版本告知 */
 export function hasAcceptedConsent(): boolean {

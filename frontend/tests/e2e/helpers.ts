@@ -2,6 +2,7 @@
  * E2E 测试共享工具 — 认证、API 断言、等待策略
  */
 import { test as base, expect, type Page, type APIRequestContext } from '@playwright/test'
+import { CONSENT_STORAGE_KEY, CONSENT_VERSION } from '../../src/shared/utils/consent'
 
 /** 测试账号凭据（来自 TestAccounts.vue / 后端种子数据） */
 export const ACCOUNTS = {
@@ -80,6 +81,19 @@ export function expectApiNotCalled(calls: { url: string }[], pathPattern: string
   expect(matched.length, `不应调用 API ${pathPattern}`).toBe(0)
 }
 
+/**
+ * 预置"已知情同意"标记。
+ * 患者端 ChatLayout 以 hasAcceptedConsent() 作为强制 gate，未确认时弹层会拦截所有点击
+ * （Playwright 报 "ds-popup-backdrop intercepts pointer events"），导致全部患者端交互用例失败。
+ * E2E 每次都是全新浏览器上下文，必须显式预置该标记。
+ */
+export async function seedConsent(page: Page) {
+  await page.addInitScript(
+    (v: [string, string]) => localStorage.setItem(v[0], v[1]),
+    [CONSENT_STORAGE_KEY, CONSENT_VERSION] as [string, string],
+  )
+}
+
 /** 扩展 test fixture：提供已登录的 page */
 export const test = base.extend<{
   authedPagePatient: Page
@@ -93,6 +107,11 @@ export const test = base.extend<{
     await injectAuth(page, ACCOUNTS.doctor_zhang)
     await use(page)
   },
+})
+
+// 全局预置知情同意：覆盖匿名（未注入 token）与已登录两类用例，避免同意弹层拦截交互。
+test.beforeEach(async ({ page }) => {
+  await seedConsent(page)
 })
 
 export { expect }

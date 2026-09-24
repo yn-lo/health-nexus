@@ -134,8 +134,8 @@ func embedOne(ctx context.Context, client *llm.Client, text string) ([]float32, 
 // 测试用例：
 //  1. 正常检索：语义匹配的查询应返回相关切片
 //  2. 空内容排除：SQL 层 c.content != ” 不应返回空内容切片
-//  3. 相似度门槛：所有返回切片的 VecScore 应 >= similarity_threshold（默认 0.75）
-//  4. OOD 检测：完全无关的查询，所有 VecScore 应远低于 0.75
+//  3. 相似度门槛：所有返回切片的 VecScore 应 >= similarity_threshold（默认 0.5）
+//  4. OOD 检测：完全无关的查询，所有 VecScore 应远低于 0.5
 //  5. embedding 不为 NULL：所有 chunks 应有有效向量
 func TestRAGRetrieval_QualityGates(t *testing.T) {
 	setupRAGRetrievalTest(t)
@@ -152,7 +152,7 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 		t.Fatalf("读取 rag_configs.similarity_threshold 失败: %v", err)
 	}
 	if dbThreshold == 0 {
-		dbThreshold = 0.75 // 兜底
+		dbThreshold = 0.5 // 兜底
 	}
 
 	// ── 用例 1：正常检索，语义匹配 ──
@@ -166,7 +166,7 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 			t.Fatalf("检索失败: %v", err)
 		}
 		if len(hits) == 0 {
-			// 若 threshold=0.75 太严格，降级重试。
+			// 若配置阈值太严格，降级重试。
 			if dbThreshold >= 0.7 {
 				hits, err = repo.SearchByVector(ctx, vec, 5, nil, 0.5, "")
 				if err != nil {

@@ -145,7 +145,11 @@ func runSample(ctx context.Context, assessor rag.Assessor, reviewer rag.OutputRe
 		// 与生产一致：审查不可用 → 降级为固定兜底话术（等同拦截），不是安全放行。
 		return Decision{Action: ActionDegraded, Degraded: true, Detail: "审查调用失败: " + err.Error()}
 	}
-	return Decision{Action: assessment.Action(), Detail: "模型建议=" + assessment.RecommendedAction}
+	return Decision{
+		Action:      assessment.Action(),
+		OutOfDomain: &assessment.OutOfDomain,
+		Detail:      "模型建议=" + assessment.RecommendedAction,
+	}
 }
 
 // toAssessTurns 把样本历史转为审查输入。
