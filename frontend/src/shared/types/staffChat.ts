@@ -49,3 +49,25 @@ export interface CrisisEventHandleRequest {
   note?: string
 }
 
+/** 消息反馈取值 — 对齐后端（solved|partial|unsolved） */
+export type MessageFeedbackValue = 'solved' | 'partial' | 'unsolved'
+
+/** 最近反馈条目 — 对齐后端 GET /staff/chat/feedback/stats 的 recent 项 */
+export interface FeedbackStatsItem {
+  message_id: string
+  conversation_id: string
+  feedback: MessageFeedbackValue
+  /** 已在后端按 rune 截断（约 120 字符） */
+  content: string
+  created_at: string
+}
+
+/** 反馈统计响应 — 三态汇总 + 最近反馈列表 */
+export interface FeedbackStats {
+  total: number
+  solved: number
+  partial: number
+  unsolved: number
+  recent: FeedbackStatsItem[]
+}
+

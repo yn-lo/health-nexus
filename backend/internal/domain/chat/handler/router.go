@@ -44,7 +44,8 @@ var (
 //   - PATCH  /api/chat/conversations/{id}                  修改会话（标题/归档）
 //   - DELETE /api/chat/conversations/{id}                  删除会话
 //   - GET    /api/chat/conversations/{id}/messages         消息列表（游标分页）
-//   - POST   /api/chat/messages/{id}/feedback              消息反馈（点赞/点踩）
+//   - POST   /api/chat/messages/{id}/feedback              消息反馈（solved/partial/unsolved）
+//   - GET    /api/staff/chat/feedback/stats                反馈统计（三态汇总 + 最近反馈）
 //   - GET    /api/staff/chat/crisis-events                 危机事件列表
 //   - POST   /api/staff/chat/crisis-events/{id}/handle     处理危机事件
 func NewRouter(
@@ -92,6 +93,7 @@ func NewRouter(
 	// 医护端：/api/staff/chat/*
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(auth), middleware.RequireStaff(), middleware.DataIsolation())
+		r.Get("/api/staff/chat/feedback/stats", conv.FeedbackStats)
 		r.Route("/api/staff/chat/crisis-events", func(r chi.Router) {
 			r.Get("/", crisis.List)
 			r.Post("/{id}/handle", crisis.Handle)

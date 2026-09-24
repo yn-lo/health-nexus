@@ -9,20 +9,18 @@
  *   - 消息按角色分组：连续同角色收拢间距，跨角色留白更大
  *   - 15px/24px 阅读字号 + 分组呼吸感（message gap 提升至 20px）
  *   - 3 点输入指示器（pulse）+ 流式光标
- * 保留功能：useSSEChat、useDepartments、ChatHistoryDrawer、点踩原因
+ * 保留功能：useSSEChat、useDepartments、ChatHistoryDrawer、反馈三态（解决了/部分解决/未解决）
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Copy,
   Sparkles,
-  ThumbsDown,
-  ThumbsUp,
 } from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
 import { useChatStore, loadAnonMessages, saveAnonMessages, upsertAnonSession, type AnonSessionMeta } from '@/stores/chat'
-import { DisclaimerFooter, DsActionSheet } from '@/shared/components'
+import { DisclaimerFooter } from '@/shared/components'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
@@ -33,6 +31,7 @@ import MarkdownIt from 'markdown-it'
 import { sanitizeHtml } from '@/shared/utils/sanitize-html'
 import { submitMessageFeedback } from '@/shared/api/chat'
 import { errmsg, getAccessToken } from '@/shared/api/client'
+import { FEEDBACK_OPTIONS, type MessageFeedback } from '@/shared/constants/feedback'
 import type { Message, Reference } from '@/shared/types/chat'
 
 const router = useRouter()
@@ -74,8 +73,6 @@ const inputBarHeight = ref(120)
 let inputBarObserver: ResizeObserver | null = null
 const showHistory = ref(false)
 const showDeptPicker = ref(false)
-const showDownReasonSheet = ref(false)
-const pendingDownMessageId = ref<string | null>(null)
 const feedbackMap = ref<Record<string, string>>({})
 /** 本轮用户消息的本地乐观 ID：result 事件到达后替换为服务端权威 ID（反馈等操作据此定位真实消息） */
 let pendingUserLocalId = ''
@@ -134,14 +131,6 @@ function truncateTitle(title: string): string {
   if (!t) return '新对话'
   return t.length > 24 ? t.slice(0, 24) + '…' : t
 }
-
-const downReasonActions: { name: string }[] = [
-  { name: '回答不准确' },
-  { name: '回答不完整' },
-  { name: '回答不相关' },
-  { name: '内容不安全' },
-  { name: '其他' },
-]
 
 function openHistory() {
   showHistory.value = true
@@ -283,35 +272,14 @@ function canFeedback(msg: Message): boolean {
   return !isAnon && !msg.id.startsWith('local-')
 }
 
-async function onThumbsUp(msg: Message) {
+async function onFeedback(msg: Message, value: MessageFeedback) {
   if (feedbackMap.value[msg.id] || !canFeedback(msg)) return
-  feedbackMap.value[msg.id] = 'up'
+  feedbackMap.value[msg.id] = value
   try {
-    await submitMessageFeedback(msg.id, 'up')
+    await submitMessageFeedback(msg.id, value)
     showToast('感谢您的反馈')
   } catch (e) {
     delete feedbackMap.value[msg.id]
-    showFailToast(errmsg(e, '反馈提交失败'))
-  }
-}
-
-function onThumbsDown(msg: Message) {
-  if (feedbackMap.value[msg.id] || !canFeedback(msg)) return
-  pendingDownMessageId.value = msg.id
-  showDownReasonSheet.value = true
-}
-
-async function onDownReasonSelect(_action: { name: string }) {
-  showDownReasonSheet.value = false
-  const msgId = pendingDownMessageId.value
-  if (msgId === null) return
-  pendingDownMessageId.value = null
-  feedbackMap.value[msgId] = 'down'
-  try {
-    await submitMessageFeedback(msgId, 'down')
-    showToast('感谢您的反馈')
-  } catch (e) {
-    delete feedbackMap.value[msgId]
     showFailToast(errmsg(e, '反馈提交失败'))
   }
 }
@@ -548,30 +516,28 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- 反馈栏（匿名/未同步消息无服务端持久化，仅保留复制） -->
+              <!-- 反馈栏（匿名/未同步消息无服务端持久化，仅保留复制）：
+                   三态靠左、"/" 分隔；复制按钮 ml-auto 固定最右 -->
               <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
-                <template v-if="canFeedback(msg)">
-                  <button
-                    class="feedback-btn flex items-center justify-center"
-                    :class="feedbackMap[msg.id] === 'up' ? 'text-icon-brand' : 'text-icon-tertiary'"
-                    :aria-pressed="feedbackMap[msg.id] === 'up'"
-                    aria-label="有帮助"
-                    @click="onThumbsUp(msg)"
-                  >
-                    <ThumbsUp :size="15" />
-                  </button>
-                  <button
-                    class="feedback-btn flex items-center justify-center"
-                    :class="feedbackMap[msg.id] === 'down' ? 'text-icon-brand' : 'text-icon-tertiary'"
-                    :aria-pressed="feedbackMap[msg.id] === 'down'"
-                    aria-label="无帮助"
-                    @click="onThumbsDown(msg)"
-                  >
-                    <ThumbsDown :size="16" />
-                  </button>
-                </template>
+                <div v-if="canFeedback(msg)" class="flex items-center gap-[var(--spacer-4)]">
+                  <template v-for="(opt, idx) in FEEDBACK_OPTIONS" :key="opt.value">
+                    <span v-if="idx > 0" class="text-body-xs text-icon-tertiary select-none" aria-hidden="true">/</span>
+                    <button
+                      type="button"
+                      class="feedback-pill text-body-xs"
+                      :class="feedbackMap[msg.id] === opt.value
+                        ? 'bg-[var(--bg-brand-light)] text-text-brand'
+                        : 'text-icon-tertiary'"
+                      :aria-pressed="feedbackMap[msg.id] === opt.value"
+                      :aria-label="opt.label"
+                      @click="onFeedback(msg, opt.value)"
+                    >
+                      {{ opt.label }}
+                    </button>
+                  </template>
+                </div>
                 <button
-                  class="feedback-btn flex items-center justify-center text-icon-tertiary"
+                  class="feedback-btn ml-auto flex items-center justify-center text-icon-tertiary"
                   aria-label="复制内容"
                   @click="copyMessage(msg.content)"
                 >
@@ -633,10 +599,10 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-            <!-- 流式中仅保留复制按钮 -->
+            <!-- 流式中仅保留复制按钮（右对齐，与完成后的反馈栏位置一致） -->
             <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
               <button
-                class="feedback-btn flex items-center justify-center text-icon-tertiary"
+                class="feedback-btn ml-auto flex items-center justify-center text-icon-tertiary"
                 aria-label="复制内容"
                 @click="copyMessage(currentContent)"
               >
@@ -693,16 +659,6 @@ onUnmounted(() => {
       :departments="departments"
       :selected-id="selectedDepartmentId"
       @select="onDeptSelect"
-    />
-
-    <!-- 点踩原因选择 -->
-    <DsActionSheet
-      :show="showDownReasonSheet"
-      :actions="downReasonActions"
-      cancel-text="取消"
-      close-on-click-action
-      @select="onDownReasonSelect"
-      @update:show="showDownReasonSheet = $event"
     />
   </div>
 </template>
@@ -821,6 +777,9 @@ onUnmounted(() => {
 /* ── Micro-interactions：反馈栏 ─────────────────────────── */
 .feedback-bar {
   gap: var(--spacer-4);
+  /* 与 .ds-bubble 的 max-width: 88% 同源，使 ml-auto 的复制按钮与气泡右缘对齐
+     ponytail: 升级路径——components.css 抽出 --bubble-max-width 令牌后引用之 */
+  max-width: 88%;
 }
 
 /* ── Micro-interactions：反馈按钮 hover/press ───────────── */
@@ -836,6 +795,22 @@ onUnmounted(() => {
   background: var(--bg-overlay-l1);
 }
 .feedback-btn:active {
+  transform: scale(var(--press-scale));
+}
+
+/* ── 反馈三态文字胶囊（选中态高亮由模板类切换） ─────────── */
+.feedback-pill {
+  height: 28px;
+  padding: 0 var(--spacer-10);
+  border-radius: var(--radius-full);
+  transition: transform var(--micro-duration) var(--micro-ease),
+              background-color var(--micro-duration) var(--micro-ease),
+              color var(--micro-duration) var(--micro-ease);
+}
+.feedback-pill:hover {
+  background: var(--bg-overlay-l1);
+}
+.feedback-pill:active {
   transform: scale(var(--press-scale));
 }
 

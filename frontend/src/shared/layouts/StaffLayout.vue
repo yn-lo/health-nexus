@@ -54,6 +54,7 @@ const hideOnRoutes = [
   'staff-article-create',
   'staff-article-edit',
   'staff-crisis-events',
+  'staff-feedback-stats',
   'staff-references',
   'staff-config-home',
   'staff-config-accounts',

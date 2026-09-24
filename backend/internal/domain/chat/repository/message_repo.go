@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -106,7 +107,7 @@ func (r *MessageRepo) FinalizeAssistant(
 	return nil
 }
 
-// UpdateFeedback 更新消息反馈（up/down）。
+// UpdateFeedback 更新消息反馈（三态：solved/partial/unsolved）。
 // 通过 conversations.patient_id 子查询校验消息属于该患者（数据隔离）；
 // 返回受影响行数，0 表示消息不存在或不属于该患者。
 func (r *MessageRepo) UpdateFeedback(
@@ -120,6 +121,69 @@ func (r *MessageRepo) UpdateFeedback(
 		return 0, fmt.Errorf("update feedback: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+// FeedbackCountRow 反馈三态汇总聚合行。
+type FeedbackCountRow struct {
+	Total    int64
+	Solved   int64
+	Partial  int64
+	Unsolved int64
+}
+
+// FeedbackRow 最近反馈条目（医护端统计用）。
+type FeedbackRow struct {
+	MessageID      uuid.UUID
+	ConversationID uuid.UUID
+	Feedback       string
+	Content        string
+	CreatedAt      time.Time
+}
+
+// FeedbackSummary 汇总三态反馈计数（仅统计 feedback 非空的消息）。
+func (r *MessageRepo) FeedbackSummary(ctx context.Context) (FeedbackCountRow, error) {
+	const sql = `SELECT COUNT(*) AS total,
+	                    COUNT(*) FILTER (WHERE feedback = 'solved')   AS solved,
+	                    COUNT(*) FILTER (WHERE feedback = 'partial')  AS partial,
+	                    COUNT(*) FILTER (WHERE feedback = 'unsolved') AS unsolved
+	             FROM messages
+	             WHERE feedback IS NOT NULL`
+	var row FeedbackCountRow
+	err := postgres.Q(ctx, r.pool).
+		QueryRow(ctx, sql).
+		Scan(&row.Total, &row.Solved, &row.Partial, &row.Unsolved)
+	if err != nil {
+		return FeedbackCountRow{}, fmt.Errorf("feedback summary: %w", err)
+	}
+	return row, nil
+}
+
+// RecentFeedback 最近带反馈的消息（按反馈时间 updated_at 倒序，最多 limit 条）。
+func (r *MessageRepo) RecentFeedback(ctx context.Context, limit int) ([]FeedbackRow, error) {
+	const sql = `SELECT id, conversation_id, feedback, content, created_at
+	             FROM messages
+	             WHERE feedback IS NOT NULL
+	             ORDER BY updated_at DESC
+	             LIMIT $1`
+	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent feedback: %w", err)
+	}
+	defer rows.Close()
+	out := make([]FeedbackRow, 0)
+	for rows.Next() {
+		var row FeedbackRow
+		if err := rows.Scan(
+			&row.MessageID, &row.ConversationID, &row.Feedback, &row.Content, &row.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan feedback row: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate feedback rows: %w", err)
+	}
+	return out, nil
 }
 
 // messageColumns 消息查询列（各查询 Scan 顺序一致）。

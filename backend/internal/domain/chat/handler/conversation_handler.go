@@ -194,7 +194,9 @@ func (h *ConversationHandler) Feedback(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, apperrors.Validation("CHAT_FEEDBACK_BODY_INVALID", "请求体格式错误"))
 		return
 	}
-	if req.Feedback != "up" && req.Feedback != "down" {
+	if req.Feedback != service.FeedbackSolved &&
+		req.Feedback != service.FeedbackPartial &&
+		req.Feedback != service.FeedbackUnsolved {
 		response.WriteError(w, r, apperrors.Validation("CHAT_FEEDBACK_INVALID", "feedback 取值无效"))
 		return
 	}
@@ -232,4 +234,64 @@ func parseLimit(r *http.Request, def, maxLimit int) (int, error) {
 		n = maxLimit
 	}
 	return n, nil
+}
+
+// feedbackStatsRecentLimit 最近反馈列表条数上限（统计页一次加载，无分页）。
+const feedbackStatsRecentLimit = 20
+
+// feedbackContentMaxRunes 统计列表内容截断长度（列表仅作概览，控制报文体积）。
+const feedbackContentMaxRunes = 120
+
+// FeedbackItemResponse 最近反馈条目 DTO。
+type FeedbackItemResponse struct {
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	Feedback       string `json:"feedback"`
+	Content        string `json:"content"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// FeedbackStatsResponse 反馈统计响应 DTO。
+type FeedbackStatsResponse struct {
+	Total    int64                  `json:"total"`
+	Solved   int64                  `json:"solved"`
+	Partial  int64                  `json:"partial"`
+	Unsolved int64                  `json:"unsolved"`
+	Recent   []FeedbackItemResponse `json:"recent"`
+}
+
+// truncateRunes 按 rune 截断字符串，超出部分以 … 结尾。
+func truncateRunes(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
+// FeedbackStats GET /api/staff/chat/feedback/stats
+// 反馈三态汇总（total/solved/partial/unsolved）+ 最近反馈列表。
+func (h *ConversationHandler) FeedbackStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.svc.FeedbackStats(r.Context(), feedbackStatsRecentLimit)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	recent := make([]FeedbackItemResponse, 0, len(stats.Recent))
+	for _, item := range stats.Recent {
+		recent = append(recent, FeedbackItemResponse{
+			MessageID:      item.MessageID,
+			ConversationID: item.ConversationID,
+			Feedback:       item.Feedback,
+			Content:        truncateRunes(item.Content, feedbackContentMaxRunes),
+			CreatedAt:      item.CreatedAt,
+		})
+	}
+	response.WriteOK(w, FeedbackStatsResponse{
+		Total:    stats.Total,
+		Solved:   stats.Solved,
+		Partial:  stats.Partial,
+		Unsolved: stats.Unsolved,
+		Recent:   recent,
+	})
 }

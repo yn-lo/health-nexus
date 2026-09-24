@@ -223,11 +223,19 @@ CREATE TABLE IF NOT EXISTS messages (
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT messages_role_chk CHECK (role IN ('user','assistant')),
     CONSTRAINT messages_result_chk CHECK (result_code IN ('','ANSWERED','PARTIAL','REJECTED','INTERCEPTED','CRISIS','RATE_LIMITED')),
-    CONSTRAINT messages_feedback_chk CHECK (feedback IS NULL OR feedback IN ('up', 'down'))
+    CONSTRAINT messages_feedback_chk CHECK (feedback IS NULL OR feedback IN ('solved', 'partial', 'unsolved'))
 );
 
 -- 兼容既有库：老表补 turn_id 列。
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS turn_id UUID;
+
+-- 反馈三态迁移（宣教效果口径）：up/down → solved/partial/unsolved。
+-- 老口径值重置为 NULL（不参与新口径统计）；约束以 DROP+ADD 幂等重建。
+UPDATE messages SET feedback = NULL
+WHERE feedback IS NOT NULL AND feedback NOT IN ('solved', 'partial', 'unsolved');
+ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_feedback_chk;
+ALTER TABLE messages ADD CONSTRAINT messages_feedback_chk
+    CHECK (feedback IS NULL OR feedback IN ('solved', 'partial', 'unsolved'));
 
 -- P1 修复：同轮 user/assistant 消息在同一事务内以 now()（事务开始时间）落库，created_at 完全相同，
 -- 随机 UUID 无法稳定定序，列表/历史上下文可能出现"答案在问题前"。

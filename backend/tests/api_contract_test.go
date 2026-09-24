@@ -316,6 +316,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodGet, "/api/chat/conversations/" + testUUID + "/messages"},
 	{http.MethodPost, "/api/chat/messages/1/feedback"},
 	// chat 医护端
+	{http.MethodGet, "/api/staff/chat/feedback/stats"},
 	{http.MethodGet, "/api/staff/chat/crisis-events"},
 	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
 	// config（27）
@@ -369,6 +370,7 @@ var staffEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/references/1/reject"},
 	{http.MethodDelete, "/api/staff/wiki/references/1"},
 	{http.MethodGet, "/api/staff/wiki/references/articles"},
+	{http.MethodGet, "/api/staff/chat/feedback/stats"},
 	{http.MethodGet, "/api/staff/chat/crisis-events"},
 	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
 }

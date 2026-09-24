@@ -7,6 +7,7 @@ import type {
   CrisisEventItem,
   CrisisEventListParams,
   CrisisEventHandleRequest,
+  FeedbackStats,
 } from '../types/staffChat';
 import type { Paginated } from '../types/base';
 
@@ -21,4 +22,9 @@ export function handleCrisisEvent(eventId: number, data?: CrisisEventHandleReque
     `/staff/chat/crisis-events/${eventId}/handle`,
     { method: 'POST', body: data ?? {} },
   );
+}
+
+/** 获取消息反馈统计（三态汇总 + 最近反馈，最多 20 条） */
+export function getFeedbackStats() {
+  return apiClient<FeedbackStats>('/staff/chat/feedback/stats');
 }

@@ -45,6 +45,11 @@ const routes = [
         component: () => import('@/staff/views/CrisisEventList.vue'),
       },
       {
+        path: 'feedback-stats',
+        name: 'staff-feedback-stats',
+        component: () => import('@/staff/views/FeedbackStats.vue'),
+      },
+      {
         path: 'profile',
         name: 'staff-profile',
         component: () => import('@/staff/views/StaffProfile.vue'),

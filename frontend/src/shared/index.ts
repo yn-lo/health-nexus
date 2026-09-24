@@ -17,7 +17,7 @@ export type {
 export type { Conversation, ConversationUpdateRequest, ConversationListParams, Message, MessageListParams, Reference, SSEEvent } from './types/chat';
 export type { ArticleStatus, ContentRisk, ArticlePublic, ArticleDetail, ArticleStaff, ArticleChunk, ArticleCreateRequest, ArticleUpdateRequest, ArticleListParams, ArticleStaffListParams, ArticleReference, ReferenceApplyRequest, ReferenceListParams, ReferenceStatus } from './types/wiki';
 export type { Department, DepartmentTreeNode, DepartmentCreateRequest, DepartmentUpdateRequest, Paginated } from './types/base';
-export type { CrisisEventItem, CrisisLevel, CrisisEventListParams, CrisisEventHandleRequest } from './types/staffChat';
+export type { CrisisEventItem, CrisisLevel, CrisisEventListParams, CrisisEventHandleRequest, MessageFeedbackValue, FeedbackStatsItem, FeedbackStats } from './types/staffChat';
 export type { MenuItem } from './types/menu';
 export type {
   AIProvider, AIProviderType, AIProviderCreateRequest, AIProviderUpdateRequest, AIProviderTestResult,

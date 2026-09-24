@@ -70,6 +70,14 @@ func (m *mockMsgRepo) UpdateFeedback(_ context.Context, _ uuid.UUID, _ int64, _ 
 	return 0, nil
 }
 
+func (m *mockMsgRepo) FeedbackSummary(_ context.Context) (repository.FeedbackCountRow, error) {
+	return repository.FeedbackCountRow{}, nil
+}
+
+func (m *mockMsgRepo) RecentFeedback(_ context.Context, _ int) ([]repository.FeedbackRow, error) {
+	return nil, nil
+}
+
 // ============================================================================
 // ConversationService tests
 // ============================================================================

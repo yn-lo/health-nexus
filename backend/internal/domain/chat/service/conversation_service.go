@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"health-nexus/internal/domain/chat/entity"
+	"health-nexus/internal/domain/chat/repository"
 	apperrors "health-nexus/internal/shared/errors"
 )
 
@@ -31,7 +32,16 @@ type ConversationRepoPort interface {
 type MessageRepoPort interface {
 	ListByConversation(ctx context.Context, convID uuid.UUID, before *uuid.UUID, limit int) ([]*entity.Message, error)
 	UpdateFeedback(ctx context.Context, messageID uuid.UUID, patientID int64, feedback string) (int64, error)
+	FeedbackSummary(ctx context.Context) (repository.FeedbackCountRow, error)
+	RecentFeedback(ctx context.Context, limit int) ([]repository.FeedbackRow, error)
 }
+
+// 消息反馈三态取值（宣教效果口径：回答是否解决患者问题）。
+const (
+	FeedbackSolved   = "solved"
+	FeedbackPartial  = "partial"
+	FeedbackUnsolved = "unsolved"
+)
 
 // ConversationService 会话管理：列表 / 详情 / 修改 / 删除 / 消息回看。
 // 全部为单语句操作，无需事务；删除会话的级联由 DB ON DELETE CASCADE 处理（消息）。
@@ -217,7 +227,7 @@ func (s *ConversationService) ListMessages(
 	return out, nil
 }
 
-// Feedback 记录消息反馈（up/down）。
+// Feedback 记录消息反馈（三态：solved/partial/unsolved）。
 // 消息不存在或不属于该患者返回 AppError(404)。
 func (s *ConversationService) Feedback(
 	ctx context.Context, messageID uuid.UUID, patientID int64, feedback string,
@@ -230,4 +240,52 @@ func (s *ConversationService) Feedback(
 		return apperrors.NotFound("CHAT_MESSAGE_NOT_FOUND", "消息不存在或不属于当前用户")
 	}
 	return nil
+}
+
+// FeedbackStatsItem 最近反馈条目（医护端统计列表）。
+type FeedbackStatsItem struct {
+	MessageID      string
+	ConversationID string
+	Feedback       string
+	Content        string
+	CreatedAt      string
+}
+
+// FeedbackStats 反馈统计：三态汇总 + 最近反馈列表。
+type FeedbackStats struct {
+	Total    int64
+	Solved   int64
+	Partial  int64
+	Unsolved int64
+	Recent   []FeedbackStatsItem
+}
+
+// FeedbackStats 医护端反馈统计：三态汇总 + 最近反馈（最多 limit 条，按反馈时间倒序）。
+// 仅供 STAFF 角色使用（由 handler 层路由门禁保证）。
+func (s *ConversationService) FeedbackStats(ctx context.Context, limit int) (*FeedbackStats, error) {
+	counts, err := s.msg.FeedbackSummary(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("feedback summary: %w", err)
+	}
+	rows, err := s.msg.RecentFeedback(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent feedback: %w", err)
+	}
+	recent := make([]FeedbackStatsItem, 0, len(rows))
+	for _, row := range rows {
+		recent = append(recent, FeedbackStatsItem{
+			MessageID:      row.MessageID.String(),
+			ConversationID: row.ConversationID.String(),
+			Feedback:       row.Feedback,
+			Content:        row.Content,
+			CreatedAt:      row.CreatedAt.Format(timeRFC3339),
+		})
+	}
+	return &FeedbackStats{
+		Total:    counts.Total,
+		Solved:   counts.Solved,
+		Partial:  counts.Partial,
+		Unsolved: counts.Unsolved,
+		Recent:   recent,
+	}, nil
 }

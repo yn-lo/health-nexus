@@ -6,6 +6,7 @@ import type {
   Message,
   MessageListParams,
 } from '../types/chat';
+import type { MessageFeedback } from '../constants/feedback';
 
 /**
  * chat 域 API — 对齐后端 chat 域 6 个患者端端点（契约 §3.1~3.6）。
@@ -43,8 +44,8 @@ export function listMessages(conversationId: string, params?: MessageListParams)
   return apiClient<Message[]>(`/chat/conversations/${conversationId}/messages`, { params });
 }
 
-/** 提交消息反馈（点赞/点踩，成功返回 204 无响应体） */
-export function submitMessageFeedback(messageId: string, feedback: 'up' | 'down') {
+/** 提交消息反馈（solved/partial/unsolved，成功返回 204 无响应体） */
+export function submitMessageFeedback(messageId: string, feedback: MessageFeedback) {
   return apiClient<void>(`/chat/messages/${messageId}/feedback`, { method: 'POST', body: { feedback } });
 }
 

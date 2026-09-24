@@ -9,6 +9,7 @@ import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   AlertTriangle,
+  BarChart3,
   Building2,
   Cpu,
   FileText,
@@ -100,6 +101,12 @@ const systemActions = computed<QuickAction[]>(() => [
   label: '危机事件',
   routeName: 'staff-crisis-events',
   badge: crisisUnhandled.value > 0 ? crisisUnhandled.value : undefined,
+  level: 'staff',
+ },
+ {
+  icon: BarChart3,
+  label: '反馈统计',
+  routeName: 'staff-feedback-stats',
   level: 'staff',
  },
  {
