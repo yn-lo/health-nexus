@@ -262,25 +262,21 @@ func buildChatRouter(
 	// 订阅 Redis 频道，配置变更时自动热切换
 	startLLMReloadSubscriber(ctx, infra, swappable, llmCfg, aesKey)
 
-	// 注入 SwappableClient（实现 llm.Streamer/Embedder/Rewriter/Reranker 接口）
+	// 注入 SwappableClient（实现 llm.Streamer/Embedder/Reranker/JSONCompleter 接口）
 	llmClient := swappable.Chat
 	embedClient := swappable.Embed
 	rerankClient := swappable.Rerank
-	rewriteClient := swappable.Rewrite
 
-	var _ rag.LLMSafetyChecker = (*llm.LLMSafetyChecker)(nil)
-	// LLMSafetyChecker 通过 provider 函数每次审查时取当前 swappable.Chat 快照——
-	// 热切换后安全审查自动跟随新 client，也避免"启动未配置则永远不启用"。
-	llmSafetyChecker := llm.NewLLMSafetyChecker(func() *llm.Client { return swappable.Chat.Load() })
-	inputSafety := rag.NewDefaultInputSafetyFilter(safetyRuleProvider, llmSafetyChecker)
+	inputSafety := rag.NewDefaultInputSafetyFilter(safetyRuleProvider)
 	outputSafety := rag.NewDefaultOutputSafetyFilter(safetyRuleProvider)
+	// 统一理解与审查 + 生成后语义审核：均通过 swappable.Chat 调用（原子取当前 client），
+	// 管理员切换模型后自动跟随，无需重启；启动未配置时按"审查不可用"降级（不会放行为安全）。
+	assessor := adapter.NewLLMAssessor(llmClient)
+	outputReviewer := adapter.NewLLMOutputReviewer(llmClient)
 	ragConfigProvider := adapter.NewConfigRAGConfigProvider(configSvc)
 	knowledgeSearcher := wikiservice.NewSearchService(
 		chunkRepo, embedClient, rerankClient, ragConfigProvider,
 	)
-	// rewriter 直接注入动态的 swappable.Rewrite / swappable.Chat：
-	// 依赖 SwappableClient 原子取当前 Client，管理员后续配置专用改写模型时热切换即生效，
-	// 无需启动时快照决定（此前 `if !IsReady() 回退主 chat` 使专用模型后配置永不生效）。
 	crisisNotifier := adapter.NewAsynqCrisisNotifier(infra.AsynqClient)
 	// 匿名会话瞬态上下文环（Redis List，12h TTL 自动过期，无需清理任务）。
 	ring := redis.NewRingStore(infra.Redis)
@@ -290,8 +286,8 @@ func buildChatRouter(
 		turnRegistry = redis.NewTurnRegistry(infra.Redis)
 	}
 	chatSvc := chatservice.NewChatSendService(
-		deptResolver, inputSafety, outputSafety, knowledgeSearcher,
-		rewriteClient, llmClient, llmClient,
+		deptResolver, inputSafety, outputSafety, assessor, outputReviewer, knowledgeSearcher,
+		llmClient,
 		conversationRepo, messageRepo, crisisRepo, crisisNotifier,
 		infra.Locker, infra.TxMgr, ring, turnRegistry, promptProvider,
 	)

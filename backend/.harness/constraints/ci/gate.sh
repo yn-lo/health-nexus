@@ -258,6 +258,19 @@ run_p1() {
       warn "Playwright E2E 已跳过：前后端服务未启动（前端 ${fe_alive} / 后端 ${be_alive}；需先启动 air + vite dev）"
     fi
   fi
+
+  # P1-6 临床评测（tests/eval，-tags eval；真实调用 LLM，需 API Key）
+  # 高风险漏判率 0 容忍 / 误拦率 <=20%，未达标阻塞。评测内部无 Key 时也会 t.Skip，此处为双保险：
+  # 显式 warn 提示跳过原因，避免「看起来跑了其实没跑」。
+  if has_tool go && [ -n "${HEALTH_NEXUS_LLM_API_KEY:-}" ]; then
+    capture_fail \
+      "临床评测未达标（高风险漏判 / 误拦超阈值）" \
+      "按 tests/eval 报告逐条复盘不一致样本；高风险漏判率必须为 0" \
+      "tests/eval/" \
+      -- go test -tags eval ./tests/eval/... -count=1
+  else
+    warn "临床评测已跳过：未配置 HEALTH_NEXUS_LLM_API_KEY（配置后门禁将真实调用 LLM 跑 tests/eval 全量样本）"
+  fi
 }
 
 # ============================================================================

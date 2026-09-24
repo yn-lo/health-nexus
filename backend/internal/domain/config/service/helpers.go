@@ -48,7 +48,6 @@ var (
 		constants.ProviderTypeLLM,
 		constants.ProviderTypeEmbedding,
 		constants.ProviderTypeRerank,
-		constants.ProviderTypeRewrite,
 	}
 	sensitiveCategories = []string{
 		constants.SensitiveCategorySuicide,

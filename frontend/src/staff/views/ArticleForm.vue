@@ -37,7 +37,8 @@ import { wikiApi, useDepartmentOptions, stripHtml } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { ADMIN_ROLES, SUPER_ADMIN_ROLE } from '@/shared/constants/roles'
-import type { ArticleStatus, ArticleChunk } from '@/shared'
+import { CONTENT_RISK_DEFAULT, CONTENT_RISK_OPTIONS } from '@/shared/constants/wiki'
+import type { ArticleStatus, ArticleChunk, ContentRisk } from '@/shared'
 
 const router = useRouter()
 const route = useRoute()
@@ -66,12 +67,22 @@ const title = ref('')
 const departmentId = ref<number | null>(null)
 const summary = ref('')
 const content = ref('')
+/** 知识来源（可空，用于复审追溯与检索可见性） */
+const source = ref('')
+/** 适用人群（可空，如"高血压患者""孕产妇"） */
+const applicablePopulation = ref('')
+/** 有效期至（日期选择值 YYYY-MM-DD；空字符串表示未设置/清空） */
+const validUntil = ref('')
+/** 内容风险等级（high 逾期后退出检索） */
+const contentRisk = ref<ContentRisk>(CONTENT_RISK_DEFAULT)
 const saving = ref(false)
 const { options: departmentOptions, load: loadDepartments } = useDepartmentOptions()
 /** 编辑模式下的文章状态（决定是否显示删除按钮） */
 const articleStatus = ref<ArticleStatus | null>(null)
 /** 编辑模式下加载到的文章版本号（更新时回传启用乐观锁，防并发编辑丢失更新） */
 const articleVersion = ref<number | null>(null)
+/** 加载时的正文快照 — 用于判断已发布文章正文是否被改动 */
+const originalContent = ref('')
 /** 文章切片列表（仅 published 状态加载） */
 const chunks = ref<ArticleChunk[]>([])
 const chunksLoading = ref(false)
@@ -94,6 +105,11 @@ const canDelete = computed(() => isEditMode.value && articleStatus.value === 'dr
 
 /** 是否显示切片状态区块：仅已发布文章（切片由 Worker 在发布时生成） */
 const showChunks = computed(() => isEditMode.value && articleStatus.value === 'published')
+
+/** 已发布文章正文被改动：保存后状态回到 pending，审核通过前线上仍展示上一版 */
+const showRepublishNotice = computed(
+  () => articleStatus.value === 'published' && content.value !== originalContent.value,
+)
 
 /** 切片最后生成时间（取首片 created_at 作为代理） */
 const chunksCreatedAt = computed(() => chunks.value[0]?.created_at ?? '')
@@ -330,27 +346,45 @@ function buildCreatePayload() {
  content: content.value,
  summary: summary.value || undefined,
  department_id: departmentId.value,
+ source: source.value || undefined,
+ applicable_population: applicablePopulation.value || undefined,
+ valid_until: toRFC3339(validUntil.value) || undefined,
+ content_risk: contentRisk.value,
  }
+}
+
+/** 日期选择值（YYYY-MM-DD）→ RFC3339；空值返回空字符串（后端语义：清空有效期） */
+function toRFC3339(date: string): string {
+  if (!date) return ''
+  const d = new Date(`${date}T00:00:00Z`)
+  return isNaN(d.getTime()) ? '' : d.toISOString()
 }
 
 /** 构建更新请求体（不含 department_id，对齐后端 updateArticleRequest） */
 function buildUpdatePayload() {
- return {
- title: title.value,
- content: content.value,
- summary: summary.value || undefined,
- version: articleVersion.value ?? undefined,
- }
+  return {
+    title: title.value,
+    content: content.value,
+    summary: summary.value || undefined,
+    source: source.value,
+    applicable_population: applicablePopulation.value,
+    valid_until: toRFC3339(validUntil.value),
+    content_risk: contentRisk.value,
+    version: articleVersion.value ?? undefined,
+  }
 }
 
 /** 创建或更新文章，返回文章 ID（编辑态走更新，新建态先创建）。saveDraft/submitReview/publishDirectly 共用 */
 async function ensureArticleSaved(): Promise<number> {
-  const articleId = isEditMode.value
-    ? Number(route.params.id)
-    : (await wikiApi.createArticle(buildCreatePayload())).id
-  if (isEditMode.value) {
-    await wikiApi.updateArticle(articleId, buildUpdatePayload())
+  if (!isEditMode.value) {
+    return (await wikiApi.createArticle(buildCreatePayload())).id
   }
+  const articleId = Number(route.params.id)
+  // 后端行为：已发布文章修改正文后状态回到 pending（审核通过前线上仍用上一版）。
+  // 必须用更新返回值刷新本地状态与版本号，否则 publishDirectly 会误判为仍是 published 而跳过审核。
+  const updated = await wikiApi.updateArticle(articleId, buildUpdatePayload())
+  articleStatus.value = updated.status
+  articleVersion.value = updated.version
   return articleId
 }
 
@@ -391,7 +425,8 @@ async function publishDirectly() {
   try {
     const articleId = await ensureArticleSaved()
   const st = articleStatus.value
-  // 直接发布 = 草稿/新建：先提交再审核通过；pending：仅审核通过；已发布：更新已保持发布，无需再走状态机
+  // 直接发布 = 草稿/新建：先提交再审核通过；pending（含已发布改正文后回到 pending）：仅审核通过；
+  // 已发布且正文未变：更新后状态仍为 published，无需再走状态机
   if (st !== 'pending' && st !== 'published') {
     await wikiApi.submitArticle(articleId)
   }
@@ -505,8 +540,14 @@ onMounted(async () => {
  summary.value = stripHtml(article.summary)
  departmentId.value = article.department_id
  content.value = article.content
+ source.value = article.source
+ applicablePopulation.value = article.applicable_population
+ // RFC3339 → 日期选择器可用的 YYYY-MM-DD（null 表示未设置）
+ validUntil.value = article.valid_until ? article.valid_until.slice(0, 10) : ''
+ contentRisk.value = article.content_risk
  articleStatus.value = article.status
  articleVersion.value = article.version
+ originalContent.value = article.content
  editor.value?.commands.setContent(article.content)
  // 已发布文章加载切片状态（诊断 RAG）
  if (article.status === 'published') {
@@ -619,6 +660,90 @@ onMounted(async () => {
  </div>
  </div>
 
+ <!-- 知识元数据（创建/编辑均可设置：决定复审周期与检索可见性） -->
+ <!-- 知识来源 -->
+ <div class="flex flex-col gap-[var(--spacer-8)]">
+  <label class="font-heading text-body-base font-medium text-text">
+  知识来源
+  </label>
+ <div class="ds-field-wrap">
+ <input
+ v-model="source"
+ type="text"
+ placeholder="如：《中国高血压防治指南（2024）》，可留空"
+ >
+ </div>
+ <span class="font-heading text-body-xs text-text-tertiary">
+ 用于复审追溯与检索可见性
+ </span>
+ </div>
+
+ <!-- 适用人群 -->
+ <div class="flex flex-col gap-[var(--spacer-8)]">
+ <label class="font-heading text-body-base font-medium text-text">
+ 适用人群
+ </label>
+ <div class="ds-field-wrap">
+ <input
+ v-model="applicablePopulation"
+ type="text"
+ placeholder="如：高血压患者、孕产妇，可留空"
+ >
+ </div>
+ <span class="font-heading text-body-xs text-text-tertiary">
+ 用于检索可见性
+ </span>
+ </div>
+
+ <!-- 有效期至（清空后提交空字符串，表示清空有效期） -->
+ <div class="flex flex-col gap-[var(--spacer-8)]">
+ <label class="font-heading text-body-base font-medium text-text">
+ 有效期至
+ </label>
+ <div class="flex items-center gap-[var(--spacer-8)]">
+ <div class="ds-field-wrap flex-1">
+ <input
+ v-model="validUntil"
+ type="date"
+ aria-label="有效期至"
+ >
+ </div>
+ <button
+ v-if="validUntil"
+ type="button"
+ class="border-none bg-transparent font-heading text-body-sm text-text-brand"
+ @click="validUntil = ''"
+ >
+ 清空
+ </button>
+ </div>
+ <span class="font-heading text-body-xs text-text-tertiary">
+ 用于复审提醒与检索可见性；到期后进入复审
+ </span>
+ </div>
+
+ <!-- 内容风险等级 -->
+ <div class="flex flex-col gap-[var(--spacer-8)]">
+ <label class="font-heading text-body-base font-medium text-text">
+ 内容风险等级
+ </label>
+ <div class="relative">
+ <select
+ v-model="contentRisk"
+ class="ds-select"
+ aria-label="内容风险等级"
+ >
+ <option v-for="opt in CONTENT_RISK_OPTIONS" :key="opt.value" :value="opt.value">
+ {{ opt.label }}
+ </option>
+ </select>
+ <ChevronDown class="pointer-events-none absolute right-[var(--spacer-12)] top-1/2 h-4 w-4 -translate-y-1/2 text-icon-tertiary" />
+ </div>
+ <span class="font-heading text-body-xs text-text-tertiary">
+ 高风险内容（用药、检查准备、高风险护理）逾期后会退出检索
+ </span>
+ </div>
+
  <!-- 切片状态（仅已发布文章显示，契约 §4.12/4.13） -->
  <div v-if="showChunks" class="flex flex-col gap-[var(--spacer-8)]">
  <div class="flex items-center justify-between">
@@ -703,6 +828,13 @@ onMounted(async () => {
  <div
  class="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)] pb-[env(safe-area-inset-bottom,0px)]"
  >
+ <!-- 已发布文章正文改动提示：保存后回到待审核，审核通过前线上仍展示上一版 -->
+ <p
+ v-if="showRepublishNotice"
+ class="mx-auto max-w-[480px] px-[var(--spacer-16)] pt-[var(--spacer-8)] font-heading text-body-xs text-[var(--status-warning-default)]"
+ >
+ 已发布文章修改正文后需重新审核，审核通过前线上仍展示上一版本
+ </p>
  <div class="mx-auto flex max-w-[480px] gap-[var(--spacer-12)] px-[var(--spacer-16)] py-[var(--spacer-12)]">
  <button
  v-if="canDelete"

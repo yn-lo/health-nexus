@@ -3,8 +3,11 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strings"
+	"time"
 
 	"health-nexus/internal/domain/wiki/service"
+	apperrors "health-nexus/internal/shared/errors"
 	"health-nexus/internal/shared/pagination"
 	"health-nexus/internal/shared/response"
 )
@@ -21,13 +24,18 @@ func NewStaffArticleHandler(svc *service.ArticleService) *StaffArticleHandler {
 }
 
 // createArticleRequest 创建文章请求体（契约 §4.3）。
+// 知识条目元数据（P1）可选：来源/适用人群/有效期/内容风险等级（决定复审与检索可见性）。
 type createArticleRequest struct {
-	Title          string `json:"title"`
-	Content        string `json:"content"`
-	Summary        string `json:"summary"`
-	CoverURL       string `json:"cover_url"`
-	DepartmentID   int64  `json:"department_id"`
-	AllowReference bool   `json:"allow_reference"`
+	Title                string  `json:"title"`
+	Content              string  `json:"content"`
+	Summary              string  `json:"summary"`
+	CoverURL             string  `json:"cover_url"`
+	DepartmentID         int64   `json:"department_id"`
+	AllowReference       bool    `json:"allow_reference"`
+	Source               string  `json:"source"`
+	ApplicablePopulation string  `json:"applicable_population"`
+	ValidUntil           *string `json:"valid_until"`
+	ContentRisk          string  `json:"content_risk"`
 }
 
 // Create POST /api/staff/wiki/articles — 创建草稿文章（REQ-WIKI-003）。
@@ -42,14 +50,23 @@ func (h *StaffArticleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	validUntil, _, err := parseOptionalTime(req.ValidUntil)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
 	dto, err := h.svc.Create(r.Context(), service.CreateInput{
-		Title:          req.Title,
-		Content:        req.Content,
-		Summary:        req.Summary,
-		CoverImageURL:  req.CoverURL,
-		DepartmentID:   req.DepartmentID,
-		AllowReference: req.AllowReference,
-		Actor:          actor,
+		Title:                req.Title,
+		Content:              req.Content,
+		Summary:              req.Summary,
+		CoverImageURL:        req.CoverURL,
+		DepartmentID:         req.DepartmentID,
+		AllowReference:       req.AllowReference,
+		Source:               req.Source,
+		ApplicablePopulation: req.ApplicablePopulation,
+		ValidUntil:           validUntil,
+		ContentRisk:          req.ContentRisk,
+		Actor:                actor,
 	})
 	if err != nil {
 		response.WriteError(w, r, err)
@@ -152,13 +169,18 @@ func (h *StaffArticleHandler) Revectorize(w http.ResponseWriter, r *http.Request
 
 // updateArticleRequest 更新文章请求体（指针字段 nil 表示不更新，契约 §4.5）。
 // version 为客户端加载文章时的版本号；传入则启用乐观锁，并发编辑冲突返回 409。
+// 知识条目元数据（P1）：来源/适用人群/有效期/内容风险等级，决定复审与检索可见性。
 type updateArticleRequest struct {
-	Title          *string `json:"title,omitempty"`
-	Content        *string `json:"content,omitempty"`
-	Summary        *string `json:"summary,omitempty"`
-	CoverURL       *string `json:"cover_url,omitempty"`
-	AllowReference *bool   `json:"allow_reference,omitempty"`
-	Version        *int    `json:"version,omitempty"`
+	Title                *string `json:"title,omitempty"`
+	Content              *string `json:"content,omitempty"`
+	Summary              *string `json:"summary,omitempty"`
+	CoverURL             *string `json:"cover_url,omitempty"`
+	AllowReference       *bool   `json:"allow_reference,omitempty"`
+	Source               *string `json:"source,omitempty"`
+	ApplicablePopulation *string `json:"applicable_population,omitempty"`
+	ValidUntil           *string `json:"valid_until,omitempty"`
+	ContentRisk          *string `json:"content_risk,omitempty"`
+	Version              *int    `json:"version,omitempty"`
 }
 
 // Update PUT /api/staff/wiki/articles/{article_id} — 更新文章（REQ-WIKI-005/015）。
@@ -178,21 +200,48 @@ func (h *StaffArticleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.WriteError(w, r, err)
 		return
 	}
+	validUntil, clearValidUntil, err := parseOptionalTime(req.ValidUntil)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
 	dto, err := h.svc.Update(r.Context(), service.UpdateInput{
-		Title:           req.Title,
-		Content:         req.Content,
-		Summary:         req.Summary,
-		CoverImageURL:   req.CoverURL,
-		AllowReference:  req.AllowReference,
-		ArticleID:       id,
-		Actor:           actor,
-		ExpectedVersion: req.Version,
+		Title:                req.Title,
+		Content:              req.Content,
+		Summary:              req.Summary,
+		CoverImageURL:        req.CoverURL,
+		AllowReference:       req.AllowReference,
+		Source:               req.Source,
+		ApplicablePopulation: req.ApplicablePopulation,
+		ValidUntil:           validUntil,
+		ClearValidUntil:      clearValidUntil,
+		ContentRisk:          req.ContentRisk,
+		ArticleID:            id,
+		Actor:                actor,
+		ExpectedVersion:      req.Version,
 	})
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
 	}
 	response.WriteOK(w, dto)
+}
+
+// parseOptionalTime 解析可选时间字段（RFC3339）：
+// nil → 不更新；空字符串 → 显式清空；非法格式 → 422。
+func parseOptionalTime(raw *string) (parsed *time.Time, shouldClear bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	s := strings.TrimSpace(*raw)
+	if s == "" {
+		return nil, true, nil
+	}
+	t, perr := time.Parse(time.RFC3339, s)
+	if perr != nil {
+		return nil, false, apperrors.Validation("WIKI_VALID_UNTIL_INVALID", "valid_until 需为 RFC3339 时间格式")
+	}
+	return &t, false, nil
 }
 
 // Delete DELETE /api/staff/wiki/articles/{article_id} — 软删除文章（REQ-WIKI-004）。

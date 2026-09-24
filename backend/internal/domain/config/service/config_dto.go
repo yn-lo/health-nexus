@@ -328,7 +328,6 @@ type ConfigStatusResponse struct {
 	LLM       ProviderStatus `json:"llm"`
 	Embedding ProviderStatus `json:"embedding"`
 	Rerank    ProviderStatus `json:"rerank"`
-	Rewrite   ProviderStatus `json:"rewrite"`
 }
 
 // ============ Mask helper ============

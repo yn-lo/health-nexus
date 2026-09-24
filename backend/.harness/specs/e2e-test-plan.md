@@ -349,7 +349,7 @@
 | CHAT-DEEP-009 | 纯 emoji 首条消息标题 | 不崩溃，title 为 emoji 截断 | ✅ |
 | CHAT-DEEP-010 | 多轮后验证 message 列表顺序 | created_at 严格递增 | ✅ |
 | CHAT-DEEP-011 | 多轮后验证 last_message_at 更新 | 每轮后 touch | ✅ |
-| CHAT-DEEP-012 | 改写失败时降级（rewriter 不可用） | 用原始 query 检索，不报错 | ✅ |
+| CHAT-DEEP-012 | 审查不可用（Assessor 超时/解析失败）时降级 | 不检索不生成，返回受限兜底话术（不得视为安全放行） | ✅ |
 
 ## 模块 21: 流式健壮性+会话生命周期 (16 tasks) ✅
 

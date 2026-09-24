@@ -6,7 +6,7 @@
 import { ref, computed, onMounted } from 'vue'
 import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Search, Brain, Layers, ArrowUpDown, PenLine, Plug } from '@lucide/vue'
+import { Plus, Search, Brain, Layers, ArrowUpDown, Plug } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
 import { AppHeader, StatRow } from '@/shared/components'
 import { configApi } from '@/shared'
@@ -26,26 +26,23 @@ const typeOptions: { value: AIProviderType | 'all'; label: string }[] = [
  { value: 'llm', label: 'LLM' },
  { value: 'embedding', label: 'Embedding' },
  { value: 'rerank', label: 'Rerank' },
- { value: 'rewrite', label: 'Rewrite' },
 ]
 
 const typeLabel: Record<AIProviderType, string> = {
  llm: 'LLM',
  embedding: 'Embedding',
  rerank: 'Rerank',
- rewrite: 'Rewrite',
 }
 
 const typeIcon: Record<AIProviderType, Component> = {
  llm: Brain,
  embedding: Layers,
  rerank: ArrowUpDown,
- rewrite: PenLine,
 }
 
 const typeCounts = computed<Record<string, number>>(() => {
  const counts: Record<string, number> = { all: providers.value.length }
- for (const t of ['llm', 'embedding', 'rerank', 'rewrite'] as AIProviderType[]) {
+ for (const t of ['llm', 'embedding', 'rerank'] as AIProviderType[]) {
  counts[t] = providers.value.filter(p => p.provider_type === t).length
  }
  return counts

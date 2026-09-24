@@ -202,10 +202,14 @@ onMounted(loadEvents)
  </span>
  <div class="ds-list-item__content">
  <span class="ds-list-item__title">{{ event.triggered_content.slice(0, 40) }}{{ event.triggered_content.length > 40 ? '…' : '' }}</span>
- <span class="ds-list-item__meta">
+ <span class="ds-list-item__meta flex-wrap">
  <span class="ds-tag ds-tag--plain" :class="'ds-tag--' + levelTagType(event.level)">{{ levelLabel(event.level) }}</span>
+ <!-- 接单闭环标记：未处理且已过接单时限 / 已升级 -->
+ <span v-if="event.acknowledge_overdue" class="ds-tag ds-tag--danger">已超时未处理</span>
+ <span v-if="event.escalated_at" class="ds-tag ds-tag--warning">已升级</span>
  <span>· #{{ event.id }}</span>
  <span v-if="event.patient_name">· {{ event.patient_name }}</span>
+ <span v-if="event.acknowledge_due_at">· 响应时限 {{ fmtDateTime(event.acknowledge_due_at) }}</span>
  <span>· {{ fmtDateTime(event.created_at) }}</span>
  </span>
  </div>

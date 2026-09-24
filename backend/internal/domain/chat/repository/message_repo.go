@@ -61,9 +61,11 @@ func (r *MessageRepo) save(
 	}
 	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, convID, argTurn, role, content, resultCode, refsJSON)
 	var scanTurn *uuid.UUID
+	// Scan 目标数必须与 RETURNING 列数（messageColumns 共 11 列）一致，
+	// 缺列会让所有消息写入直接失败（P0：feedback 漏扫导致登录用户问答全挂）。
 	if err := row.Scan(
 		&m.ID, &m.ConversationID, &scanTurn, &m.Role, &m.Content,
-		&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt,
+		&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback, &m.Seq,
 	); err != nil {
 		return nil, fmt.Errorf("save message: %w", err)
 	}
@@ -74,15 +76,15 @@ func (r *MessageRepo) save(
 	return m, nil
 }
 
-// ListByTurn 列出本轮的全部消息（时间升序）：幂等重放据此定位本轮结果。
-// 未找到返回空切片。
+// ListByTurn 列出本轮的全部消息（按 seq 升序：先 user 后 assistant）。
+// 幂等重放据此定位本轮结果。未找到返回空切片。
 func (r *MessageRepo) ListByTurn(
 	ctx context.Context, convID, turnID uuid.UUID,
 ) ([]*entity.Message, error) {
 	const sql = `SELECT ` + messageColumns + `
 	             FROM messages
 	             WHERE conversation_id = $1 AND turn_id = $2
-	             ORDER BY created_at ASC`
+	             ORDER BY seq ASC`
 	return r.queryMessages(ctx, sql, convID, turnID)
 }
 
@@ -122,38 +124,36 @@ func (r *MessageRepo) UpdateFeedback(
 
 // messageColumns 消息查询列（各查询 Scan 顺序一致）。
 const messageColumns = `id, conversation_id, turn_id, role, content, result_code,
-	referenced_chunks, created_at, updated_at, feedback`
+	referenced_chunks, created_at, updated_at, feedback, seq`
 
-// ListByConversation 列出会话消息，按 created_at 降序。
+// ListByConversation 列出会话消息，按 seq 降序（新→旧）。
 // before 为 nil 时从最新开始；limit 控制单页大小。
 // 过滤空 assistant 占位消息：流中断且兜底清理失败时会残留，不应展示给用户。
 func (r *MessageRepo) ListByConversation(
 	ctx context.Context, convID uuid.UUID, before *uuid.UUID, limit int,
 ) ([]*entity.Message, error) {
 	if before == nil {
-		// 首页排序必须与游标分支的 (created_at DESC, id DESC) 全序一致：
-		// 仅按 created_at DESC 时，created_at 相同的消息顺序不确定，
-		// 取页尾作游标会漏掉/重复相同时间戳的消息（与下方 (created_at, id) 复合游标语义错位）。
+		// 首页与游标分支统一按 seq 定序：seq 单调递增且全局唯一，排序为全序，
+		// 同一轮 user/assistant 的 created_at 相同也不会出现"答案在问题前"。
 		sql := `SELECT ` + messageColumns + `
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
-	             ORDER BY created_at DESC, id DESC LIMIT $2`
+	             ORDER BY seq DESC LIMIT $2`
 		return r.queryMessages(ctx, sql, convID, limit)
 	}
-	// H4: 用 (created_at, id) 复合游标避免相同 created_at 时漏消息。
-	// Postgres ROW value comparison 要求字段类型一致：created_at TIMESTAMPTZ, id UUID。
+	// 游标分页：以游标消息的 seq 为界取更旧消息。seq 单调，单字段游标即全序
+	// （替代旧 (created_at, id) 复合游标——同事务消息 created_at 相同，id 为随机 UUID 不可靠）。
 	sql := `SELECT ` + messageColumns + `
 	             FROM messages WHERE conversation_id = $1
 	             AND NOT (role = 'assistant' AND content = '')
-	             AND (created_at, id) < (
-	                 SELECT created_at, id FROM messages WHERE id = $2 AND conversation_id = $1
-	             )
-	             ORDER BY created_at DESC, id DESC LIMIT $3`
+	             AND seq < (SELECT seq FROM messages WHERE id = $2 AND conversation_id = $1)
+	             ORDER BY seq DESC LIMIT $3`
 	return r.queryMessages(ctx, sql, convID, *before, limit)
 }
 
 // GetRecentHistory 取最近 turns 轮消息（一轮 = user + assistant）。
-// 返回顺序：旧→新。Service 用于查询改写和 LLM 上下文。
+// 返回顺序：旧→新（按 seq，同轮消息 created_at 相同时仍保证先 user 后 assistant）。
+// Service 用于查询改写和 LLM 上下文。
 // excludeID 非 nil 时排除该消息：当前轮用户消息已先于历史加载持久化，
 // 不排除会让 LLM 上下文出现重复提问（原始问题 + 改写问题两条连续 user 消息）。
 // 同时过滤空 assistant 占位消息，避免残留占位污染上下文。
@@ -169,13 +169,13 @@ func (r *MessageRepo) GetRecentHistory(
 	if excludeID != nil {
 		const sql = base + `
 	                 AND id <> $2
-	                 ORDER BY created_at DESC LIMIT $3
-	             ) t ORDER BY created_at ASC`
+	                 ORDER BY seq DESC LIMIT $3
+	             ) t ORDER BY seq ASC`
 		return r.queryMessages(ctx, sql, convID, *excludeID, limit)
 	}
 	const sql = base + `
-	                 ORDER BY created_at DESC LIMIT $2
-	             ) t ORDER BY created_at ASC`
+	                 ORDER BY seq DESC LIMIT $2
+	             ) t ORDER BY seq ASC`
 	return r.queryMessages(ctx, sql, convID, limit)
 }
 
@@ -192,7 +192,7 @@ func (r *MessageRepo) queryMessages(ctx context.Context, sql string, args ...any
 		var turn *uuid.UUID
 		if err := rows.Scan(
 			&m.ID, &m.ConversationID, &turn, &m.Role, &m.Content,
-			&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback,
+			&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback, &m.Seq,
 		); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}

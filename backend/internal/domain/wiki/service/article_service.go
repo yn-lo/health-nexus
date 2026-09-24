@@ -172,8 +172,14 @@ type ArticleStaffDTO struct {
 	AllowReference bool       `json:"allow_reference"`
 	FeaturedRank   int        `json:"featured_rank"`
 	PublishedAt    *time.Time `json:"published_at"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级 / 复审逾期。
+	Source               string     `json:"source"`
+	ApplicablePopulation string     `json:"applicable_population"`
+	ValidUntil           *time.Time `json:"valid_until"`
+	ContentRisk          string     `json:"content_risk"`
+	ReviewOverdue        bool       `json:"review_overdue"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // ============ Create ============
@@ -186,7 +192,12 @@ type CreateInput struct {
 	CoverImageURL  string
 	DepartmentID   int64
 	AllowReference bool
-	Actor          Actor
+	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级（空值按普通处理）。
+	Source               string
+	ApplicablePopulation string
+	ValidUntil           *time.Time
+	ContentRisk          string
+	Actor                Actor
 }
 
 // Create 创建草稿文章（REQ-WIKI-003）。事务内：插入文章 + 审计日志。
@@ -203,6 +214,10 @@ func (s *ArticleService) Create(ctx context.Context, in CreateInput) (*ArticleSt
 	if in.DepartmentID <= 0 {
 		return nil, apperrors.Validation("WIKI_DEPT_REQUIRED", "department_id 不能为空")
 	}
+	// 内容风险等级决定复审周期与检索可见性，非法取值直接拒绝（P1）。
+	if in.ContentRisk != "" && !entity.IsContentRiskValid(in.ContentRisk) {
+		return nil, apperrors.Validation("WIKI_CONTENT_RISK_INVALID", "content_risk 只能为 normal 或 high")
+	}
 	// 数据隔离：非超管只能在本科室创建（REQ-SEC-001）
 	if in.Actor.Role != constants.RoleSuperAdmin && in.DepartmentID != in.Actor.DeptID {
 		return nil, apperrors.Forbidden("WIKI_DEPT_FORBIDDEN", "只能在本科室创建文章")
@@ -217,16 +232,20 @@ func (s *ArticleService) Create(ctx context.Context, in CreateInput) (*ArticleSt
 	summary = truncateRunes(stripHTMLTags(summary))
 	deptID := in.DepartmentID
 	a := &entity.Article{
-		Title:          in.Title,
-		Content:        in.Content,
-		Summary:        summary,
-		CoverImageURL:  in.CoverImageURL,
-		Status:         constants.ArticleStatusDraft,
-		Version:        1,
-		ContentHash:    contenthash.SHA256(in.Content),
-		AuthorID:       in.Actor.UserID,
-		DepartmentID:   &deptID,
-		AllowReference: in.AllowReference,
+		Title:                in.Title,
+		Content:              in.Content,
+		Summary:              summary,
+		CoverImageURL:        in.CoverImageURL,
+		Status:               constants.ArticleStatusDraft,
+		Version:              1,
+		ContentHash:          contenthash.SHA256(in.Content),
+		AuthorID:             in.Actor.UserID,
+		DepartmentID:         &deptID,
+		AllowReference:       in.AllowReference,
+		Source:               in.Source,
+		ApplicablePopulation: in.ApplicablePopulation,
+		ValidUntil:           in.ValidUntil,
+		ContentRisk:          in.ContentRisk,
 	}
 
 	var created *entity.Article
@@ -462,14 +481,25 @@ type UpdateInput struct {
 	Summary        *string
 	CoverImageURL  *string
 	AllowReference *bool
-	ArticleID      int64
-	Actor          Actor
+	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级。
+	Source               *string
+	ApplicablePopulation *string
+	ValidUntil           *time.Time
+	// ClearValidUntil 显式清空有效期（客户端提交空字符串），与"未提交该字段"区分。
+	ClearValidUntil bool
+	ContentRisk     *string
+	ArticleID       int64
+	Actor           Actor
 	// ExpectedVersion 客户端编辑时加载到的版本号；非 nil 时启用乐观锁，
 	// 版本已被他人改动则返回 409，避免并发编辑丢失更新。nil 表示不校验（向后兼容旧客户端）。
 	ExpectedVersion *int
 }
 
 // Update 更新文章（契约 §4.5）。检测 content_hash；已发布文章修改后版本号递增（REQ-WIKI-005/015）。
+//
+// P1 修复：已发布文章的**内容**修改视为"待审核修改版"，状态回到 pending（重新审核），
+// 且不失效原切片、不触发重新向量化——审核通过前检索继续服务上一次审核通过的版本，
+// 避免未审核内容直接进入患者可见的知识库。
 // archived 状态为终态只读（REQ-WIKI-001 状态机）——禁止修改以保留历史完整性。
 func (s *ArticleService) Update(ctx context.Context, in UpdateInput) (*ArticleStaffDTO, error) {
 	if err := validateUpdateInput(in); err != nil {
@@ -489,10 +519,11 @@ func (s *ArticleService) Update(ctx context.Context, in UpdateInput) (*ArticleSt
 	}
 
 	fields := prepareUpdateFields(article, in)
-	updated, err := s.commitUpdate(ctx, in.ArticleID, in.Actor, fields)
+	updated, err := s.commitUpdate(ctx, in.ArticleID, article.Status, in.Actor, fields)
 	if err != nil {
 		return nil, err
 	}
+	// 仅"仍为已发布"的文章才在修改后立即重建切片；回到待审核的文章等审核通过后再重建。
 	s.enqueueVectorizeAfterUpdate(ctx, in.ArticleID, updated, fields.ContentHash != nil)
 	dto := toStaffDTO(updated)
 	return &dto, nil
@@ -509,18 +540,27 @@ func validateUpdateInput(in UpdateInput) error {
 	if in.Content != nil && strings.TrimSpace(*in.Content) == "" {
 		return apperrors.Validation("WIKI_CONTENT_REQUIRED", "content 不能为空")
 	}
+	if in.ContentRisk != nil && !entity.IsContentRiskValid(*in.ContentRisk) {
+		return apperrors.Validation("WIKI_CONTENT_RISK_INVALID", "content_risk 只能为 normal 或 high")
+	}
 	return nil
 }
 
 // prepareUpdateFields 构建待更新字段：内容变化时检测 content_hash（REQ-WIKI-015），
 // summary 空则自动截取（仅在 content 也更新时生效），已发布文章修改后版本号递增（REQ-WIKI-005）。
+// P1：已发布文章的内容变更同时把状态置回 pending——新内容必须重新审核通过后才对患者生效。
 func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.UpdateFields {
 	fields := repository.UpdateFields{
-		Title:           in.Title,
-		Summary:         in.Summary,
-		CoverImageURL:   in.CoverImageURL,
-		AllowReference:  in.AllowReference,
-		ExpectedVersion: in.ExpectedVersion,
+		Title:                in.Title,
+		Summary:              in.Summary,
+		CoverImageURL:        in.CoverImageURL,
+		AllowReference:       in.AllowReference,
+		Source:               in.Source,
+		ApplicablePopulation: in.ApplicablePopulation,
+		ValidUntil:           in.ValidUntil,
+		ClearValidUntil:      in.ClearValidUntil,
+		ContentRisk:          in.ContentRisk,
+		ExpectedVersion:      in.ExpectedVersion,
 	}
 	// 客户端提供的 summary 统一规范化：剥离 HTML 标签并反转义实体（&quot;→"）。
 	if in.Summary != nil {
@@ -545,16 +585,22 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 	}
 	if article.Status == constants.ArticleStatusPublished {
 		fields.IncrementVersion = true
+		// 已发布文章内容变更 → 回到待审核；仅元数据变更（标题/封面/来源等）不触发重新审核。
+		if fields.ContentHash != nil {
+			pending := constants.ArticleStatusPending
+			fields.Status = &pending
+		}
 	}
 	return fields
 }
 
 // commitUpdate 事务内落库更新（REQ-WIKI-016/High 3/High 4）：
-// 已发布文章内容变更后失效旧切片；审计日志仅在 content_hash 变化时记录，
-// 元数据变化（title/cover/allow_reference）不记审计，避免 FromStatus==ToStatus 的混淆噪声。
-// 已发布文章内容变更时事务内写 outbox 记录，保证向量化最终投递。
+// 已发布文章内容变更后回到待审核（P1）——不失效旧切片、不写 outbox，
+// 审核通过前检索继续服务上一次审核通过的切片；审核通过时（Approve）再重建切片。
+// 审计日志仅在 content_hash 变化时记录，元数据变化（title/cover/allow_reference）不记审计，
+// 避免 FromStatus==ToStatus 的混淆噪声。
 func (s *ArticleService) commitUpdate(
-	ctx context.Context, articleID int64, actor Actor, fields repository.UpdateFields,
+	ctx context.Context, articleID int64, fromStatus string, actor Actor, fields repository.UpdateFields,
 ) (*entity.Article, error) {
 	var updated *entity.Article
 	err := s.tx.WithTx(ctx, func(ctx context.Context) error {
@@ -565,13 +611,15 @@ func (s *ArticleService) commitUpdate(
 			}
 			return translateArticleErr(err)
 		}
-		if fields.ContentHash != nil && a.Status == constants.ArticleStatusPublished && s.chunks != nil {
+		// 已发布文章内容变更（仍为 published，例如直接改库或元数据路径）：失效旧切片并写 outbox 保证最终一致。
+		// 走重新审核路径（status 已回 pending）时不在此处理——切片留待 Approve 后重建。
+		stillPublished := a.Status == constants.ArticleStatusPublished
+		if fields.ContentHash != nil && stillPublished && s.chunks != nil {
 			if _, dErr := s.chunks.DeactivateByArticle(ctx, articleID); dErr != nil {
 				return fmt.Errorf("deactivate chunks on update: %w", dErr)
 			}
 		}
-		// 已发布文章内容变更：事务内写 outbox，保证向量化最终投递。
-		if fields.ContentHash != nil && a.Status == constants.ArticleStatusPublished && s.outbox != nil {
+		if fields.ContentHash != nil && stillPublished && s.outbox != nil {
 			if oErr := s.outbox.Insert(ctx, articleID); oErr != nil {
 				return fmt.Errorf("outbox insert on update: %w", oErr)
 			}
@@ -581,7 +629,7 @@ func (s *ArticleService) commitUpdate(
 				ArticleID:  a.ID,
 				OperatorID: actor.UserID,
 				Action:     entity.AuditActionUpdate,
-				FromStatus: a.Status,
+				FromStatus: fromStatus,
 				ToStatus:   a.Status,
 				Summary:    auditSummary(a),
 			}); err != nil {
@@ -993,25 +1041,30 @@ func toDetailDTO(a *entity.Article) ArticleDetailDTO {
 
 func toStaffDTO(a *entity.Article) ArticleStaffDTO {
 	return ArticleStaffDTO{
-		ID:             a.ID,
-		Title:          a.Title,
-		Content:        a.Content,
-		Summary:        a.Summary,
-		CoverURL:       a.CoverImageURL,
-		Status:         a.Status,
-		Version:        a.Version,
-		DepartmentID:   a.DepartmentID,
-		DepartmentName: a.DepartmentName,
-		AuthorID:       a.AuthorID,
-		AuthorName:     a.AuthorName,
-		ReviewerID:     a.ReviewerID,
-		ReviewComment:  a.ReviewComment,
-		ViewCount:      a.ViewCount,
-		AllowReference: a.AllowReference,
-		FeaturedRank:   a.FeaturedRank,
-		PublishedAt:    a.PublishedAt,
-		CreatedAt:      a.CreatedAt,
-		UpdatedAt:      a.UpdatedAt,
+		ID:                   a.ID,
+		Title:                a.Title,
+		Content:              a.Content,
+		Summary:              a.Summary,
+		CoverURL:             a.CoverImageURL,
+		Status:               a.Status,
+		Version:              a.Version,
+		DepartmentID:         a.DepartmentID,
+		DepartmentName:       a.DepartmentName,
+		AuthorID:             a.AuthorID,
+		AuthorName:           a.AuthorName,
+		ReviewerID:           a.ReviewerID,
+		ReviewComment:        a.ReviewComment,
+		ViewCount:            a.ViewCount,
+		AllowReference:       a.AllowReference,
+		FeaturedRank:         a.FeaturedRank,
+		PublishedAt:          a.PublishedAt,
+		Source:               a.Source,
+		ApplicablePopulation: a.ApplicablePopulation,
+		ValidUntil:           a.ValidUntil,
+		ContentRisk:          a.ContentRisk,
+		ReviewOverdue:        a.ReviewOverdue,
+		CreatedAt:            a.CreatedAt,
+		UpdatedAt:            a.UpdatedAt,
 	}
 }
 

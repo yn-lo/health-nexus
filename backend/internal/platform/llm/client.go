@@ -120,7 +120,7 @@ func NewClient(cfg config.LLMConfig) (*Client, error) {
 	return &Client{chat: chat, cfg: cfg, httpClient: hc}, nil
 }
 
-// newSubModelClient 创建独立的子模型客户端（embedding/rewrite 共享同一套回退与降级逻辑）。
+// newSubModelClient 创建独立的子模型客户端（embedding 走同一套回退与降级逻辑）。
 // pc 为子 provider 配置（零值字段回退到主配置）；setModel 把解析出的模型名写入 derived 对应字段。
 // API key 为空（含回退后）时返回 nil，上层走降级路径。
 func newSubModelClient(
@@ -154,17 +154,6 @@ func NewEmbeddingClient(cfg config.LLMConfig) (*Client, error) {
 	)
 }
 
-// NewRewriteClient 依据 cfg.Rewrite 子配置创建独立 rewrite 客户端（OpenAI 兼容）。
-// 子配置零值字段回退到主配置（BaseURL/APIKey/Timeout 通用，Model→RewriteModel）。
-// API key 为空（含回退后）时返回 nil，让上层（di 装配）回退到主 chat client。
-func NewRewriteClient(cfg config.LLMConfig) (*Client, error) {
-	return newSubModelClient(
-		cfg, cfg.Rewrite, cfg.RewriteModel,
-		"llm: rewrite API key not configured, rewrite will fallback to main chat client",
-		func(c *config.LLMConfig, m string) { c.RewriteModel = m },
-	)
-}
-
 // NewRerankClient 依据 cfg.Rerank 子配置创建独立 rerank 客户端（原生 /v1/rerank API）。
 // 子配置零值字段回退到主配置（BaseURL/APIKey/Timeout 通用，Model 无主字段回退，必须显式配置）。
 // API key 为空（含回退后）时返回 nil，让上层（SearchService）走降级路径（RRF 顺序）。
@@ -187,8 +176,8 @@ func NewRerankClient(cfg config.LLMConfig) (*Client, error) {
 }
 
 // NewClientFromProvider 依据 DB 中的 AIProvider 实体构造客户端（方案 C：DB 配置真正生效）。
-// 用途：di 启动时从 DB 读 active provider 构造 4 个客户端（chat/embed/rerank/rewrite）。
-// providerType 决定 model 映射到 ChatModel/EmbeddingModel/RewriteModel 的哪个字段。
+// 用途：di 启动时从 DB 读 active provider 构造 3 个客户端（chat/embed/rerank）。
+// providerType 决定 model 映射到 ChatModel/EmbeddingModel 的哪个字段。
 // params 供应商扩展参数（temperature / top_p / max_tokens / response_format），nil 表示不注入。
 // isFullURL 来自 provider 的"完整链接"开关：true 时 api_base 原样使用，不再拼接 /v1。
 //
@@ -211,15 +200,13 @@ func NewClientFromProvider(
 		derived.ChatModel = model // chat 主模型；rerank 复用 ChatModel（见 NewRerankClient 注释）
 	case constants.ProviderTypeEmbedding:
 		derived.EmbeddingModel = model
-	case constants.ProviderTypeRewrite:
-		derived.RewriteModel = model
 	}
 	chat, hc := newOpenAIClient(baseURL, apiKey, timeout, isFullURL)
 	return &Client{chat: chat, cfg: derived, params: params, httpClient: hc}
 }
 
 // resolveProvider 解析 ProviderConfig：零值字段回退到主配置对应字段。
-// fallbackModel 由调用方按能力传入（Embedding→EmbeddingModel，Rewrite→RewriteModel，Rerank→""）。
+// fallbackModel 由调用方按能力传入（Embedding→EmbeddingModel，Rerank→""）。
 func resolveProvider(
 	pc config.ProviderConfig, fallbackBaseURL, fallbackAPIKey, fallbackModel string, fallbackTimeout time.Duration,
 ) (baseURL, apiKey, model string, timeout time.Duration) {
@@ -247,19 +234,16 @@ func (c *Client) ChatModel() string { return c.cfg.ChatModel }
 
 // IsReady 返回客户端是否已配置 API Key 可用。
 // 未就绪（chat==nil）时所有 LLM 调用方法返回 ErrNotConfigured。
-// 调用方（如 di 层装配 LLMSafetyChecker）可据此决定是否注入 LLM 依赖。
+// 调用方（如 di 层装配）可据此决定是否注入 LLM 依赖。
 func (c *Client) IsReady() bool { return c.chat != nil }
-
-// RewriteModel 返回改写用小模型名。
-func (c *Client) RewriteModel() string { return c.cfg.RewriteModel }
 
 // EmbeddingModel 返回 embedding 模型名。
 func (c *Client) EmbeddingModel() string { return c.cfg.EmbeddingModel }
 
 // 编译期断言：Client 实现全部对外接口，签名漂移时立即编译失败。
 var (
-	_ Streamer = (*Client)(nil)
-	_ Embedder = (*Client)(nil)
-	_ Rewriter = (*Client)(nil)
-	_ Reranker = (*Client)(nil)
+	_ Streamer      = (*Client)(nil)
+	_ Embedder      = (*Client)(nil)
+	_ Reranker      = (*Client)(nil)
+	_ JSONCompleter = (*Client)(nil)
 )

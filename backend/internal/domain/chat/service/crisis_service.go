@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"health-nexus/internal/domain/chat/entity"
 	"health-nexus/internal/domain/chat/repository"
@@ -28,6 +29,10 @@ type CrisisListItem struct {
 	HandledAt        *string
 	HandleNote       string
 	CreatedAt        string
+	// 接单响应时限与升级状态（P1 人工闭环）：医护端据此看出"还剩多久到期 / 是否已升级"。
+	AcknowledgeDueAt   *string
+	EscalatedAt        *string
+	AcknowledgeOverdue bool
 }
 
 // CrisisRepoPort 危机事件仓储能力（消费者定义，ISP）。*repository.CrisisRepo 实现此接口。
@@ -89,6 +94,16 @@ func (s *CrisisService) List(
 		if r.HandledAt != nil {
 			s := r.HandledAt.Format(timeRFC3339)
 			item.HandledAt = &s
+		}
+		if r.AcknowledgeDueAt != nil {
+			s := r.AcknowledgeDueAt.Format(timeRFC3339)
+			item.AcknowledgeDueAt = &s
+			// 未处理且已过接单时限 → 标记超时（供列表高亮；升级由 worker 定时扫描完成）。
+			item.AcknowledgeOverdue = !r.IsHandled && r.AcknowledgeDueAt.Before(time.Now())
+		}
+		if r.EscalatedAt != nil {
+			s := r.EscalatedAt.Format(timeRFC3339)
+			item.EscalatedAt = &s
 		}
 		if item.MatchedKeywords == nil {
 			item.MatchedKeywords = []string{}

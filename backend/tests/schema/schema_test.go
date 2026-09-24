@@ -36,7 +36,8 @@ var specs = []tableSpec{
 	{table: "departments", entityType: baseentity.Department{}},
 	{
 		table: "users", entityType: authentity.User{},
-		viewFields: map[string]bool{"PrimaryDeptID": true},
+		// PrimaryDeptID/Name 由 user_departments JOIN 派生，非 users 表列。
+		viewFields: map[string]bool{"PrimaryDeptID": true, "PrimaryDeptName": true},
 	},
 	{table: "articles", entityType: wikientity.Article{},
 		viewFields: map[string]bool{"DepartmentName": true, "AuthorName": true},
@@ -54,8 +55,16 @@ var specs = []tableSpec{
 	{table: "article_audit_logs", entityType: wikientity.ArticleAuditLog{}},
 	{table: "conversations", entityType: chatentity.Conversation{}},
 	{table: "messages", entityType: chatentity.Message{}},
-	{table: "crisis_events", entityType: chatentity.CrisisEvent{}},
-	{table: "ai_providers", entityType: configentity.AIProvider{}},
+	{
+		table: "crisis_events", entityType: chatentity.CrisisEvent{},
+		// LockedDeptID 由 conversations.locked_dept_id JOIN 派生，非 crisis_events 表列。
+		viewFields: map[string]bool{"LockedDeptID": true},
+	},
+	{
+		table: "ai_providers", entityType: configentity.AIProvider{},
+		// DepartmentID 为 AI Provider 归属科室的读模型字段，非 ai_providers 表列。
+		viewFields: map[string]bool{"DepartmentID": true},
+	},
 	{table: "sensitive_words", entityType: configentity.SensitiveWord{}},
 	{table: "safety_rules", entityType: configentity.SafetyRule{}},
 	{table: "rag_configs", entityType: configentity.RAGConfig{}},

@@ -1,5 +1,5 @@
 // 安全审查业务逻辑单元测试。
-// 覆盖输入侧（CheckRules/EmergencyCheck/LLMCheck）和输出侧（Validate）的全部规则分支。
+// 覆盖输入侧规则层快筛（CheckRules/EmergencyCheck）与输出侧（Validate）的规则分支。
 // 不依赖外部服务，纯本地运行。
 package rag
 
@@ -7,8 +7,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"health-nexus/internal/shared/constants"
 )
 
 // ============================================================================
@@ -16,7 +14,7 @@ import (
 // ============================================================================
 
 func TestCheckRules_SuicideKeywords_BlockAndCrisis(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, nil)
+	filter := NewDefaultInputSafetyFilter(nil)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -84,7 +82,7 @@ func TestCheckRules_SuicideKeywords_BlockAndCrisis(t *testing.T) {
 // ============================================================================
 
 func TestCheckRules_InjectionKeywords_Block(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, nil)
+	filter := NewDefaultInputSafetyFilter(nil)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -117,7 +115,7 @@ func TestCheckRules_InjectionKeywords_Block(t *testing.T) {
 // ============================================================================
 
 func TestEmergencyCheck(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, nil)
+	filter := NewDefaultInputSafetyFilter(nil)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -458,7 +456,7 @@ func TestValidate_MedicationDisclaimer_Idempotent(t *testing.T) {
 // ============================================================================
 
 func TestFilterMessages_NotEmpty(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, nil)
+	filter := NewDefaultInputSafetyFilter(nil)
 
 	methods := map[string]func() string{
 		"CrisisResponse":       filter.CrisisResponse,
@@ -477,80 +475,10 @@ func TestFilterMessages_NotEmpty(t *testing.T) {
 }
 
 // ============================================================================
-// 输入侧：LLMCheck — LLM 深度审查（D-HIGH-03, REQ-CHAT-007）
+// 输入侧：规则层快筛（CheckRules / EmergencyCheck）
+// 语义审查与检索改写由 Assessor 每轮统一完成（见 assessment.go），
+// 原"关键词门控 + fail-open 的 LLMCheck"已删除，相应用例一并移除。
 // ============================================================================
-
-// mockLLMSafetyChecker 最小 mock 实现，无需引入 mock 框架。
-// 返回结构化分类（constants.SafetyClass*），空值等价于放行。
-type mockLLMSafetyChecker struct {
-	class string
-}
-
-func (m *mockLLMSafetyChecker) ClassifyInput(_ context.Context, _ string) string {
-	return m.class
-}
-
-// TestLLMCheck_NilChecker_DegradeToAllow 验证降级路径：未注入 llmChecker 时始终放行。
-func TestLLMCheck_NilChecker_DegradeToAllow(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, nil)
-	ctx := context.Background()
-
-	if allow, class := filter.LLMCheck(ctx, "任意输入都应放行"); !allow || class != constants.SafetyClassSafe {
-		t.Errorf("nil llmChecker 时 LLMCheck 应放行（降级路径），实际 allow=%v class=%q", allow, class)
-	}
-}
-
-// TestLLMCheck_UnsafeInput_ReturnsClass 验证：模型判定 UNSAFE 时拒绝并回传分类。
-// 输入须含 suspiciousFragments 中的片段（如"过量"）才会触发 LLM 复核路径。
-func TestLLMCheck_UnsafeInput_ReturnsClass(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassMedicalAbuse})
-	ctx := context.Background()
-
-	allow, class := filter.LLMCheck(ctx, "我想过量服药")
-	if allow {
-		t.Error("分类非 SAFE 时 LLMCheck 应拒绝")
-	}
-	if class != constants.SafetyClassMedicalAbuse {
-		t.Errorf("class = %q, want %q（分类须原样回传供上层分流）", class, constants.SafetyClassMedicalAbuse)
-	}
-}
-
-// TestLLMCheck_SelfHarm_ReturnsSelfHarmClass 自伤风险必须保留分类，
-// 否则上层无法把它转入危机链路（记录危机事件 + 热线）。
-func TestLLMCheck_SelfHarm_ReturnsSelfHarmClass(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassSelfHarm})
-	ctx := context.Background()
-
-	allow, class := filter.LLMCheck(ctx, "我想去死")
-	if allow {
-		t.Error("自伤风险应被拒绝")
-	}
-	if class != constants.SafetyClassSelfHarm {
-		t.Errorf("class = %q, want %q", class, constants.SafetyClassSelfHarm)
-	}
-}
-
-// TestLLMCheck_SafeInput_ReturnsTrue 验证：mock 返回 SAFE 时 LLMCheck 放行。
-// 输入须含 suspiciousFragments 中的片段（如"死"）才会触发 LLM 复核路径。
-func TestLLMCheck_SafeInput_ReturnsTrue(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: constants.SafetyClassSafe})
-	ctx := context.Background()
-
-	if allow, _ := filter.LLMCheck(ctx, "我最近困死了"); !allow {
-		t.Error("分类为 SAFE 时 LLMCheck 应放行")
-	}
-}
-
-// TestLLMCheck_FailOpen_ReturnsTrue 验证 fail-open 策略：检查器故障（返回空分类）时放行。
-// 输入须含 suspiciousFragments 中的片段（如"毒"）才会触发 LLM 复核路径。
-func TestLLMCheck_FailOpen_ReturnsTrue(t *testing.T) {
-	filter := NewDefaultInputSafetyFilter(nil, &mockLLMSafetyChecker{class: ""})
-	ctx := context.Background()
-
-	if allow, _ := filter.LLMCheck(ctx, "这种毒蘑菇能吃吗"); !allow {
-		t.Error("检查器不可用（空分类）时 LLMCheck 应 fail-open 放行")
-	}
-}
 
 // ============================================================================
 // 输出侧：Validate — 接入 provider 后使用可配置安全警告（含用药免责）

@@ -12,7 +12,7 @@ owner: backend-team
 - **数据库**：PostgreSQL + pgvector（向量检索）+ pgx/v5 手写 SQL（未使用 ORM/sqlc 生成）
 - **缓存/队列**：Redis（go-redis/v9）+ asynq（异步任务，wiki 向量化）
 - **认证**：JWT HS256（`golang-jwt/jwt/v5`，对称密钥 `HEALTH_NEXUS_JWT_SECRET`），refresh token 轮换 + Redis 黑名单
-- **LLM**：`go-openai` 客户端，多 provider 分离（chat/embedding/rerank/rewrite）
+- **LLM**：`go-openai` 客户端，多 provider 分离（chat/embedding/rerank）；检索改写已并入统一理解与审查（Assessor），无独立改写 provider
 - **配置**：viper（`config.yaml` + `HEALTH_NEXUS_*` 环境变量自动绑定）
 - **日志**：`log/slog`（标准库，结构化日志）
 - **密码学**：argon2id（密码哈希）+ AES-GCM（API Key 字段级加密）

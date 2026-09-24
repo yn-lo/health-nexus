@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"health-nexus/internal/shared/mask"
 )
 
 // maxRerankBodyBytes 重排响应体读取上限（10 MiB），防止超大响应耗尽内存。
@@ -47,6 +49,7 @@ type rerankAPIItem struct {
 // Rerank 调用 /v1/rerank 端点对文档按相关性重排。
 // 支持 SiliconFlow、Jina 等提供原生 rerank API 的供应商。
 // 返回按相关性降序排列的结果，每个结果包含索引和分数。
+// query 承载患者检索问题，出站前做 PII 脱敏；documents 为院内知识库切片，不含患者身份信息，不处理。
 func (c *Client) Rerank(ctx context.Context, query string, documents []string, topK int) ([]RerankResult, error) {
 	if c.chat == nil {
 		return nil, ErrNotConfigured
@@ -65,7 +68,7 @@ func (c *Client) Rerank(ctx context.Context, query string, documents []string, t
 
 	reqBody := rerankRequest{
 		Model:     model,
-		Query:     query,
+		Query:     mask.SanitizePII(query),
 		Documents: documents,
 		TopN:      topK,
 	}

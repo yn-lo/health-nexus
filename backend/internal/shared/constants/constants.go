@@ -75,11 +75,11 @@ const (
 )
 
 // AI Provider 类型。
+// 注：原 rewrite（独立查询改写模型）已随统一理解与审查（Assessor）合并调用而下线。
 const (
 	ProviderTypeLLM       = "llm"
 	ProviderTypeEmbedding = "embedding"
 	ProviderTypeRerank    = "rerank"
-	ProviderTypeRewrite   = "rewrite"
 )
 
 // 敏感词类别。
@@ -148,6 +148,5 @@ const DefaultSystemPrompt = "你是一个医院健康宣教助手，只能基于
 
 // Token 预算阈值（REQ-CHAT-006-A）。
 const (
-	TokenBudgetRewrite  = 4000  // 改写场景 token 上限
 	TokenBudgetGenerate = 16000 // 生成场景 token 上限
 )

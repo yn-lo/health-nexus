@@ -21,16 +21,14 @@ func TestDebugLLMCalls(t *testing.T) {
 	// 密钥必须通过环境变量注入（仓库禁止存储真实 API Key）。
 	apiKey := os.Getenv("HEALTH_NEXUS_LLM_API_KEY")
 	embedKey := os.Getenv("HEALTH_NEXUS_LLM_EMBEDDING_API_KEY")
-	rewriteKey := os.Getenv("HEALTH_NEXUS_LLM_REWRITE_API_KEY")
-	if apiKey == "" || embedKey == "" || rewriteKey == "" {
-		t.Skip("LLM API keys not set via environment (HEALTH_NEXUS_LLM_API_KEY / HEALTH_NEXUS_LLM_EMBEDDING_API_KEY / HEALTH_NEXUS_LLM_REWRITE_API_KEY)")
+	if apiKey == "" || embedKey == "" {
+		t.Skip("LLM API keys not set via environment (HEALTH_NEXUS_LLM_API_KEY / HEALTH_NEXUS_LLM_EMBEDDING_API_KEY)")
 	}
 
 	cfg := config.LLMConfig{
 		BaseURL:        "https://apihub.agnes-ai.com/v1",
 		APIKey:         apiKey,
 		ChatModel:      "agnes-2.0-flash",
-		RewriteModel:   "agnes-2.0-flash",
 		EmbeddingModel: "text-embedding-3-small",
 		Timeout:        30 * time.Second,
 		Embedding: config.ProviderConfig{
@@ -39,39 +37,22 @@ func TestDebugLLMCalls(t *testing.T) {
 			Model:   "BAAI/bge-m3",
 			Timeout: 30 * time.Second,
 		},
-		Rewrite: config.ProviderConfig{
-			BaseURL: "https://open.bigmodel.cn/api/paas/v4",
-			APIKey:  rewriteKey,
-			Model:   "glm-4.7-flash",
-			Timeout: 30 * time.Second,
-		},
 	}
 
-	// 1. Rewrite LLM (智谱)
-	rewriteClient, err := llm.NewRewriteClient(cfg)
-	if err != nil {
-		t.Fatalf("NewRewriteClient: %v", err)
-	}
-	if rewriteClient == nil {
-		t.Fatal("rewrite client is nil")
-	}
+	// 1. 统一理解与审查（结构化 JSON 输出，agnes）
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	rewritten, err := rewriteClient.ToStandaloneQuestion(ctx, "高血压患者日常管理要点有哪些？", nil)
-	if err != nil {
-		fmt.Printf("Rewrite ERR: %v\n", err)
-	} else {
-		fmt.Printf("Rewrite result: %q (len=%d)\n", rewritten, len(rewritten))
-	}
-
-	// 2. Safety check (agnes)
 	safetyClient, _ := llm.NewClient(cfg)
-	safetyChecker := llm.NewLLMSafetyChecker(func() *llm.Client { return safetyClient })
-	if safetyChecker == nil {
-		fmt.Println("SafetyChecker is nil (LLM client not ready)")
+	if safetyClient == nil {
+		fmt.Println("Assessor client is nil (LLM client not ready)")
 	} else {
-		safe, err := safetyChecker.IsInputSafe(ctx, "高血压患者日常管理要点有哪些？")
-		fmt.Printf("Safety check: safe=%v err=%v\n", safe, err)
+		raw, err := safetyClient.CompleteJSON(ctx,
+			"只输出一个 JSON 对象：{\"ok\":true}", "连通性检查", 10*time.Second)
+		if err != nil {
+			fmt.Printf("Assessor ERR: %v\n", err)
+		} else {
+			fmt.Printf("Assessor result: %q\n", raw)
+		}
 	}
 
 	// 3. Embedding (siliconflow BAAI/bge-m3)
@@ -123,15 +104,15 @@ func TestDebugLLMCalls(t *testing.T) {
 	}
 }
 
-// TestRawHTTPRewrite calls 智谱 API raw to see exact response.
-func TestRawHTTPRewrite(t *testing.T) {
-	rewriteKey := os.Getenv("HEALTH_NEXUS_LLM_REWRITE_API_KEY")
-	if rewriteKey == "" {
-		t.Skip("rewrite API key not set via environment (HEALTH_NEXUS_LLM_REWRITE_API_KEY)")
+// TestRawHTTPStructuredOutput 直接以 raw HTTP 调用，检查结构化输出的原始响应形态。
+func TestRawHTTPStructuredOutput(t *testing.T) {
+	key := os.Getenv("HEALTH_NEXUS_ZHIPU_API_KEY")
+	if key == "" {
+		t.Skip("API key not set via environment (HEALTH_NEXUS_ZHIPU_API_KEY)")
 	}
-	body := `{"model":"glm-4.7-flash","messages":[{"role":"system","content":"你是一个问题改写助手。根据对话历史，把用户最新追问改写为一个独立、完整、不含代词的问题。规则：1. 只输出改写后的问题，不要任何解释或前后缀 2. 若无需改写（首问或无歧义），原样返回用户问题 3. 将指代词替换为历史中的具体对象"},{"role":"user","content":"高血压患者日常管理要点有哪些？"}],"temperature":0.0}`
+	body := `{"model":"glm-4.7-flash","messages":[{"role":"system","content":"只输出一个 JSON 对象，不要解释"},{"role":"user","content":"输出 {\"ok\": true}"}],"temperature":0.0}`
 	req, _ := http.NewRequest("POST", "https://open.bigmodel.cn/api/paas/v4/chat/completions", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+rewriteKey)
+	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
@@ -140,7 +121,7 @@ func TestRawHTTPRewrite(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	fmt.Printf("Raw rewrite HTTP %d: %s\n", resp.StatusCode, string(b))
+	fmt.Printf("Raw structured output HTTP %d: %s\n", resp.StatusCode, string(b))
 }
 
 func min2(a, b int) int {

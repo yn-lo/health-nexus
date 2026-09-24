@@ -746,7 +746,7 @@ const showToc = ref(false)
  <p class="mb-[var(--spacer-8)] text-body-sm text-text-tertiary">标准 ds-pill-group</p>
  <div class="ds-pill-group mb-[var(--spacer-16)]">
  <button
- v-for="opt in ['llm','embedding','rerank','rewrite']"
+ v-for="opt in ['llm','embedding','rerank']"
  :key="opt"
  type="button"
  class="ds-pill"

@@ -28,7 +28,6 @@ const typeOptions: { value: AIProviderType; label: string }[] = [
  { value: 'llm', label: 'LLM' },
  { value: 'embedding', label: 'Embedding' },
  { value: 'rerank', label: 'Rerank' },
- { value: 'rewrite', label: 'Rewrite' },
 ]
 
 const form = ref<AIProviderCreateRequest>({

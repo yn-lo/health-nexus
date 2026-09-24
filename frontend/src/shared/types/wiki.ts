@@ -1,6 +1,12 @@
 /** 文章状态 — 对齐后端 constants.ArticleStatus*（draft|pending|published|archived|deleted） */
 export type ArticleStatus = 'draft' | 'pending' | 'published' | 'archived' | 'deleted';
 
+/**
+ * 内容风险等级 — 对齐后端 entity.ContentRiskNormal / ContentRiskHigh
+ * high（用药、检查准备、高风险护理）复审周期更短，且逾期后退出检索
+ */
+export type ContentRisk = 'normal' | 'high';
+
 /** 文章公共信息（列表项，对齐后端 ArticleListItemDTO） */
 export interface ArticlePublic {
   id: number;
@@ -56,6 +62,16 @@ export interface ArticleStaff {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  /** 知识来源（如指南名称）— 用于复审追溯与检索可见性 */
+  source: string;
+  /** 适用人群（如"高血压患者""孕产妇"）— 用于检索可见性 */
+  applicable_population: string;
+  /** 有效期至（RFC3339；null 表示未设置/长期有效）— 用于复审提醒与检索可见性 */
+  valid_until: string | null;
+  /** 内容风险等级：normal=普通宣教，high=用药/检查准备/高风险护理（高风险逾期后退出检索） */
+  content_risk: ContentRisk;
+  /** 是否已超过复审周期（后端按风险等级计算） */
+  review_overdue: boolean;
 }
 
 /** 创建文章请求（对齐契约 §4.3） */
@@ -75,6 +91,14 @@ export interface ArticleUpdateRequest {
   summary?: string;
   cover_url?: string;
   allow_reference?: boolean;
+  /** 知识来源（省略该字段=不更新） */
+  source?: string;
+  /** 适用人群（省略该字段=不更新） */
+  applicable_population?: string;
+  /** 有效期至（RFC3339；传空字符串 "" 表示清空有效期，非法格式后端返回 422 WIKI_VALID_UNTIL_INVALID） */
+  valid_until?: string;
+  /** 内容风险等级（省略该字段=不更新；非法值后端返回 422 WIKI_CONTENT_RISK_INVALID） */
+  content_risk?: ContentRisk;
   /** 编辑时加载到的版本号；传入启用乐观锁，并发编辑冲突后端返回 409 */
   version?: number;
 }

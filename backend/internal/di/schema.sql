@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS articles (
     CONSTRAINT articles_featured_rank_check CHECK (featured_rank BETWEEN 0 AND 3)
 );
 
+-- P1 修复：知识条目的来源、适用人群、有效期与内容风险等级。
+-- 逾期策略按内容风险区分（高风险资料有效期更短），检索排除"高风险且已逾期"的文章。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS source VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS applicable_population VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_risk VARCHAR(20) NOT NULL DEFAULT 'normal';
+ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_content_risk_chk;
+ALTER TABLE articles ADD CONSTRAINT articles_content_risk_chk CHECK (content_risk IN ('normal','high'));
+
 CREATE TABLE IF NOT EXISTS article_chunks (
     id            BIGSERIAL   PRIMARY KEY,
     article_id    BIGINT      NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
@@ -109,6 +118,11 @@ CREATE TABLE IF NOT EXISTS article_chunks (
     version       INT         NOT NULL DEFAULT 1,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- P0 修复：记录向量所属 Embedding 模型。切换模型后旧向量不可比，检索按模型过滤，
+-- 空串表示迁移前的历史切片（模型未知），由 outbox relay 全量重建后收敛为严格同模型。
+ALTER TABLE article_chunks ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(128) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_article_chunks_model ON article_chunks (embedding_model) WHERE is_active = true;
 
 -- 对已有库的增量同步：移除已废弃的 BM25 全文检索链路（纯向量检索，幂等）。
 DROP TRIGGER IF EXISTS trg_article_chunks_tsv ON article_chunks;
@@ -215,7 +229,25 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 兼容既有库：老表补 turn_id 列。
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS turn_id UUID;
 
+-- P1 修复：同轮 user/assistant 消息在同一事务内以 now()（事务开始时间）落库，created_at 完全相同，
+-- 随机 UUID 无法稳定定序，列表/历史上下文可能出现"答案在问题前"。
+-- 引入全局单调递增 seq（全局单调 ⇒ 会话内单调；同一事务内 INSERT 顺序即 seq 顺序：
+-- 先 user 后 assistant）。新消息由默认值 nextval 填充，老数据按 (conversation_id, created_at, id) 回填。
+CREATE SEQUENCE IF NOT EXISTS messages_seq;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS seq BIGINT;
+-- 回填历史 NULL 行（幂等：仅处理 NULL 行；按会话内时间与 id 稳定排序）。
+UPDATE messages SET seq = numbered.rn FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at ASC, id ASC) AS rn
+    FROM messages WHERE seq IS NULL
+) numbered WHERE messages.id = numbered.id;
+ALTER TABLE messages ALTER COLUMN seq SET DEFAULT nextval('messages_seq');
+ALTER TABLE messages ALTER COLUMN seq SET NOT NULL;
+-- 序列水位对齐到现有最大值（幂等）：保证 nextval 新值不与回填值冲突。
+SELECT setval('messages_seq', GREATEST((SELECT COALESCE(MAX(seq), 0) FROM messages), 1));
+
 CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON messages (conversation_id, created_at);
+-- 消息列表/历史上下文统一按 (conversation_id, seq) 定序。
+CREATE INDEX IF NOT EXISTS idx_messages_conv_seq ON messages (conversation_id, seq);
 -- 幂等重放按轮定位结果（turn_id 唯一标识一轮）。
 CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages (turn_id);
 
@@ -246,6 +278,24 @@ CREATE INDEX IF NOT EXISTS idx_crisis_events_level         ON crisis_events (lev
 CREATE INDEX IF NOT EXISTS idx_crisis_events_created       ON crisis_events (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_crisis_events_handled_level ON crisis_events (is_handled, level);
 
+-- P1 人工闭环：接单响应时限与超时升级（未在时限内被处理的事件升级到超管）。
+ALTER TABLE crisis_events ADD COLUMN IF NOT EXISTS acknowledge_due_at TIMESTAMPTZ;
+ALTER TABLE crisis_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_crisis_events_pending_due
+    ON crisis_events (acknowledge_due_at) WHERE is_handled = false AND escalated_at IS NULL;
+
+-- P1 危机通知 outbox：与向量化 outbox 同模式。
+-- 危机事件创建时在同一事务内写入 outbox 记录，由 relay 周期扫描投递通知任务，
+-- 保证 Redis/入队瞬时故障时通知不会丢失（原实现仅记日志，无补投机制）。
+CREATE TABLE IF NOT EXISTS crisis_outbox (
+    id           BIGSERIAL   PRIMARY KEY,
+    event_id     BIGINT      NOT NULL,
+    processed    BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_crisis_outbox_pending ON crisis_outbox (processed, created_at) WHERE processed = false;
+
 -- ============================================================================
 -- config 域
 -- ============================================================================
@@ -263,11 +313,17 @@ CREATE TABLE IF NOT EXISTS ai_providers (
     is_active          BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank','rewrite'))
+    CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank'))
 );
 
 -- 对已有库的增量同步：补齐 is_full_url（幂等）。
 ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS is_full_url BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 下线 rewrite provider：独立查询改写模型已并入统一理解与审查（Assessor）。
+-- 先清理存量数据再收紧 CHECK 约束（顺序不可颠倒，否则约束校验失败）。
+DELETE FROM ai_providers WHERE provider_type = 'rewrite';
+ALTER TABLE ai_providers DROP CONSTRAINT IF EXISTS ai_providers_type_chk;
+ALTER TABLE ai_providers ADD CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank'));
 
 CREATE INDEX IF NOT EXISTS idx_ai_providers_type_active ON ai_providers (provider_type, is_active);
 

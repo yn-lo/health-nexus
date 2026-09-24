@@ -54,21 +54,62 @@ func (m *mockKnowledgeSearcher) SearchSimilarChunks(_ context.Context, q rag.Sea
 	return m.chunks, m.err
 }
 
-// --- mockRewriter ---
+// --- mockAssessor ---
 
-type mockRewriter struct {
-	result string
-	err    error
+// mockAssessor 固定返回预设的统一审查结果。
+// assessment 为零值时按"普通宣教、信息充足、检索改写=用户原话"返回——与真实审查器
+// 在正常宣教场景下的行为一致，便于既有用例聚焦各自关注点。
+type mockAssessor struct {
+	assessment  rag.Assessment
+	err         error
+	called      bool
+	lastMessage string
+	lastHistory []rag.AssessTurn
 }
 
-func (m *mockRewriter) ToStandaloneQuestion(_ context.Context, q string, _ []llm.Message) (string, error) {
+func (m *mockAssessor) AssessAndRewrite(
+	_ context.Context, message string, history []rag.AssessTurn,
+) (rag.Assessment, error) {
+	m.called = true
+	m.lastMessage = message
+	m.lastHistory = history
 	if m.err != nil {
-		return "", m.err
+		return rag.Assessment{}, m.err
 	}
-	if m.result != "" {
-		return m.result, nil
+	a := m.assessment
+	if a.Intent == "" {
+		a = rag.Assessment{
+			Intent:            rag.IntentPatientEducation,
+			EmergencyRisk:     rag.RiskNotDetected,
+			SelfHarmRisk:      rag.RiskNotDetected,
+			ContextSufficient: true,
+			StandaloneQuery:   message,
+			RecommendedAction: rag.ActionRetrieve,
+		}
 	}
-	return q, nil
+	if a.StandaloneQuery == "" {
+		a.StandaloneQuery = message
+	}
+	return a, nil
+}
+
+// --- mockOutputReviewer ---
+
+// mockOutputReviewer 固定返回预设的生成后语义审核结果（零值视为通过）。
+type mockOutputReviewer struct {
+	review rag.OutputReview
+	err    error
+	called bool
+}
+
+func (m *mockOutputReviewer) ReviewAnswer(
+	_ context.Context, _, _ string, _ []string,
+) (rag.OutputReview, error) {
+	m.called = true
+	if m.err != nil {
+		return rag.OutputReview{}, m.err
+	}
+	return m.review, nil
 }
 
 // --- mockStreamer ---
@@ -538,15 +579,14 @@ func newTestChatSendService(
 ) *ChatSendService {
 	t.Helper()
 	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科"}}
-	safetyIn := rag.NewDefaultInputSafetyFilter(nil, nil) // nil provider=默认关键词, nil checker=LLM fail-open
+	safetyIn := rag.NewDefaultInputSafetyFilter(nil) // nil provider=默认关键词
 	safetyOut := rag.NewDefaultOutputSafetyFilter(nil)
-	rewriter := &mockRewriter{}
 	locker := &mockLockProvider{}
 	tx := mockTxRunner{}
 
 	return NewChatSendService(
-		dept, safetyIn, safetyOut, knowledge,
-		rewriter, nil, streamer,
+		dept, safetyIn, safetyOut, &mockAssessor{}, nil, knowledge,
+		streamer,
 		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // ring=nil -> 匿名退化为单轮（无历史）
 		nil, // turns=nil -> 不启用请求幂等（与修复前行为一致）
@@ -1108,13 +1148,13 @@ func TestStream_EmptyMessage(t *testing.T) {
 }
 
 // ============================================================================
-// 查询改写三级降级测试
+// 统一理解与审查 → 检索改写 / 审查失败降级
 // ============================================================================
 
-func newTestChatSendServiceWithRewriters(
+func newTestChatSendServiceWithAssessor(
 	t *testing.T,
-	rewriter llm.Rewriter,
-	fallbackRewriter llm.Rewriter,
+	assessor rag.Assessor,
+	reviewer rag.OutputReviewer,
 	streamer *mockStreamer,
 	knowledge *mockKnowledgeSearcher,
 	conv *mockConversationPort,
@@ -1123,14 +1163,14 @@ func newTestChatSendServiceWithRewriters(
 ) *ChatSendService {
 	t.Helper()
 	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科"}}
-	safetyIn := rag.NewDefaultInputSafetyFilter(nil, nil)
+	safetyIn := rag.NewDefaultInputSafetyFilter(nil)
 	safetyOut := rag.NewDefaultOutputSafetyFilter(nil)
 	locker := &mockLockProvider{}
 	tx := mockTxRunner{}
 
 	return NewChatSendService(
-		dept, safetyIn, safetyOut, knowledge,
-		rewriter, fallbackRewriter, streamer,
+		dept, safetyIn, safetyOut, assessor, reviewer, knowledge,
+		streamer,
 		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // ring=nil
 		nil, // turns=nil
@@ -1138,61 +1178,202 @@ func newTestChatSendServiceWithRewriters(
 	)
 }
 
-// TestStream_RewriteFallback_PrimaryFails_FallbackSucceeds 三级降级第 2 级：
-// 专用改写 API 失败 → 主 LLM 兜底改写成功 → 检索使用 LLM 改写结果。
-func TestStream_RewriteFallback_PrimaryFails_FallbackSucceeds(t *testing.T) {
-	primary := &mockRewriter{err: errors.New("rewrite API timeout")}
-	fallback := &mockRewriter{result: "高血压的日常护理方法"}
-
+// TestStream_AssessmentQueryUsedForRetrieval 检索必须使用统一审查产出的独立问题
+// （改写已在审查阶段完成，且保留了否定/时间等限定），生成侧仍用患者原话。
+func TestStream_AssessmentQueryUsedForRetrieval(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "高血压的日常护理方法",
+		RecommendedAction: rag.ActionRetrieve,
+	}}
 	knowledge := &mockKnowledgeSearcher{
 		chunks: []rag.Chunk{
 			{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "高血压宣教", Content: "高血压需规律服药", Score: 0.9, VecScore: 0.9},
 		},
 	}
 	streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
-	conv := &mockConversationPort{}
-	msg := &mockMessagePort{}
-	crisis := &mockCrisisPort{}
-
-	svc := newTestChatSendServiceWithRewriters(t, primary, fallback, streamer, knowledge, conv, msg, crisis)
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
 	out := &mockSSEWriter{}
 
-	err := svc.Stream(context.Background(), newStreamInput("怎么控制"), out)
-	if err != nil {
+	if err := svc.Stream(context.Background(), newStreamInput("怎么控制"), out); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
+	if !assessor.called {
+		t.Fatal("期望统一审查被调用")
+	}
 	if knowledge.lastQuery != "高血压的日常护理方法" {
-		t.Errorf("检索 query = %q, want %q（应使用 fallback 改写结果）", knowledge.lastQuery, "高血压的日常护理方法")
+		t.Errorf("检索 query = %q, want %q（应使用审查产出的独立问题）", knowledge.lastQuery, "高血压的日常护理方法")
+	}
+	if streamer.lastReq.UserMessage != "怎么控制" {
+		t.Errorf("生成侧 user message = %q, want %q（生成应使用患者原话）", streamer.lastReq.UserMessage, "怎么控制")
 	}
 }
 
-// TestStream_RewriteFallback_BothFail_UsesRawQuery 三级降级第 3 级：
-// 专用改写 + LLM 兜底均失败 → 检索使用原始查询。
-func TestStream_RewriteFallback_BothFail_UsesRawQuery(t *testing.T) {
-	primary := &mockRewriter{err: errors.New("rewrite API timeout")}
-	fallback := &mockRewriter{err: errors.New("LLM also unavailable")}
-
+// TestStream_AssessmentFailed_DegradesToRestricted 审查不可用（超时/解析失败）时
+// 按"无法判断"降级：不检索、不生成、不展示普通宣教答案，返回固定兜底话术。
+func TestStream_AssessmentFailed_DegradesToRestricted(t *testing.T) {
+	assessor := &mockAssessor{err: rag.ErrAssessmentInvalid}
 	knowledge := &mockKnowledgeSearcher{
 		chunks: []rag.Chunk{
-			{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "高血压宣教", Content: "高血压需规律服药", Score: 0.9, VecScore: 0.9},
+			{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "t", Content: "c", Score: 0.9, VecScore: 0.9},
 		},
 	}
-	streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
-	conv := &mockConversationPort{}
-	msg := &mockMessagePort{}
-	crisis := &mockCrisisPort{}
-
-	svc := newTestChatSendServiceWithRewriters(t, primary, fallback, streamer, knowledge, conv, msg, crisis)
+	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
 	out := &mockSSEWriter{}
 
-	err := svc.Stream(context.Background(), newStreamInput("怎么控制"), out)
-	if err != nil {
+	if err := svc.Stream(context.Background(), newStreamInput("高血压怎么控制"), out); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 
-	if knowledge.lastQuery != "怎么控制" {
-		t.Errorf("检索 query = %q, want %q（双降级后应使用原始查询）", knowledge.lastQuery, "怎么控制")
+	if knowledge.lastQuery != "" {
+		t.Errorf("审查失败不应检索，实际 query=%q", knowledge.lastQuery)
+	}
+	if out.hasEvent(EventToken) {
+		t.Error("审查失败不应生成答案")
+	}
+	if got := out.resultPayload(t).ResultCode; got != constants.ResultRejected {
+		t.Errorf("result_code = %q, want %q", got, constants.ResultRejected)
+	}
+	if got := out.answerText(); got != rag.AssessmentFailedMessage() {
+		t.Errorf("答案 = %q, want 审查不可用兜底话术", got)
+	}
+}
+
+// TestStream_IndividualizedRequest_RestrictedReply 个体化诊疗/用药调整请求走受限流程：
+// 固定边界说明 + 求助渠道，不检索不生成（避免个体化用药建议）。
+func TestStream_IndividualizedRequest_RestrictedReply(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentMedicationChange,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		MedicationChange:  true,
+		ContextSufficient: true,
+		StandaloneQuery:   "能不能把药量翻倍",
+		RecommendedAction: rag.ActionRestricted,
+	}}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "c", Score: 0.9, VecScore: 0.9}},
+	}
+	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("能不能把药量翻倍"), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if out.hasEvent(EventToken) {
+		t.Error("受限流程不应生成答案")
+	}
+	if knowledge.lastQuery != "" {
+		t.Errorf("受限流程不应检索，实际 query=%q", knowledge.lastQuery)
+	}
+	if got := out.answerText(); got != rag.RestrictedCareMessage() {
+		t.Errorf("答案 = %q, want 受限边界说明", got)
+	}
+}
+
+// TestStream_EmergencyRisk_FixedGuidance 疑似急症走独立流程：固定急救指引，
+// 不再继续生成可能与"立即就医"提醒冲突的日常护理答案。
+func TestStream_EmergencyRisk_FixedGuidance(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskSuspected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "胸痛怎么办",
+		RecommendedAction: rag.ActionEmergency,
+	}}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "c", Score: 0.9, VecScore: 0.9}},
+	}
+	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("突然胸痛还冒冷汗"), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if out.hasEvent(EventToken) {
+		t.Error("急症流程不应生成普通宣教答案")
+	}
+	if got := out.answerText(); got != rag.EmergencyGuidance() {
+		t.Errorf("答案 = %q, want 固定急救指引", got)
+	}
+}
+
+// TestStream_MedicationQuestion_DeferredReviewBeforeShow 涉及用药的宣教问题必须
+// "完整生成 + 语义审核通过后才展示"：不流式先发，审核不通过时整体替换。
+func TestStream_MedicationQuestion_DeferredReviewBeforeShow(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "降压药一般什么时候吃",
+		RecommendedAction: rag.ActionRetrieve,
+	}}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "资料", Score: 0.9, VecScore: 0.9}},
+	}
+	streamer := &mockStreamer{ready: true, tokens: []string{"把药量翻倍", "服用即可。"}}
+	reviewer := &mockOutputReviewer{review: rag.OutputReview{
+		BoundaryOK: false, EvidenceSupported: true,
+		Reason:        "给出个体化用药建议",
+		RevisedAnswer: "用药方案请遵医嘱。",
+	}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, reviewer, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("降压药剂量要翻倍吗"), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	if !reviewer.called {
+		t.Fatal("涉及用药的问题应经过生成后语义审核")
+	}
+	// 审核前不得下发 token（流式先发会让越界内容已经到达患者）。
+	if out.hasEvent(EventToken) {
+		t.Error("高风险内容不应流式先发")
+	}
+	if got := out.answerText(); got != "用药方案请遵医嘱。" {
+		t.Errorf("最终答案 = %q, want 审核给出的安全替代答案", got)
+	}
+}
+
+// TestStream_MedicationQuestion_ReviewPass_ShowsFullAnswer 审核通过时一次性下发完整答案。
+func TestStream_MedicationQuestion_ReviewPass_ShowsFullAnswer(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "降压药一般什么时候吃",
+		RecommendedAction: rag.ActionRetrieve,
+	}}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", Content: "资料", Score: 0.9, VecScore: 0.9}},
+	}
+	streamer := &mockStreamer{ready: true, tokens: []string{"通常建议", "遵医嘱服用。"}}
+	reviewer := &mockOutputReviewer{review: rag.OutputReview{BoundaryOK: true, EvidenceSupported: true}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, reviewer, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("降压药剂量怎么安排"), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if got := out.answerText(); got != "通常建议遵医嘱服用。" {
+		t.Errorf("最终答案 = %q, want 完整生成内容", got)
 	}
 }
 
@@ -1292,11 +1473,16 @@ func TestCleanupRAGStream_AbortedWithEmptyContent(t *testing.T) {
 	}
 }
 
-// TestStream_RewriteFallback_Anonymous 匿名路径三级降级：
-// 专用改写失败 → 主 LLM 兜底改写成功 → 检索使用 LLM 改写结果。
-func TestStream_RewriteFallback_Anonymous(t *testing.T) {
-	primary := &mockRewriter{err: errors.New("rewrite API timeout")}
-	fallback := &mockRewriter{result: "高血压的日常护理方法"}
+// TestStream_AssessmentQueryUsedForRetrieval_Anonymous 匿名路径同样使用统一审查产出的检索问题。
+func TestStream_AssessmentQueryUsedForRetrieval_Anonymous(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "高血压的日常护理方法",
+		RecommendedAction: rag.ActionRetrieve,
+	}}
 
 	knowledge := &mockKnowledgeSearcher{
 		chunks: []rag.Chunk{
@@ -1308,7 +1494,8 @@ func TestStream_RewriteFallback_Anonymous(t *testing.T) {
 	msg := &mockMessagePort{}
 	crisis := &mockCrisisPort{}
 
-	svc := newTestChatSendServiceWithRewriters(t, primary, fallback, streamer, knowledge, conv, msg, crisis)
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, conv, msg, crisis)
 	out := &mockSSEWriter{}
 
 	anonInput := StreamInput{Identity: identity.Identity{DeviceID: "test-device"}, Message: "怎么控制"}
@@ -1318,7 +1505,7 @@ func TestStream_RewriteFallback_Anonymous(t *testing.T) {
 	}
 
 	if knowledge.lastQuery != "高血压的日常护理方法" {
-		t.Errorf("匿名检索 query = %q, want %q（应使用 fallback 改写结果）", knowledge.lastQuery, "高血压的日常护理方法")
+		t.Errorf("匿名检索 query = %q, want %q（应使用审查产出的独立问题）", knowledge.lastQuery, "高血压的日常护理方法")
 	}
 }
 
@@ -1635,17 +1822,13 @@ func conversationEventID(t *testing.T, out *mockSSEWriter) string {
 }
 
 // ============================================================================
-// 回归：安全分类（LLM 判定自伤 → 危机链路）与请求幂等（重复提交回放）
+// 回归：统一审查的风险分流（自伤 → 危机链路；滥用 → 拒答）与请求幂等（重复提交回放）
 // ============================================================================
 
-// mockLLMChecker 固定分类的 LLM 输入审查器。
-type mockLLMChecker struct{ class string }
-
-func (m *mockLLMChecker) ClassifyInput(context.Context, string) string { return m.class }
-
-// TestStream_LLMSelfHarm_RoutesToCrisis LLM 判定自伤风险时必须走危机链路
+// TestStream_AssessedSelfHarm_RoutesToCrisis 统一审查判定自伤风险时必须走危机链路
 // （落危机事件 + 通知医护 + 推热线），而不是压平成一句普通拒答。
-func TestStream_LLMSelfHarm_RoutesToCrisis(t *testing.T) {
+// 判定依据（risk_evidence）原样记入危机事件，供医护端复现模型判定。
+func TestStream_AssessedSelfHarm_RoutesToCrisis(t *testing.T) {
 	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
 	knowledge := &mockKnowledgeSearcher{chunks: nil}
 	conv := &mockConversationPort{}
@@ -1653,12 +1836,19 @@ func TestStream_LLMSelfHarm_RoutesToCrisis(t *testing.T) {
 	crisis := &mockCrisisPort{}
 
 	svc := newTestChatSendService(t, streamer, knowledge, conv, msg, crisis)
-	// 注入"LLM 判定 SELF_HARM"的检查器（消息含疑似片段才触发 LLM 复核，故用"去死"）。
-	safetyIn := rag.NewDefaultInputSafetyFilter(nil, &mockLLMChecker{class: constants.SafetyClassSelfHarm})
-	svc.safetyIn = safetyIn
+	// 非关键词表达（"一觉不醒"）也应被统一审查识别——这是旧的关键词门控会漏掉的场景。
+	svc.assessor = &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentOther,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskConfirmed,
+		ContextSufficient: true,
+		StandaloneQuery:   "我不想再醒来",
+		RiskEvidence:      []string{"self_harm: 我希望自己一觉不醒"},
+		RecommendedAction: rag.ActionCrisis,
+	}}
 
 	out := &mockSSEWriter{}
-	if err := svc.Stream(context.Background(), newStreamInput("我希望自己一觉不醒，去死算了"), out); err != nil {
+	if err := svc.Stream(context.Background(), newStreamInput("我希望自己一觉不醒"), out); err != nil {
 		t.Fatalf("Stream 返回错误: %v", err)
 	}
 
@@ -1672,7 +1862,6 @@ func TestStream_LLMSelfHarm_RoutesToCrisis(t *testing.T) {
 		t.Errorf("result_code = %q, want %q", got, constants.ResultCrisis)
 	}
 
-	// 危机事件据 LLM 分类落库（关键词标注判定来源），供医护端追溯
 	crisis.mu.Lock()
 	defer crisis.mu.Unlock()
 	if len(crisis.created) != 1 {
@@ -1682,13 +1871,13 @@ func TestStream_LLMSelfHarm_RoutesToCrisis(t *testing.T) {
 	if ev.Level != constants.CrisisLevelHigh {
 		t.Errorf("危机级别 = %q, want %q", ev.Level, constants.CrisisLevelHigh)
 	}
-	if len(ev.MatchedKeywords) != 1 || ev.MatchedKeywords[0] != llmSelfHarmMarker {
-		t.Errorf("命中关键词 = %v, want [%s]", ev.MatchedKeywords, llmSelfHarmMarker)
+	if len(ev.MatchedKeywords) != 1 || ev.MatchedKeywords[0] != "self_harm: 我希望自己一觉不醒" {
+		t.Errorf("命中关键词 = %v，want 审查给出的原话依据", ev.MatchedKeywords)
 	}
 }
 
-// TestStream_NonSelfHarmClass_RejectedNotCrisis 非自伤类风险仍按拒答处理，不误触危机链路。
-func TestStream_NonSelfHarmClass_RejectedNotCrisis(t *testing.T) {
+// TestStream_MedicalAbuse_RejectedNotCrisis 非自伤类风险仍按拒答处理，不误触危机链路。
+func TestStream_MedicalAbuse_RejectedNotCrisis(t *testing.T) {
 	streamer := &mockStreamer{ready: true, tokens: []string{"不应到达"}}
 	knowledge := &mockKnowledgeSearcher{chunks: nil}
 	conv := &mockConversationPort{}
@@ -1696,9 +1885,15 @@ func TestStream_NonSelfHarmClass_RejectedNotCrisis(t *testing.T) {
 	crisis := &mockCrisisPort{}
 
 	svc := newTestChatSendService(t, streamer, knowledge, conv, msg, crisis)
-	svc.safetyIn = rag.NewDefaultInputSafetyFilter(
-		nil, &mockLLMChecker{class: constants.SafetyClassMedicalAbuse},
-	)
+	svc.assessor = &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentOther,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		MedicalAbuse:      true,
+		ContextSufficient: true,
+		StandaloneQuery:   "过量服用",
+		RecommendedAction: rag.ActionReject,
+	}}
 
 	out := &mockSSEWriter{}
 	if err := svc.Stream(context.Background(), newStreamInput("教我如何过量服用这种药"), out); err != nil {

@@ -21,6 +21,10 @@ type CrisisEvent struct {
 	HandledAt        *time.Time
 	HandleNote       string
 	CreatedAt        time.Time
+	// AcknowledgeDueAt 接单响应时限（P1）：创建时按级别设置，超时未处理触发升级。
+	AcknowledgeDueAt *time.Time
+	// EscalatedAt 升级时间（P1）：非空表示已因超时未处理被升级通知。
+	EscalatedAt *time.Time
 
 	// LockedDeptID 所属科室（派生字段，非表字段）：JOIN conversations.locked_dept_id 取得。
 	// 未锁定科室的会话为 0。供 service 层做危机事件处理的科室归属校验。

@@ -132,3 +132,20 @@ func (r *NotificationRepo) UnreadCount(ctx context.Context, role string, deptID 
 	}
 	return count, nil
 }
+
+// ExistsForRef 判断同一业务对象（type + ref_id）是否已对该角色/科室投递过通知。
+// 用于通知任务幂等：危机通知由"快速路径 + outbox relay 补投"两条路径投递，重复执行不应重复落库。
+func (r *NotificationRepo) ExistsForRef(
+	ctx context.Context, role string, deptID *int64, notifType, refID string,
+) (bool, error) {
+	const sql = `SELECT EXISTS (
+		SELECT 1 FROM notifications
+		WHERE recipient_role = $1 AND type = $2 AND ref_id = $3
+		  AND (recipient_dept_id IS NOT DISTINCT FROM $4)
+	)`
+	var exists bool
+	if err := r.pool.QueryRow(ctx, sql, role, notifType, refID, deptID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check notification exists: %w", err)
+	}
+	return exists, nil
+}

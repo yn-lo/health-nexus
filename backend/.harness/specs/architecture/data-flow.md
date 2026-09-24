@@ -26,6 +26,11 @@ cmd/server/main.go
 
 **关键点**：LLM 客户端从 DB active provider 动态加载（方案 C），DB 配置变更通过 Redis Pub/Sub 通知热切换（`adapter.ReloadAndSwap`），无需重启服务。
 
+**出站数据边界**：所有发往外部模型服务（LLM / embedding / rerank）的文本统一在 `platform/llm` 收口脱敏
+（`shared/mask.SanitizePII`）——患者来源文本（提问 / 历史 / 检索问题）在出站前剥离手机号、身份证、邮箱
+与 ≥11 位数字串（银行卡、就诊卡号等院内编号）；系统提示词与院内知识库切片不参与脱敏。
+已知边界：自然语言中的姓名与地址无法用规则覆盖；且脱敏只作用于"出站"这一跳，数据库中仍保存原文。
+
 ## 2. 同步请求流（以医护登录为例）
 
 ```
@@ -73,8 +78,8 @@ POST /api/chat/stream  {message, conversation_id, selected_dept_id?}
        │    ├─ CheckRules(content)                 规则层安全审查（敏感词 + 注入）
        │    │    └─ 命中危机 → 写 crisis_events + 返回 CRISIS 结果
        │    ├─ llm.IsReady()                       LLM 就绪性预检
-       │    ├─ LLMCheck(content)                   LLM 深度审查（疑似复核）
-       │    ├─ rewriter.Rewrite(query)             查询改写（可选，降级为原始查询）
+       │    ├─ assessor.AssessAndRewrite(...)     统一理解与审查（意图/风险/缺信息/检索改写，结构化 JSON）
+       │    │    └─ 后端按固定优先级分流：危机/急症/拒答/受限/澄清/检索；审查不可用 → 受限兜底
        │    ├─ knowledgeSearcher.Search(ctx, q)    纯向量(pgvector ANN) 检索 + SimilarityThreshold 过滤 + 可选 rerank
        │    ├─ promptProvider.GetSystemPrompt(ctx)  系统提示词（DB 配置 → 硬编码兜底）
        │    ├─ llmClient.Stream(ctx, msgs, chunks) SSE 流式生成

@@ -3,7 +3,7 @@
  */
 
 /** AI 提供商类型 */
-export type AIProviderType = 'llm' | 'embedding' | 'rerank' | 'rewrite';
+export type AIProviderType = 'llm' | 'embedding' | 'rerank';
 
 /** AI 提供商响应（api_key 返回掩码） */
 export interface AIProvider {

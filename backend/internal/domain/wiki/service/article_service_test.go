@@ -73,7 +73,15 @@ func (m *mockArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaff
 }
 func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.UpdateFields) (*entity.Article, error) {
 	m.updateFields = f
-	return m.article, nil
+	// 模拟 DB 更新：应用状态迁移与版本递增，使 service 能按更新后的状态决定后续联动。
+	updated := *m.article
+	if f.Status != nil {
+		updated.Status = *f.Status
+	}
+	if f.IncrementVersion {
+		updated.Version++
+	}
+	return &updated, nil
 }
 func (m *mockArticleRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, _ repository.StatusUpdateOpts) error {
 	return m.updateStatErr
@@ -331,7 +339,10 @@ func TestArticleService_Approve_EnqueueFails_OutboxGuaranteesDelivery(t *testing
 // Update：已发布文章内容变更应事务内写 outbox
 // ============================================================================
 
-func TestArticleService_Update_PublishedContentChange_WritesOutbox(t *testing.T) {
+// TestArticleService_Update_PublishedContentChange_ReturnsToPendingReview 已发布文章的内容修改
+// 必须回到待审核（P1）：不失效原切片、不写 outbox、不触发重新向量化——
+// 审核通过前检索继续服务上一次审核通过的版本，避免未审核内容进入患者可见的知识库。
+func TestArticleService_Update_PublishedContentChange_ReturnsToPendingReview(t *testing.T) {
 	deptID := int64(10)
 	article := &entity.Article{
 		ID:           42,
@@ -345,7 +356,7 @@ func TestArticleService_Update_PublishedContentChange_WritesOutbox(t *testing.T)
 	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
 
 	newContent := "new content"
-	_, err := d.svc.Update(context.Background(), UpdateInput{
+	dto, err := d.svc.Update(context.Background(), UpdateInput{
 		Content:   &newContent,
 		ArticleID: 42,
 		Actor:     actor,
@@ -353,16 +364,26 @@ func TestArticleService_Update_PublishedContentChange_WritesOutbox(t *testing.T)
 	if err != nil {
 		t.Fatalf("Update 返回错误: %v", err)
 	}
-	// 核心断言：已发布文章内容变更应事务内写 outbox。
-	if d.outbox.insertCall != 1 {
-		t.Fatalf("期望 outbox.Insert 调用 1 次，实际 %d", d.outbox.insertCall)
+	// 状态回到待审核，且写入字段里显式带 status=pending。
+	if dto.Status != constants.ArticleStatusPending {
+		t.Errorf("更新后状态 = %q，期望 %q（需重新审核）", dto.Status, constants.ArticleStatusPending)
 	}
-	if d.outbox.insertID != 42 {
-		t.Errorf("期望 outbox.Insert(42)，实际 %d", d.outbox.insertID)
+	if d.repo.updateFields.Status == nil || *d.repo.updateFields.Status != constants.ArticleStatusPending {
+		t.Errorf("期望写入 status=pending，实际 %v", d.repo.updateFields.Status)
 	}
-	// 事务外仍尝试直接 Enqueue。
-	if d.vector.enqueueCnt != 1 {
-		t.Errorf("期望 Enqueue 调用 1 次，实际 %d", d.vector.enqueueCnt)
+	// 审核通过前不得动旧切片、不得重建向量。
+	if d.chunks.deactivateCall != 0 {
+		t.Errorf("待重新审核期间不得失效原切片，实际调用 %d 次", d.chunks.deactivateCall)
+	}
+	if d.outbox.insertCall != 0 {
+		t.Errorf("待重新审核期间不得写 outbox，实际 %d 次", d.outbox.insertCall)
+	}
+	if d.vector.enqueueCnt != 0 {
+		t.Errorf("待重新审核期间不得入队向量化，实际 %d 次", d.vector.enqueueCnt)
+	}
+	// 审计日志须记录真实的 published → pending 迁移。
+	if d.audit.createCnt != 1 {
+		t.Errorf("期望审计写入 1 条，实际 %d", d.audit.createCnt)
 	}
 }
 

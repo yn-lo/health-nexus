@@ -26,6 +26,12 @@ export interface CrisisEventItem {
   /** 处理备注 — 后端 *string */
   handle_note: string | null
   created_at: string
+  /** 接单响应时限 — 后端 *string，未设置时 null */
+  acknowledge_due_at: string | null
+  /** 已升级时间 — 后端 *string，未升级时 null */
+  escalated_at: string | null
+  /** 未处理且已过接单时限（前端据此显示"已超时未处理"标记） */
+  acknowledge_overdue: boolean
 }
 
 /** 危机事件列表查询参数 */

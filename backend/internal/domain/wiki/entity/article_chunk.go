@@ -16,7 +16,11 @@ type ArticleChunk struct {
 	Content     string
 	ContentHash string
 	Embedding   pgvector.Vector
-	IsActive    bool
-	Version     int
-	CreatedAt   time.Time
+	// EmbeddingModel 生成本行向量的模型标识。模型切换后旧切片据此被识别并重建，
+	// 检索侧按模型过滤，避免不同模型的向量混用（P0：模型版本一致性）。
+	// 空串表示未知（历史数据/实现未暴露模型名），检索侧不过滤。
+	EmbeddingModel string
+	IsActive       bool
+	Version        int
+	CreatedAt      time.Time
 }

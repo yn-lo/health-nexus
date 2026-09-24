@@ -56,27 +56,17 @@ type SystemPromptProvider interface {
 	GetSystemPrompt(ctx context.Context) (string, error)
 }
 
-// LLMSafetyChecker 跨域：由 platform/llm 适配器实现。
-// 用于输入侧 LLM 深度审查：规则层未命中时，对疑似风险输入做 LLM 二次确认（REQ-CHAT-007）。
-// 返回结构化分类（constants.SafetyClass*）而非布尔值：自伤风险必须能与普通拒答区分，
-// 否则模型判定的自伤倾向无法触发危机记录与热线流程。
-type LLMSafetyChecker interface {
-	// ClassifyInput 调用 LLM 判定输入安全分类。
-	// 任何错误（LLM 不可用/超时/解析失败）应返回 constants.SafetyClassSafe——fail-open 让流程继续，
-	// 避免 LLM 故障阻断所有问答。
-	ClassifyInput(ctx context.Context, message string) string
-}
+// LLMSafetyChecker 已由统一的 Assessor（见 assessment.go）取代：
+// 关键词门控 + fail-open 的二次审查既覆盖不全（未命中片段的表达会绕过 LLM），
+// 又会在故障时把"无法判断"当成"安全"。原接口与实现已删除。
 
-// InputSafetyFilter 输入侧安全审查：规则层（零延迟）+ LLM 层（疑似复核）。
-// REQ-CHAT-007~011。
+// InputSafetyFilter 输入侧安全审查：规则层（零延迟快筛）。
+// 语义审查与检索改写由 Assessor 每轮统一完成（REQ-CHAT-007 重构），规则层只做高危表达的快速保护。
 // 已废弃：CrisisHotline（合并到 CrisisResponse）/ MedicationDisclaimer（合并到 SafetyWarningMessage）。
 type InputSafetyFilter interface {
 	// CheckRules 规则层审查。返回决策与（命中危机时的）Crisis 上下文。
+	// 命中即拦截（危机 / 注入），零延迟；未命中不代表安全，语义审查由 Assessor 负责。
 	CheckRules(ctx context.Context, message string) (Decision, *Crisis)
-	// LLMCheck LLM 层深度审查。规则层未命中时调用，疑似风险才拒绝（REQ-CHAT-007）。
-	// 返回是否放行 + 命中的分类（constants.SafetyClass*，放行时为 SafetyClassSafe）。
-	// 未注入 LLMSafetyChecker 或 LLM 故障时 fail-open 返回放行。
-	LLMCheck(ctx context.Context, message string) (allow bool, class string)
 	// EmergencyCheck 检测紧急症状关键词命中（不拦截，仅作为推送紧急提示事件的信号）。
 	// 由 Service 在 token 流之前调用，决定是否推送紧急就医提醒（REQ-CHAT-010）。
 	EmergencyCheck(ctx context.Context, message string) []string
@@ -183,19 +173,16 @@ func hasNegationAtPosition(message string, byteOffset int) bool {
 	return false
 }
 
-// DefaultInputSafetyFilter 默认实现：内置关键词 + 内置话术 + 可选 LLM 深度审查。
+// DefaultInputSafetyFilter 默认实现：内置关键词 + 内置话术。
 // 当 provider 非 nil 时优先使用 provider 的关键词（话术始终走内置默认，避免空值）。
-// llmChecker 可为 nil：nil 时 LLMCheck 降级为始终放行（与原阶段 1 行为一致）。
 type DefaultInputSafetyFilter struct {
-	provider   SafetyRuleProvider
-	llmChecker LLMSafetyChecker
+	provider SafetyRuleProvider
 }
 
 // NewDefaultInputSafetyFilter 构造默认输入安全过滤器。
 // provider 可为 nil：nil 时使用内置默认关键词。
-// llmChecker 可为 nil：nil 时 LLMCheck 降级为始终放行（D-HIGH-03 降级策略）。
-func NewDefaultInputSafetyFilter(provider SafetyRuleProvider, llmChecker LLMSafetyChecker) *DefaultInputSafetyFilter {
-	return &DefaultInputSafetyFilter{provider: provider, llmChecker: llmChecker}
+func NewDefaultInputSafetyFilter(provider SafetyRuleProvider) *DefaultInputSafetyFilter {
+	return &DefaultInputSafetyFilter{provider: provider}
 }
 
 // CheckRules 规则层审查。流程：
@@ -231,53 +218,6 @@ func (f *DefaultInputSafetyFilter) CheckRules(ctx context.Context, message strin
 	// 紧急症状仅作信号，不拦截：由 Service 在 done 事件追加 emergency_message。
 	// 这里通过返回 DecisionAllow 让流程继续；Service 可独立调用 EmergencyCheck 获取命中词。
 	return DecisionAllow, nil
-}
-
-// LLMCheck LLM 层深度审查（REQ-CHAT-007）。
-// 仅疑似风险输入才触发 LLM 复核，避免每条消息都过 LLM 增加延迟和成本。
-// 未注入 llmChecker 时降级为放行（与阶段 1 行为一致）。
-// 放行判定与分类一起返回：自伤类风险由上层转危机链路（记录 + 热线），其余按拒答处理。
-// ponytail: fail-open 策略——LLM 故障/超时/解析失败时放行，依赖规则层（CheckRules）兜底，折中；
-// 已知上限——LLM 服务故障时输入全放行，仅规则层关键词拦截生效；
-// 升级路径：在 di 层包装断路器，连续失败时熔断并降级到规则层 + 告警。
-func (f *DefaultInputSafetyFilter) LLMCheck(ctx context.Context, message string) (allow bool, class string) {
-	if f.llmChecker == nil {
-		return true, constants.SafetyClassSafe // 降级：未注入 LLM 时放行（与原行为一致）
-	}
-	// REQ-CHAT-007：规则层未命中时不触发 LLM 审查（仅疑似风险才复核）。
-	if !f.isSuspiciousInput(message) {
-		return true, constants.SafetyClassSafe // 无疑似信号，跳过 LLM，节省延迟和成本
-	}
-	cls := f.llmChecker.ClassifyInput(ctx, message)
-	if cls == "" || cls == constants.SafetyClassSafe {
-		return true, constants.SafetyClassSafe
-	}
-	return false, cls
-}
-
-// suspiciousFragments 部分风险信号片段——规则层完整关键词未命中时，
-// 含这些子串视为"疑似"，触发 LLM 复核。
-// ponytail: 硬编码少量高频片段——覆盖"去死/想死/割腕"（自杀类）、"忽略/忘记/指令"（注入类）、
-// "过量/毒"（医疗风险类），命中率与误触率的折中；
-// 单字"死"已替换为更具体的"去死""想死"，避免"困死了""笑死"等正常口语误触 LLM 调用；
-// 上限——片段仍可能在少数正常语境中误触，但 LLM 会判定为安全并放行，代价仅是一次额外 LLM 调用；
-// 升级路径：阶段 2 由 config 域 SafetyRuleProvider 注入可配置片段列表，或引入轻量分类模型替代。
-var suspiciousFragments = []string{
-	"去死", "想死", "割腕", // 自杀/自残类部分信号（避免单字"死"误触）
-	"忽略", "忘记", "指令", // Prompt 注入类部分信号
-	"过量", "毒", // 医疗风险类部分信号
-}
-
-// isSuspiciousInput 检查消息是否含部分风险信号（未触发规则层完整匹配但值得 LLM 复核）。
-// 归一化后匹配，与 matchAny 同路，避免"忽 略"等插入字符绕过疑似检测。
-func (f *DefaultInputSafetyFilter) isSuspiciousInput(message string) bool {
-	norm := normalizeForMatch(message)
-	for _, frag := range suspiciousFragments {
-		if strings.Contains(norm, frag) {
-			return true
-		}
-	}
-	return false
 }
 
 // EmergencyCheck 检查是否命中紧急症状关键词。返回命中的关键词切片。

@@ -16,7 +16,7 @@ const pingTimeout = 10 * time.Second
 // Ping 按 providerType 调用一次最小请求验证连通性（方案 C：每个 provider 都可测试）。
 // 用于 POST /api/staff/config/ai-providers/{id}/test 端点。
 // 每种类型走与实际业务调用相同的路径，确保"所见即所得"：
-//   - LLM/Rewrite → chat completion（与 StreamChat/ToStandaloneQuestion 同端点）
+//   - LLM → chat completion（与 StreamChat 同端点）
 //   - Rerank → /v1/rerank（与 Rerank() 同端点）
 //   - Embedding → embeddings（与 Embed() 同端点）
 func (c *Client) Ping(ctx context.Context, providerType string) error {
@@ -27,7 +27,7 @@ func (c *Client) Ping(ctx context.Context, providerType string) error {
 	defer cancel()
 
 	switch providerType {
-	case constants.ProviderTypeLLM, constants.ProviderTypeRewrite:
+	case constants.ProviderTypeLLM:
 		return c.pingChat(ctx, providerType)
 	case constants.ProviderTypeRerank:
 		return c.pingRerank(ctx)
@@ -38,12 +38,9 @@ func (c *Client) Ping(ctx context.Context, providerType string) error {
 	}
 }
 
-// pingChat 用 chat completion 验证连通。chat/rewrite 走此路径。
+// pingChat 用 chat completion 验证连通。
 func (c *Client) pingChat(ctx context.Context, providerType string) error {
 	model := c.cfg.ChatModel
-	if providerType == constants.ProviderTypeRewrite {
-		model = c.cfg.RewriteModel
-	}
 	if model == "" {
 		return fmt.Errorf("ping: model not configured for provider_type %q", providerType)
 	}

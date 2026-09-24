@@ -27,6 +27,10 @@ type CrisisEventResponse struct {
 	HandledAt        *string  `json:"handled_at"`
 	HandleNote       *string  `json:"handle_note"`
 	CreatedAt        string   `json:"created_at"`
+	// 接单响应时限与升级状态（P1 人工闭环）。
+	AcknowledgeDueAt   *string `json:"acknowledge_due_at"`
+	EscalatedAt        *string `json:"escalated_at"`
+	AcknowledgeOverdue bool    `json:"acknowledge_overdue"`
 }
 
 // CrisisHandler 危机事件管理 HTTP 适配器。
@@ -137,6 +141,10 @@ func toCrisisResponse(row *service.CrisisListItem) CrisisEventResponse {
 		Handled:          row.IsHandled,
 		HandleNote:       stringPtrFromEmpty(row.HandleNote),
 		CreatedAt:        row.CreatedAt,
+
+		AcknowledgeDueAt:   row.AcknowledgeDueAt,
+		EscalatedAt:        row.EscalatedAt,
+		AcknowledgeOverdue: row.AcknowledgeOverdue,
 	}
 	if row.HandlerID != nil {
 		s := strconv.FormatInt(*row.HandlerID, 10)

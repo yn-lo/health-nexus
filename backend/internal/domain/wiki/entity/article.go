@@ -29,9 +29,30 @@ type Article struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 
+	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级。
+	// ContentRisk 决定逾期策略与检索可见性：high 的资料有效期更短，
+	// 且"高风险 + 已逾期"不再参与检索（见 search_service / chunk_repo）。
+	Source               string
+	ApplicablePopulation string
+	ValidUntil           *time.Time
+	ContentRisk          string
+
 	// View 字段（JOIN 填充，写操作忽略）
 	DepartmentName string
 	AuthorName     string
+}
+
+// 内容风险等级（articles.content_risk）。
+const (
+	// ContentRiskNormal 普通宣教内容：逾期 180 天后标记待复审。
+	ContentRiskNormal = "normal"
+	// ContentRiskHigh 用药/检查准备/高风险护理内容：逾期 90 天即标记，且逾期后退出检索。
+	ContentRiskHigh = "high"
+)
+
+// IsContentRiskValid 校验内容风险等级取值。
+func IsContentRiskValid(v string) bool {
+	return v == ContentRiskNormal || v == ContentRiskHigh
 }
 
 // 审计动作常量（article_audit_logs.action），避免魔法值。

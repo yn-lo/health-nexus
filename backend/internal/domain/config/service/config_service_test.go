@@ -2139,7 +2139,6 @@ func TestGetConfigStatus(t *testing.T) {
 		repo.items[1] = &entity.AIProvider{ID: 1, ProviderType: constants.ProviderTypeLLM, IsActive: true}
 		repo.items[2] = &entity.AIProvider{ID: 2, ProviderType: constants.ProviderTypeEmbedding, IsActive: true}
 		repo.items[3] = &entity.AIProvider{ID: 3, ProviderType: constants.ProviderTypeRerank, IsActive: true}
-		repo.items[4] = &entity.AIProvider{ID: 4, ProviderType: constants.ProviderTypeRewrite, IsActive: true}
 		svc := newTestServiceWithLLM(repo, config.LLMConfig{})
 
 		status, err := svc.GetConfigStatus(ctxWithOperator())
@@ -2154,9 +2153,6 @@ func TestGetConfigStatus(t *testing.T) {
 		}
 		if !status.Rerank.Configured {
 			t.Error("expected Rerank configured=true")
-		}
-		if !status.Rewrite.Configured {
-			t.Error("expected Rewrite configured=true")
 		}
 	})
 
@@ -2179,9 +2175,6 @@ func TestGetConfigStatus(t *testing.T) {
 		}
 		if status.Rerank.Configured {
 			t.Error("expected Rerank configured=false")
-		}
-		if status.Rewrite.Configured {
-			t.Error("expected Rewrite configured=false")
 		}
 	})
 
@@ -2240,9 +2233,6 @@ func TestGetConfigStatus(t *testing.T) {
 		}
 		if status.Rerank.Configured {
 			t.Error("expected Rerank configured=false")
-		}
-		if status.Rewrite.Configured {
-			t.Error("expected Rewrite configured=false")
 		}
 	})
 

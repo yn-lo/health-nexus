@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
+
+	"health-nexus/internal/shared/mask"
 )
 
 // Message 对话消息，Role 取值："user"|"assistant"|"system"。
@@ -46,7 +48,8 @@ func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan Stream
 	if c.chat == nil {
 		return nil, ErrNotConfigured
 	}
-	stream, err := c.chat.CreateChatCompletionStream(ctx, c.chatRequest(c.cfg.ChatModel, buildChatMessages(req)))
+	stream, err := c.chat.CreateChatCompletionStream(ctx,
+		c.chatRequest(c.cfg.ChatModel, buildChatMessages(sanitizeChatRequest(req))))
 	if err != nil {
 		return nil, err
 	}
@@ -150,22 +153,24 @@ func buildChatMessages(req ChatRequest) []openai.ChatCompletionMessage {
 	return msgs
 }
 
+// sanitizeChatRequest 出站脱敏：剥离患者来源文本（当前问题 + 历史）中的身份标识。
+// 不处理 SystemPrompt（代码常量）与 ContextChunks（院内知识库内容）——两者不含患者身份信息。
+func sanitizeChatRequest(req ChatRequest) ChatRequest {
+	req.UserMessage = mask.SanitizePII(req.UserMessage)
+	if len(req.History) == 0 {
+		return req
+	}
+	history := make([]Message, len(req.History))
+	for i, m := range req.History {
+		m.Content = mask.SanitizePII(m.Content)
+		history[i] = m
+	}
+	req.History = history
+	return req
+}
+
 // chatRequest 构造 ChatCompletionRequest 并注入供应商扩展参数（temperature / top_p / max_tokens / response_format）。
 func (c *Client) chatRequest(model string, messages []openai.ChatCompletionMessage) openai.ChatCompletionRequest {
-	return c.buildChatRequest(model, messages, true)
-}
-
-// chatRequestPlain 与 chatRequest 相同，但剥离 response_format（强制 JSON 输出）。
-// 用于改写与安全审查：这两类调用依赖纯文本输出，JSON 包装会破坏 SAFE/UNSAFE 判定与改写结果解析。
-// 温度等其余参数照常注入（无害）。
-func (c *Client) chatRequestPlain(model string, messages []openai.ChatCompletionMessage) openai.ChatCompletionRequest {
-	return c.buildChatRequest(model, messages, false)
-}
-
-// buildChatRequest 统一构造请求；applyResponseFormat=false 时跳过 response_format 注入。
-func (c *Client) buildChatRequest(
-	model string, messages []openai.ChatCompletionMessage, applyResponseFormat bool,
-) openai.ChatCompletionRequest {
 	r := openai.ChatCompletionRequest{Model: model, Messages: messages}
 	for k, v := range c.params {
 		switch k {
@@ -182,9 +187,6 @@ func (c *Client) buildChatRequest(
 				r.MaxTokens = int(f)
 			}
 		case "response_format":
-			if !applyResponseFormat {
-				continue
-			}
 			if s, ok := v.(string); ok && s == "json_object" {
 				r.ResponseFormat = &openai.ChatCompletionResponseFormat{
 					Type: openai.ChatCompletionResponseFormatTypeJSONObject,

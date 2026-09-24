@@ -63,15 +63,6 @@ func TestSwappableClient_SwapNilStreamErrNotConfigured(t *testing.T) {
 	}
 }
 
-func TestSwappableClient_SwapNilRewriteErrNotConfigured(t *testing.T) {
-	sc := NewSwappableClient(nil)
-
-	_, err := sc.ToStandaloneQuestion(context.Background(), "q", nil)
-	if err != ErrNotConfigured {
-		t.Errorf("ToStandaloneQuestion() err = %v, want ErrNotConfigured", err)
-	}
-}
-
 func TestSwappableClient_SwapNilRerankErrNotConfigured(t *testing.T) {
 	sc := NewSwappableClient(nil)
 
@@ -96,7 +87,6 @@ func TestSwappableClient_ConcurrentSwapAndRead(t *testing.T) {
 			_ = sc.IsReady()
 			_ = sc.ChatModel()
 			_ = sc.EmbeddingModel()
-			_ = sc.RewriteModel()
 		}()
 	}
 	for i := 0; i < swappers; i++ {
@@ -116,16 +106,14 @@ func TestSwappableClient_ConcurrentSwapAndRead(t *testing.T) {
 
 func TestSwappableClients_SwapEachCapability(t *testing.T) {
 	sc := &SwappableClients{
-		Chat:    NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "chat-old"}}),
-		Embed:   NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{EmbeddingModel: "embed-old"}}),
-		Rerank:  NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "rerank-old"}}),
-		Rewrite: NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{RewriteModel: "rewrite-old"}}),
+		Chat:   NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "chat-old"}}),
+		Embed:  NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{EmbeddingModel: "embed-old"}}),
+		Rerank: NewSwappableClient(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "rerank-old"}}),
 	}
 
 	sc.Chat.Swap(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "chat-new"}})
 	sc.Embed.Swap(&Client{chat: nil, cfg: config.LLMConfig{EmbeddingModel: "embed-new"}})
 	sc.Rerank.Swap(&Client{chat: nil, cfg: config.LLMConfig{ChatModel: "rerank-new"}})
-	sc.Rewrite.Swap(&Client{chat: nil, cfg: config.LLMConfig{RewriteModel: "rewrite-new"}})
 
 	if sc.Chat.ChatModel() != "chat-new" {
 		t.Errorf("Chat.ChatModel() = %q, want %q", sc.Chat.ChatModel(), "chat-new")
@@ -136,9 +124,6 @@ func TestSwappableClients_SwapEachCapability(t *testing.T) {
 	if sc.Rerank.ChatModel() != "rerank-new" {
 		t.Errorf("Rerank.ChatModel() = %q, want %q", sc.Rerank.ChatModel(), "rerank-new")
 	}
-	if sc.Rewrite.RewriteModel() != "rewrite-new" {
-		t.Errorf("Rewrite.RewriteModel() = %q, want %q", sc.Rewrite.RewriteModel(), "rewrite-new")
-	}
 }
 
 // --- 编译期断言 ---
@@ -146,8 +131,8 @@ func TestSwappableClients_SwapEachCapability(t *testing.T) {
 func TestSwappableClient_ImplementsInterfaces(t *testing.T) {
 	var _ Streamer = (*SwappableClient)(nil)
 	var _ Embedder = (*SwappableClient)(nil)
-	var _ Rewriter = (*SwappableClient)(nil)
 	var _ Reranker = (*SwappableClient)(nil)
+	var _ JSONCompleter = (*SwappableClient)(nil)
 }
 
 // ensure atomic import is used

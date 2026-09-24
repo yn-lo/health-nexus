@@ -191,33 +191,25 @@ func TestLLM_Rerank(t *testing.T) {
 }
 
 // ============================================================================
-// 查询改写（智谱 GLM-4.7-Flash）— NewRewriteClient + Rewrite 子配置
+// 结构化输出（统一理解与审查所用的 JSON 调用路径）
 // ============================================================================
 
-func TestLLM_Rewrite(t *testing.T) {
+// TestLLM_CompleteJSON 验证 JSON 输出模式的连通性（Assessor/OutputReviewer 依赖此路径）。
+func TestLLM_CompleteJSON(t *testing.T) {
 	apiKey := skipIfNoKey(t, "HEALTH_NEXUS_ZHIPU_API_KEY")
 
-	// 主配置占位（agnes）；Rewrite 子配置指向智谱 glm-4.7-flash。
-	// ChatModel 也设为 glm-4.7-flash 以便 StreamChat 调用正确模型（StreamChat 用 cfg.ChatModel）。
 	cfg := config.LLMConfig{
-		BaseURL:      "https://apihub.agnes-ai.com/v1",
-		APIKey:       "placeholder-main-not-used",
-		ChatModel:    "glm-4.7-flash",
-		RewriteModel: "agnes-2.0-flash",
-		Timeout:      30 * time.Second,
-		Rewrite: config.ProviderConfig{
-			BaseURL: "https://open.bigmodel.cn/api/paas/v4",
-			APIKey:  apiKey,
-			Model:   "glm-4.7-flash",
-			Timeout: 30 * time.Second,
-		},
+		BaseURL:   "https://open.bigmodel.cn/api/paas/v4",
+		APIKey:    apiKey,
+		ChatModel: "glm-4.7-flash",
+		Timeout:   30 * time.Second,
 	}
-	client, err := llm.NewRewriteClient(cfg)
+	client, err := llm.NewClient(cfg)
 	if err != nil {
-		t.Fatalf("创建改写客户端失败: %v", err)
+		t.Fatalf("创建客户端失败: %v", err)
 	}
 	if client == nil {
-		t.Fatal("NewRewriteClient 返回 nil（API key 未解析）")
+		t.Fatal("NewClient 返回 nil（API key 未解析）")
 	}
 
 	// 间隔 2s
@@ -226,31 +218,15 @@ func TestLLM_Rewrite(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 直接用 StreamChat 测试智谱 API 连通性（绕过 ToStandaloneQuestion 的 5s 硬编码超时）。
-	ch, err := client.StreamChat(ctx, llm.ChatRequest{
-		SystemPrompt: "你是一个问题改写助手。把用户追问改写为独立问题，只输出改写结果。",
-		UserMessage:  "那他需要注意什么？\n\n上下文：用户之前问了'什么是高血压？'",
-	})
+	raw, err := client.CompleteJSON(ctx,
+		`只输出一个 JSON 对象：{"ok": true, "note": "字符串"}`, "连通性检查", 30*time.Second)
 	if err != nil {
-		t.Fatalf("智谱 StreamChat 调用失败: %v", err)
+		t.Fatalf("CompleteJSON 调用失败: %v", err)
 	}
-
-	tokens := make([]string, 0)
-	for chunk := range ch {
-		if chunk.Err != nil {
-			t.Fatalf("流式响应错误: %v", chunk.Err)
-		}
-		if chunk.Done {
-			break
-		}
-		tokens = append(tokens, chunk.Token)
+	if !strings.Contains(raw, "{") {
+		t.Fatalf("期望返回 JSON 对象，实际: %s", raw)
 	}
-
-	result := strings.Join(tokens, "")
-	if result == "" {
-		t.Fatal("智谱返回空响应")
-	}
-	t.Logf("智谱改写结果: %s", result)
+	t.Logf("结构化输出: %s", raw)
 }
 
 // ============================================================================

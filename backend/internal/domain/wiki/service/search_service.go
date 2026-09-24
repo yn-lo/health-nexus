@@ -17,7 +17,7 @@ import (
 type ChunkSearcher interface {
 	SearchByVector(
 		ctx context.Context, embedding []float32, topK int, deptIDs []int64,
-		similarityThreshold float64,
+		similarityThreshold float64, embeddingModel string,
 	) ([]repository.ChunkSearchHit, error)
 }
 
@@ -112,7 +112,8 @@ func (s *SearchService) SearchSimilarChunks(ctx context.Context, q rag.SearchQue
 	if q.DeptID != nil {
 		deptIDs = []int64{*q.DeptID}
 	}
-	hits, err := s.chunks.SearchByVector(ctx, queryVec, candidateK, deptIDs, cfg.SimilarityThreshold)
+	hits, err := s.chunks.SearchByVector(
+		ctx, queryVec, candidateK, deptIDs, cfg.SimilarityThreshold, s.embeddingModel())
 	if err != nil {
 		slog.WarnContext(ctx, "wiki: vector search failed, degrading to empty", "err", err)
 		return []rag.Chunk{}, nil
@@ -204,6 +205,14 @@ func (s *SearchService) resolveSearchParams(
 	return cfg, topK, candidateK
 }
 
+// embeddingModel 返回当前查询向量所用模型名；实现未暴露时返回空串（检索侧不做模型过滤）。
+func (s *SearchService) embeddingModel() string {
+	if namer, ok := s.embed.(llm.EmbeddingModelNamer); ok {
+		return namer.EmbeddingModel()
+	}
+	return ""
+}
+
 // embedQueryVec 生成查询向量。失败时向上返回 error，由调用方决定是否降级。
 // Embedding 是唯一不可降级的关键依赖：API 返回空结果同样视为失败（严禁静默降级）。
 func (s *SearchService) embedQueryVec(ctx context.Context, query string) ([]float32, error) {
@@ -273,10 +282,13 @@ func (s *SearchService) applyRerank(
 		}
 		out = append(out, hits[r.Index])
 	}
+	// 全部候选都低于重排阈值：视为证据不足，返回空结果让上层真正退出生成。
+	// 不得回退保留向量排序第一条——那等于"重排器认为证据不足时仍继续作答"，
+	// 会让缺少依据的结论进入答案（宁可不答也不给无据回答）。
 	if len(out) == 0 && len(hits) > 0 {
-		slog.WarnContext(ctx, "wiki: rerank filtered all candidates below threshold, keeping top-1",
+		slog.WarnContext(ctx, "wiki: rerank filtered all candidates below threshold, abort generation",
 			"threshold", threshold, "candidates", len(hits))
-		return hits[:1]
+		return nil
 	}
 	return truncateHits(out, topK)
 }

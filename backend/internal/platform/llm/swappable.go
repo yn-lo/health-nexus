@@ -8,7 +8,7 @@ import (
 
 // SwappableClient 可热切换的 LLM 客户端包装器。
 // 内部持有 atomic.Pointer[Client]，支持运行时原子替换（配置变更后无需重启）。
-// 实现 Streamer / Embedder / Rewriter / Reranker 四个接口，委托给当前持有的 Client。
+// 实现 Streamer / Embedder / Reranker / JSONCompleter 接口，委托给当前持有的 Client。
 // Swap(nil) 表示该能力未配置，所有方法返回 ErrNotConfigured。
 type SwappableClient struct {
 	ptr atomic.Pointer[Client]
@@ -39,7 +39,7 @@ func (sc *SwappableClient) Swap(client *Client) {
 }
 
 // Load 返回当前客户端，可能为 nil。
-// 导出供 DI 层构建 LLMSafetyChecker（需要 *Client 而非接口）。
+// 导出供 DI 层按需取 *Client（而非接口）。
 func (sc *SwappableClient) Load() *Client {
 	return sc.ptr.Load()
 }
@@ -66,14 +66,6 @@ func (sc *SwappableClient) EmbeddingModel() string {
 	return ""
 }
 
-// RewriteModel 返回改写用小模型名。
-func (sc *SwappableClient) RewriteModel() string {
-	if c := sc.Load(); c != nil {
-		return c.RewriteModel()
-	}
-	return ""
-}
-
 // StreamChat 委托给当前客户端。未配置时返回 ErrNotConfigured。
 func (sc *SwappableClient) StreamChat(
 	ctx context.Context, req ChatRequest,
@@ -94,16 +86,6 @@ func (sc *SwappableClient) Embed(
 	return nil, ErrNotConfigured
 }
 
-// ToStandaloneQuestion 委托给当前客户端。未配置时返回 ErrNotConfigured。
-func (sc *SwappableClient) ToStandaloneQuestion(
-	ctx context.Context, userQuery string, history []Message,
-) (string, error) {
-	if c := sc.Load(); c != nil {
-		return c.ToStandaloneQuestion(ctx, userQuery, history)
-	}
-	return "", ErrNotConfigured
-}
-
 // Rerank 委托给当前客户端。未配置时返回 ErrNotConfigured。
 func (sc *SwappableClient) Rerank(
 	ctx context.Context, query string, documents []string, topK int,
@@ -114,19 +96,18 @@ func (sc *SwappableClient) Rerank(
 	return nil, ErrNotConfigured
 }
 
-// SwappableClients 4 个能力的可热切换客户端集合。
+// SwappableClients 3 个能力的可热切换客户端集合。
 // 每个字段是 *SwappableClient，通过 Swap 原子替换底层 *Client。
 type SwappableClients struct {
-	Chat    *SwappableClient
-	Embed   *SwappableClient
-	Rerank  *SwappableClient
-	Rewrite *SwappableClient
+	Chat   *SwappableClient
+	Embed  *SwappableClient
+	Rerank *SwappableClient
 }
 
 // 编译期断言：SwappableClient 实现全部对外接口。
 var (
-	_ Streamer = (*SwappableClient)(nil)
-	_ Embedder = (*SwappableClient)(nil)
-	_ Rewriter = (*SwappableClient)(nil)
-	_ Reranker = (*SwappableClient)(nil)
+	_ Streamer      = (*SwappableClient)(nil)
+	_ Embedder      = (*SwappableClient)(nil)
+	_ Reranker      = (*SwappableClient)(nil)
+	_ JSONCompleter = (*SwappableClient)(nil)
 )

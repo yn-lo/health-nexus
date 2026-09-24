@@ -26,12 +26,17 @@ type mockChunkSearcher struct {
 	lastVecTopK      int
 	lastVecDepts     []int64
 	lastVecThreshold float64
+	lastVecModel     string
 }
 
-func (m *mockChunkSearcher) SearchByVector(_ context.Context, _ []float32, topK int, deptIDs []int64, similarityThreshold float64) ([]repository.ChunkSearchHit, error) {
+func (m *mockChunkSearcher) SearchByVector(
+	_ context.Context, _ []float32, topK int, deptIDs []int64,
+	similarityThreshold float64, embeddingModel string,
+) ([]repository.ChunkSearchHit, error) {
 	m.lastVecTopK = topK
 	m.lastVecDepts = deptsCopy(deptIDs)
 	m.lastVecThreshold = similarityThreshold
+	m.lastVecModel = embeddingModel
 	if m.vecErr != nil {
 		return nil, m.vecErr
 	}
@@ -257,6 +262,19 @@ func TestApplyRerank(t *testing.T) {
 		// 期望顺序：hits[0] (Score=0.9), hits[2] (Score=0.7)
 		if got[0].ID != 1 || got[1].ID != 3 {
 			t.Errorf("期望 IDs 1,3，实际 %d,%d", got[0].ID, got[1].ID)
+		}
+	})
+
+	t.Run("全部低于重排阈值_返回空而不保留第一条", func(t *testing.T) {
+		// 重排器认为全部候选证据不足时，必须真正退出生成（返回空），
+		// 不得回退保留向量排序第一条——那等于"证据不足仍继续作答"。
+		svc := &SearchService{rerank: &mockReranker{results: []llm.RerankResult{
+			{Index: 0, Score: 0.3},
+			{Index: 1, Score: 0.2},
+		}}}
+		got := svc.applyRerank(context.Background(), "query", makeHits()[:2], 3, 0.6)
+		if len(got) != 0 {
+			t.Fatalf("期望空结果（证据不足应退出生成），实际 %d 条", len(got))
 		}
 	})
 }

@@ -14,14 +14,13 @@ import (
 	"health-nexus/internal/shared/constants"
 )
 
-// BuildSwappableClients 构造 4 个 SwappableClient（初始均未配置）。
+// BuildSwappableClients 构造 3 个 SwappableClient（初始均未配置）。
 // 启动时先调用此函数创建容器，再调用 ReloadAndSwap 从 DB 加载并 Swap。
 func BuildSwappableClients() *llm.SwappableClients {
 	return &llm.SwappableClients{
-		Chat:    llm.NewSwappableClient(nil),
-		Embed:   llm.NewSwappableClient(nil),
-		Rerank:  llm.NewSwappableClient(nil),
-		Rewrite: llm.NewSwappableClient(nil),
+		Chat:   llm.NewSwappableClient(nil),
+		Embed:  llm.NewSwappableClient(nil),
+		Rerank: llm.NewSwappableClient(nil),
 	}
 }
 
@@ -77,26 +76,10 @@ func ReloadAndSwap(
 	}
 	sc.Rerank.Swap(rerank)
 
-	// Rewrite 降级策略：无专用 rewrite provider 时复用 chat client（rewrite 本质是轻量 LLM 调用，
-	// 无需独立 API Key/Endpoint；rewrite.go 内部 RewriteModel 为空时自动回退 ChatModel）。
-	var rewrite *llm.Client
-	if _, hasRewrite := byType[constants.ProviderTypeRewrite]; hasRewrite {
-		if rewrite, err = buildClientWithFallback(
-			byType, constants.ProviderTypeRewrite, aesKey, fallback, llm.NewRewriteClient, "rewrite",
-		); err != nil {
-			return err
-		}
-	} else {
-		rewrite = chat
-		slog.Info("llm: no dedicated rewrite provider, reusing chat client")
-	}
-	sc.Rewrite.Swap(rewrite)
-
 	slog.Info("llm: hot-reload completed",
 		"chat_ready", chat != nil && chat.IsReady(),
 		"embed_ready", embed != nil && embed.IsReady(),
 		"rerank_ready", rerank != nil && rerank.IsReady(),
-		"rewrite_ready", rewrite != nil && rewrite.IsReady(),
 	)
 	return nil
 }

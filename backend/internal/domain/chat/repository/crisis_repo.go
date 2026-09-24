@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"health-nexus/internal/domain/chat/entity"
 	"health-nexus/internal/platform/postgres"
+	"health-nexus/internal/shared/constants"
 )
 
 // ErrNotFound 危机事件未找到。与 wiki repo 模式一致，service 层用 errors.Is 判断（D-MED-05 修复）。
@@ -40,18 +42,40 @@ func NewCrisisRepo(pool *pgxpool.Pool) *CrisisRepo {
 }
 
 // Create 创建危机事件，返回新记录 ID。
+// P1：同一事务内写入 crisis_outbox 记录（与事件创建原子），由 relay 周期扫描补投通知任务；
+// 同时按级别设置接单响应时限（high 15 分钟 / 其余 60 分钟），超时未处理会被升级。
 func (r *CrisisRepo) Create(ctx context.Context, e *entity.CrisisEvent) (int64, error) {
 	const sql = `INSERT INTO crisis_events
-	             (patient_id, conversation_id, message_id, triggered_content, matched_keywords, level)
-	             VALUES ($1, $2, $3, $4, $5, $6)
+	             (patient_id, conversation_id, message_id, triggered_content,
+	              matched_keywords, level, acknowledge_due_at)
+	             VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(mins => $7::int))
 	             RETURNING id`
 	var id int64
 	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql,
-		e.PatientID, e.ConversationID, e.MessageID, e.TriggeredContent, e.MatchedKeywords, e.Level)
+		e.PatientID, e.ConversationID, e.MessageID, e.TriggeredContent, e.MatchedKeywords, e.Level,
+		acknowledgeMinutes(e.Level))
 	if err := row.Scan(&id); err != nil {
 		return 0, fmt.Errorf("create crisis event: %w", err)
 	}
+	if _, err := postgres.Q(ctx, r.pool).Exec(ctx,
+		`INSERT INTO crisis_outbox (event_id) VALUES ($1)`, id); err != nil {
+		return 0, fmt.Errorf("insert crisis outbox: %w", err)
+	}
 	return id, nil
+}
+
+// 接单响应时限（分钟）：高危 15 分钟，其余 60 分钟。
+const (
+	ackMinutesHigh   = 15
+	ackMinutesNormal = 60
+)
+
+// acknowledgeMinutes 按危机级别返回接单响应时限（分钟）。
+func acknowledgeMinutes(level string) int {
+	if level == constants.CrisisLevelHigh {
+		return ackMinutesHigh
+	}
+	return ackMinutesNormal
 }
 
 // GetByID 按 ID 取危机事件；不存在返回 (nil, ErrNotFound)（D-MED-05 修复，对齐 wiki repo 哨兵错误模式）。
@@ -117,6 +141,7 @@ func (r *CrisisRepo) List(
 		`SELECT c.id, c.patient_id, c.conversation_id, c.message_id,
 		        c.triggered_content, c.matched_keywords, c.level,
 		        c.is_handled, c.handler_id, c.handled_at, c.handle_note, c.created_at,
+		        c.acknowledge_due_at, c.escalated_at,
 		        u.username AS patient_name
 		 FROM crisis_events c
 		 LEFT JOIN users u ON u.id = c.patient_id
@@ -139,6 +164,7 @@ func (r *CrisisRepo) List(
 			&row.Level, &row.IsHandled,
 			&row.HandlerID, &row.HandledAt,
 			&row.HandleNote, &row.CreatedAt,
+			&row.AcknowledgeDueAt, &row.EscalatedAt,
 			&row.PatientName,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan crisis event: %w", err)
@@ -155,6 +181,53 @@ func (r *CrisisRepo) MarkHandled(ctx context.Context, id, handlerID int64, note 
 	tag, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, id, handlerID, note)
 	if err != nil {
 		return false, fmt.Errorf("mark crisis handled: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// OverdueCrisis 超时未处理的危机事件（升级扫描用）。
+type OverdueCrisis struct {
+	ID             int64
+	Level          string
+	LockedDeptID   int64 // 0 表示会话未锁定科室
+	AcknowledgeDue time.Time
+}
+
+// ListOverdueUnhandled 列出已过接单时限、仍未处理且未升级的危机事件（按时限升序，限制条数）。
+// 供 worker 定时升级扫描使用：超时未接单意味着"通知发出但无人承接"。
+func (r *CrisisRepo) ListOverdueUnhandled(ctx context.Context, limit int) ([]OverdueCrisis, error) {
+	const sql = `SELECT c.id, c.level, COALESCE(conv.locked_dept_id, 0), c.acknowledge_due_at
+	             FROM crisis_events c
+	             LEFT JOIN conversations conv ON conv.id = c.conversation_id
+	             WHERE c.is_handled = FALSE
+	               AND c.escalated_at IS NULL
+	               AND c.acknowledge_due_at IS NOT NULL
+	               AND c.acknowledge_due_at < now()
+	             ORDER BY c.acknowledge_due_at ASC
+	             LIMIT $1`
+	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list overdue crisis events: %w", err)
+	}
+	defer rows.Close()
+	out := make([]OverdueCrisis, 0)
+	for rows.Next() {
+		var o OverdueCrisis
+		if err := rows.Scan(&o.ID, &o.Level, &o.LockedDeptID, &o.AcknowledgeDue); err != nil {
+			return nil, fmt.Errorf("scan overdue crisis event: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// MarkEscalated 标记事件已升级（幂等：仅未升级记录会被更新），返回是否本次完成升级。
+func (r *CrisisRepo) MarkEscalated(ctx context.Context, id int64) (bool, error) {
+	const sql = `UPDATE crisis_events SET escalated_at = now()
+	             WHERE id = $1 AND escalated_at IS NULL AND is_handled = FALSE`
+	tag, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, id)
+	if err != nil {
+		return false, fmt.Errorf("mark crisis escalated: %w", err)
 	}
 	return tag.RowsAffected() > 0, nil
 }

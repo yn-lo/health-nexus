@@ -21,9 +21,11 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-// articleFetcher 暴露 handler 所需的 article 读取能力（便于测试 mock）。
+// articleFetcher 暴露 handler 所需的 article 读取与行锁版本读取能力（便于测试 mock）。
 type articleFetcher interface {
 	GetByID(ctx context.Context, id int64) (*entity.Article, error)
+	// LockVersion 事务内锁定文章行并返回当前版本（FOR UPDATE），见 ArticleRepo.LockVersion。
+	LockVersion(ctx context.Context, id int64) (int, error)
 }
 
 // chunkWriter 暴露 handler 所需的 chunk 写入能力（便于测试 mock）。
@@ -33,23 +35,31 @@ type chunkWriter interface {
 	Create(ctx context.Context, c *entity.ArticleChunk) error
 }
 
+// TxRunner 事务执行能力（消费者定义，ISP）。*postgres.TxManager 实现此接口。
+type TxRunner interface {
+	WithTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 // VectorizeHandler 处理 asynq TaskVectorizeArticle 任务（REQ-WIKI-012）。
-// 流程：解析 articleID → 取已发布文章 → 读 RAG 配置切片参数 → 切片 → embedding → 失效旧切片 → 写入新切片。
+// 流程：解析 articleID → 取已发布文章 → 读 RAG 配置切片参数 → 切片 → embedding
+// → 事务内锁定文章复核版本 → 原子替换切片（失效旧 + 删除 + 写入新）。
 type VectorizeHandler struct {
 	articles articleFetcher
 	chunks   chunkWriter
 	embed    llm.Embedder
 	cfg      wikiservice.RAGConfigProvider
+	tx       TxRunner // nil 时退化为无事务写入（仅测试兼容；生产必须注入）
 }
 
 // NewVectorizeHandler 构造向量化 handler。
 // 接受 *repository.ArticleRepo / *repository.ChunkRepo 具体类型（均满足上述接口）。
 // cfg 注入 RAG 配置提供者以动态读取 chunk_size/chunk_overlap；可为 nil（回退 constants 默认值）。
+// tx 注入事务管理器，用于切片的原子替换与版本校验。
 func NewVectorizeHandler(
 	articles *repository.ArticleRepo, chunks *repository.ChunkRepo,
-	embed llm.Embedder, cfg wikiservice.RAGConfigProvider,
+	embed llm.Embedder, cfg wikiservice.RAGConfigProvider, tx TxRunner,
 ) *VectorizeHandler {
-	return &VectorizeHandler{articles: articles, chunks: chunks, embed: embed, cfg: cfg}
+	return &VectorizeHandler{articles: articles, chunks: chunks, embed: embed, cfg: cfg, tx: tx}
 }
 
 // resolveChunkConfig 解析切片参数：优先用 RAG 配置，失败或未注入时回退 constants 默认值。
@@ -125,6 +135,43 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 			id, len(embeddings), len(chunkTexts))
 	}
 
+	// 事务内原子替换切片：锁定文章行复核版本 → 失效旧切片 → 删除已失效 → 写入新切片。
+	// embedding 是长耗时操作，期间文章可能已被再次更新（新任务已入队）。若不复核就直接写入，
+	// 后完成的旧任务会把新版本切片失效并删除，造成旧内容覆盖新版本（P0 向量版本一致性）。
+	swap := func(ctx context.Context) error {
+		if h.tx == nil {
+			// 未注入事务管理器（单测）时不具备行锁，仍执行版本复核。
+			return h.swapChunks(ctx, id, article.Version, chunkTexts, embeddings)
+		}
+		return h.tx.WithTx(ctx, func(ctx context.Context) error {
+			return h.swapChunks(ctx, id, article.Version, chunkTexts, embeddings)
+		})
+	}
+	if err := swap(ctx); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "wiki: vectorize article done",
+		"article_id", id, "chunks", len(chunkTexts), "version", article.Version)
+	return nil
+}
+
+// swapChunks 在调用方事务内完成版本复核 + 切片原子替换。
+// 版本已变化（embedding 期间文章被更新）时放弃本次写入：新版本自有其入队任务负责重建，
+// 本任务返回 SkipRetry 避免重复覆盖（重试也仍会被版本复核拦下）。
+func (h *VectorizeHandler) swapChunks(
+	ctx context.Context, id int64, version int, chunkTexts []string, embeddings [][]float32,
+) error {
+	cur, err := h.articles.LockVersion(ctx, id)
+	if err != nil {
+		return fmt.Errorf("lock article %d version: %w", id, err)
+	}
+	if cur != version {
+		slog.WarnContext(ctx, "wiki: article version changed during embedding, discard stale chunks",
+			"article_id", id, "embedded_version", version, "current_version", cur)
+		return fmt.Errorf("article %d version changed %d -> %d during embedding: %w",
+			id, version, cur, asynqlib.SkipRetry)
+	}
 	// 先失效旧切片再写入新切片（与 Update 路径协同：Update 已先 DeactivateByArticle，
 	// 这里二次调用幂等；Approve 路径首次写入时无旧切片，RowsAffected=0）。
 	if _, err := h.chunks.DeactivateByArticle(ctx, id); err != nil {
@@ -134,24 +181,32 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	if _, err := h.chunks.DeleteInactiveByArticle(ctx, id); err != nil {
 		return fmt.Errorf("delete inactive chunks for article %d: %w", id, err)
 	}
+	// 记录向量所属模型：模型切换后据此识别需重建的切片（检索侧按模型过滤，避免新旧向量混用）。
+	model := h.embeddingModel()
 	for i, text := range chunkTexts {
 		chunk := &entity.ArticleChunk{
-			ArticleID:   id,
-			ChunkIndex:  i,
-			Content:     text,
-			ContentHash: contenthash.SHA256(text),
-			Embedding:   pgvector.NewVector(embeddings[i]),
-			IsActive:    true,
-			Version:     article.Version,
+			ArticleID:      id,
+			ChunkIndex:     i,
+			Content:        text,
+			ContentHash:    contenthash.SHA256(text),
+			Embedding:      pgvector.NewVector(embeddings[i]),
+			EmbeddingModel: model,
+			IsActive:       true,
+			Version:        version,
 		}
 		if err := h.chunks.Create(ctx, chunk); err != nil {
 			return fmt.Errorf("create chunk[%d] for article %d: %w", i, id, err)
 		}
 	}
-
-	slog.InfoContext(ctx, "wiki: vectorize article done",
-		"article_id", id, "chunks", len(chunkTexts), "version", article.Version)
 	return nil
+}
+
+// embeddingModel 返回当前生效的向量模型名；实现未暴露时返回空串（视为未知，检索侧不过滤）。
+func (h *VectorizeHandler) embeddingModel() string {
+	if p, ok := h.embed.(llm.EmbeddingModelNamer); ok {
+		return p.EmbeddingModel()
+	}
+	return ""
 }
 
 // reHTMLBlockTags 匹配块级标签（含 <br>），转纯文本时替换为空格以保留语义边界，

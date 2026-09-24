@@ -204,7 +204,7 @@ func (s *ConfigService) GetConfigStatus(ctx context.Context) (*ConfigStatusRespo
 		return nil, fmt.Errorf("list active ai_providers: %w", err)
 	}
 
-	byType := make(map[string]bool, 4)
+	byType := make(map[string]bool, 3)
 	for _, p := range all {
 		byType[p.ProviderType] = true
 	}
@@ -219,9 +219,6 @@ func (s *ConfigService) GetConfigStatus(ctx context.Context) (*ConfigStatusRespo
 		Rerank: s.resolveProviderStatus(
 			byType, constants.ProviderTypeRerank, s.hasYAMLRerankKey(), msgRerank,
 		),
-		Rewrite: s.resolveProviderStatus(
-			byType, constants.ProviderTypeRewrite, s.hasYAMLRewriteKey(), msgRewrite,
-		),
 	}, nil
 }
 
@@ -230,7 +227,6 @@ const (
 	msgLLM       = "主聊天模型未配置，请在管理后台添加 LLM 提供商"
 	msgEmbedding = "向量模型未配置，检索和向量化功能不可用"
 	msgRerank    = "重排模型未配置，检索质量会下降"
-	msgRewrite   = "查询改写模型未配置，将回退到主聊天模型"
 )
 
 func (s *ConfigService) resolveProviderStatus(
@@ -266,12 +262,4 @@ func (s *ConfigService) hasYAMLRerankKey() bool {
 		return true
 	}
 	return false
-}
-
-// hasYAMLRewriteKey 判断 config.yaml 中 rewrite 配置是否可用（含回退到主 api_key）。
-func (s *ConfigService) hasYAMLRewriteKey() bool {
-	if s.llmCfg.Rewrite.APIKey != "" {
-		return true
-	}
-	return s.llmCfg.APIKey != ""
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,7 @@ var ErrVersionConflict = errors.New("article version conflict")
 const articleColumns = `id, title, content, summary, cover_image_url, status, version,
 	content_hash, author_id, department_id, reviewer_id, review_comment, view_count, featured_rank,
 	is_deleted, allow_reference, review_overdue, review_overdue_at, published_at,
+	source, applicable_population, valid_until, content_risk,
 	created_at, updated_at`
 
 // ArticleRepo 文章仓储。
@@ -44,13 +46,15 @@ func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 	const sql = `WITH ins AS (
 		INSERT INTO articles
 		(title, content, summary, cover_image_url, status, version, content_hash,
-		 author_id, department_id, allow_reference)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 author_id, department_id, allow_reference,
+		 source, applicable_population, valid_until, content_risk)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING ` + articleColumns + `
 	)
 	SELECT i.id, i.title, i.content, i.summary, i.cover_image_url, i.status, i.version,
 		i.content_hash, i.author_id, i.department_id, i.reviewer_id, i.review_comment, i.view_count, i.featured_rank,
 		i.is_deleted, i.allow_reference, i.review_overdue, i.review_overdue_at, i.published_at,
+		i.source, i.applicable_population, i.valid_until, i.content_risk,
 		i.created_at, i.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM ins i
@@ -59,10 +63,12 @@ func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 	return postgres.Q(ctx, r.pool).QueryRow(ctx, sql,
 		a.Title, a.Content, a.Summary, a.CoverImageURL, a.Status, a.Version, a.ContentHash,
 		a.AuthorID, a.DepartmentID, a.AllowReference,
+		a.Source, a.ApplicablePopulation, a.ValidUntil, contentRiskOrDefault(a.ContentRisk),
 	).Scan(
 		&a.ID, &a.Title, &a.Content, &a.Summary, &a.CoverImageURL, &a.Status, &a.Version,
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
+		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)
@@ -82,6 +88,23 @@ func (r *ArticleRepo) GetByID(ctx context.Context, id int64) (*entity.Article, e
 	return a, nil
 }
 
+// LockVersion 事务内锁定文章行（FOR UPDATE）并返回当前版本。
+// 供向量化 Worker 在写入切片前复核版本：并发发布/更新会在锁上排队，
+// 保证同文章的"读版本 → 写切片"串行化，防止旧任务覆盖新版本切片。
+// 必须在调用方事务内执行（postgres.Q 取 ctx 事务）；未找到返回 ErrNotFound。
+func (r *ArticleRepo) LockVersion(ctx context.Context, id int64) (int, error) {
+	const sql = `SELECT version FROM articles WHERE id = $1 AND is_deleted = false FOR UPDATE`
+	var v int
+	err := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("lock article version: %w", err)
+	}
+	return v, nil
+}
+
 // GetPublishedByID 取已发布文章详情（含 department_name/author_name JOIN）。
 // 原子 +1 阅读量（CTE UPDATE+JOIN）；契约 §4.2 规定每次访问 +1，未定义去重。
 // 未找到（不存在/未发布/已删除）返回 (nil, ErrNotFound)。
@@ -94,6 +117,7 @@ func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.A
 	SELECT b.id, b.title, b.content, b.summary, b.cover_image_url, b.status, b.version,
 		b.content_hash, b.author_id, b.department_id, b.reviewer_id, b.review_comment, b.view_count, b.featured_rank,
 		b.is_deleted, b.allow_reference, b.review_overdue, b.review_overdue_at, b.published_at,
+		b.source, b.applicable_population, b.valid_until, b.content_risk,
 		b.created_at, b.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM bumped b
@@ -151,14 +175,15 @@ func (r *ArticleRepo) ListPublished(
 	listSQL := fmt.Sprintf(`SELECT a.id, a.title, '' AS content, a.summary, a.cover_image_url, a.status, a.version,
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
+		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
-		FROM articles a
-		LEFT JOIN departments d ON d.id = a.department_id
-		LEFT JOIN users u ON u.id = a.author_id
-		WHERE %s
-		ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+	FROM articles a
+	LEFT JOIN departments d ON d.id = a.department_id
+	LEFT JOIN users u ON u.id = a.author_id
+	WHERE %s
+	ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
+	LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list published articles: %w", err)
@@ -187,13 +212,14 @@ func (r *ArticleRepo) ListFeatured(ctx context.Context, departmentID *int64, lim
 	listSQL := fmt.Sprintf(`SELECT a.id, a.title, '' AS content, a.summary, a.cover_image_url, a.status, a.version,
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
+		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
-		FROM articles a
-		LEFT JOIN departments d ON d.id = a.department_id
-		LEFT JOIN users u ON u.id = a.author_id
-		WHERE %s
-		ORDER BY CASE WHEN a.featured_rank > 0 THEN 0 ELSE 1 END,
+	FROM articles a
+	LEFT JOIN departments d ON d.id = a.department_id
+	LEFT JOIN users u ON u.id = a.author_id
+	WHERE %s
+	ORDER BY CASE WHEN a.featured_rank > 0 THEN 0 ELSE 1 END,
 			a.featured_rank ASC, a.view_count DESC, a.published_at DESC NULLS LAST
 		LIMIT $%d`, where, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
@@ -248,14 +274,15 @@ func (r *ArticleRepo) ListForStaff(
 	listSQL := fmt.Sprintf(`SELECT a.id, a.title, '' AS content, a.summary, a.cover_image_url, a.status, a.version,
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
+		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
-		FROM articles a
-		LEFT JOIN departments d ON d.id = a.department_id
-		LEFT JOIN users u ON u.id = a.author_id
-		WHERE %s
-		ORDER BY a.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+	FROM articles a
+	LEFT JOIN departments d ON d.id = a.department_id
+	LEFT JOIN users u ON u.id = a.author_id
+	WHERE %s
+	ORDER BY a.created_at DESC
+	LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list staff articles: %w", err)
@@ -277,42 +304,17 @@ func (r *ArticleRepo) ListForStaff(
 // contentChanged=true 时同步写入新的 content_hash，并视情况递增 version（已发布时）。
 // 返回更新后的实体（含 department_name/author_name JOIN）；不存在返回 ErrNotFound。
 func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateFields) (*entity.Article, error) {
-	sets := []string{"updated_at = now()"}
-	args := []any{}
-	addArg := func(v any, col string) {
-		args = append(args, v)
-		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
-	}
-	if fields.Title != nil {
-		addArg(*fields.Title, "title")
-	}
-	if fields.Content != nil {
-		addArg(*fields.Content, "content")
-	}
-	if fields.Summary != nil {
-		addArg(*fields.Summary, "summary")
-	}
-	if fields.CoverImageURL != nil {
-		addArg(*fields.CoverImageURL, "cover_image_url")
-	}
-	if fields.AllowReference != nil {
-		addArg(*fields.AllowReference, "allow_reference")
-	}
-	if fields.ContentHash != nil {
-		addArg(*fields.ContentHash, "content_hash")
-	}
-	if fields.IncrementVersion {
-		sets = append(sets, "version = version + 1")
-	}
+	b := &updateBuilder{sets: []string{"updated_at = now()"}}
+	b.applyUpdateFields(fields)
 
 	// 乐观锁：传入 ExpectedVersion 时追加 version 守卫，防止并发编辑互相覆盖（丢失更新）。
 	versionClause := ""
 	if fields.ExpectedVersion != nil {
-		args = append(args, *fields.ExpectedVersion)
-		versionClause = fmt.Sprintf(" AND version = $%d", len(args))
+		b.args = append(b.args, *fields.ExpectedVersion)
+		versionClause = fmt.Sprintf(" AND version = $%d", len(b.args))
 	}
 
-	args = append(args, id)
+	b.args = append(b.args, id)
 	sql := fmt.Sprintf(`WITH updated AS (
 		UPDATE articles SET %s WHERE id = $%d AND is_deleted = false%s
 		RETURNING `+articleColumns+`
@@ -320,12 +322,13 @@ func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateF
 	SELECT u.id, u.title, u.content, u.summary, u.cover_image_url, u.status, u.version,
 		u.content_hash, u.author_id, u.department_id, u.reviewer_id, u.review_comment, u.view_count, u.featured_rank,
 		u.is_deleted, u.allow_reference, u.review_overdue, u.review_overdue_at, u.published_at,
+		u.source, u.applicable_population, u.valid_until, u.content_risk,
 		u.created_at, u.updated_at,
 		COALESCE(d.name, ''), COALESCE(u2.username, '')
 	FROM updated u
 	LEFT JOIN departments d ON d.id = u.department_id
-	LEFT JOIN users u2 ON u2.id = u.author_id`, strings.Join(sets, ", "), len(args), versionClause)
-	a, err := scanArticleWithNames(postgres.Q(ctx, r.pool).QueryRow(ctx, sql, args...))
+	LEFT JOIN users u2 ON u2.id = u.author_id`, strings.Join(b.sets, ", "), len(b.args), versionClause)
+	a, err := scanArticleWithNames(postgres.Q(ctx, r.pool).QueryRow(ctx, sql, b.args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 带版本守卫时 0 行可能是"文章不存在"或"版本已被他人改动"，同事务内二次读取区分。
 		if fields.ExpectedVersion != nil {
@@ -343,14 +346,81 @@ func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateF
 	return a, nil
 }
 
+// updateBuilder 累积 UPDATE 的 SET 子句与参数（按序生成 $N 占位符）。
+type updateBuilder struct {
+	sets []string
+	args []any
+}
+
+// add 追加 "col = $N" 子句（占位符序号即参数下标 + 1）。
+func (b *updateBuilder) add(col string, v any) {
+	b.args = append(b.args, v)
+	b.sets = append(b.sets, fmt.Sprintf("%s = $%d", col, len(b.args)))
+}
+
+// applyUpdateFields 按非 nil 字段追加 SET 子句（顺序固定，便于测试与审阅）。
+// ponytail: 逐字段 if 展开而非反射——字段少、类型各异，反射带来的收益不抵可读性损失。
+func (b *updateBuilder) applyUpdateFields(f UpdateFields) {
+	if f.Title != nil {
+		b.add("title", *f.Title)
+	}
+	if f.Content != nil {
+		b.add("content", *f.Content)
+	}
+	if f.Summary != nil {
+		b.add("summary", *f.Summary)
+	}
+	if f.CoverImageURL != nil {
+		b.add("cover_image_url", *f.CoverImageURL)
+	}
+	if f.AllowReference != nil {
+		b.add("allow_reference", *f.AllowReference)
+	}
+	if f.ContentHash != nil {
+		b.add("content_hash", *f.ContentHash)
+	}
+	if f.Source != nil {
+		b.add("source", *f.Source)
+	}
+	if f.ApplicablePopulation != nil {
+		b.add("applicable_population", *f.ApplicablePopulation)
+	}
+	if f.ValidUntil != nil {
+		b.add("valid_until", *f.ValidUntil)
+	}
+	// ClearValidUntil 显式清空有效期（客户端提交空字符串），与"未提交该字段"区分。
+	if f.ClearValidUntil {
+		b.sets = append(b.sets, "valid_until = NULL")
+	}
+	if f.ContentRisk != nil {
+		b.add("content_risk", contentRiskOrDefault(*f.ContentRisk))
+	}
+	// 已发布文章的内容修改回到待审核（重新审核通过前继续服务原审核版本）。
+	if f.Status != nil {
+		b.add("status", *f.Status)
+	}
+	if f.IncrementVersion {
+		b.sets = append(b.sets, "version = version + 1")
+	}
+}
+
 // UpdateFields 文章更新字段（指针为 nil 表示不更新）。
 type UpdateFields struct {
-	Title            *string
-	Content          *string
-	Summary          *string
-	CoverImageURL    *string
-	AllowReference   *bool
-	ContentHash      *string
+	Title          *string
+	Content        *string
+	Summary        *string
+	CoverImageURL  *string
+	AllowReference *bool
+	ContentHash    *string
+	// Status 非 nil 时同时迁移状态：已发布文章内容修改后回到 pending（重新审核）。
+	Status *string
+	// 知识条目元数据（P1）。
+	Source               *string
+	ApplicablePopulation *string
+	ValidUntil           *time.Time
+	// ClearValidUntil 显式把 valid_until 置空（与 ValidUntil 为 nil 的"不更新"区分）。
+	ClearValidUntil  bool
+	ContentRisk      *string
 	IncrementVersion bool
 	ExpectedVersion  *int // 非 nil 时启用乐观锁：仅当当前 version 与之相等才更新，否则 ErrVersionConflict
 }
@@ -428,7 +498,11 @@ func (r *ArticleRepo) SoftDelete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// MarkOverdue 批量标记 180 天复审逾期：review_overdue=false 且 published_at 早于 180 天前、未软删除的已发布文章。
+// MarkOverdue 批量标记复审逾期：按内容风险区分有效期（P1）。
+//   - 高风险（用药/检查准备/高风险护理）：发布满 90 天即标记；
+//   - 普通宣教：发布满 180 天标记；
+//   - 显式设置 valid_until 且已过期：无论风险等级一律标记。
+//
 // 同事务内 review_overdue=true, review_overdue_at=now()。返回被标记的文章 ID 列表（供调用方入队通知）。
 // REQ-WIKI-017/018：定期扫描由 asynq PeriodicTask 触发。
 // 仅 published 状态触发复审——archived 已退出公开检索且按 REQ-WIKI-001 是终态，不应再发复审通知。
@@ -438,9 +512,13 @@ func (r *ArticleRepo) MarkOverdue(ctx context.Context) ([]int64, error) {
 		WHERE review_overdue = false
 		  AND is_deleted = false
 		  AND status = $1
-		  AND published_at < now() - interval '180 days'
+		  AND (
+		        (content_risk = $2 AND published_at < now() - interval '90 days')
+		     OR (content_risk <> $2 AND published_at < now() - interval '180 days')
+		     OR (valid_until IS NOT NULL AND valid_until < now())
+		  )
 		RETURNING id`
-	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, constants.ArticleStatusPublished)
+	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, constants.ArticleStatusPublished, entity.ContentRiskHigh)
 	if err != nil {
 		return nil, fmt.Errorf("mark overdue articles: %w", err)
 	}
@@ -477,6 +555,7 @@ func scanArticle(s postgres.Scanner) (*entity.Article, error) {
 		&a.ID, &a.Title, &a.Content, &a.Summary, &a.CoverImageURL, &a.Status, &a.Version,
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
+		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -491,6 +570,7 @@ func scanArticleWithNames(s postgres.Scanner) (*entity.Article, error) {
 		&a.ID, &a.Title, &a.Content, &a.Summary, &a.CoverImageURL, &a.Status, &a.Version,
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
+		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)
@@ -498,4 +578,12 @@ func scanArticleWithNames(s postgres.Scanner) (*entity.Article, error) {
 		return nil, fmt.Errorf("scan article with names: %w", err)
 	}
 	return a, nil
+}
+
+// contentRiskOrDefault 内容风险等级空值时按普通处理（建库默认值与列默认值一致）。
+func contentRiskOrDefault(v string) string {
+	if v == "" {
+		return entity.ContentRiskNormal
+	}
+	return v
 }

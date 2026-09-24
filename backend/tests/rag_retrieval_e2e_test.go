@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 
 	"health-nexus/internal/config"
 	"health-nexus/internal/domain/wiki/repository"
@@ -39,7 +40,10 @@ func setupRAGRetrievalTest(t *testing.T) {
 	if ragTestPool != nil {
 		return
 	}
-	dsn := "postgres://health:health@localhost:5432/health_nexus?sslmode=disable"
+	dsn := os.Getenv("RAG_TEST_DSN")
+	if dsn == "" {
+		dsn = "postgres://health:health@localhost:5432/health_nexus?sslmode=disable"
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -157,14 +161,14 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 		if err != nil {
 			t.Skipf("embedding 失败: %v", err)
 		}
-		hits, err := repo.SearchByVector(ctx, vec, 5, nil, dbThreshold)
+		hits, err := repo.SearchByVector(ctx, vec, 5, nil, dbThreshold, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
 		if len(hits) == 0 {
 			// 若 threshold=0.75 太严格，降级重试。
 			if dbThreshold >= 0.7 {
-				hits, err = repo.SearchByVector(ctx, vec, 5, nil, 0.5)
+				hits, err = repo.SearchByVector(ctx, vec, 5, nil, 0.5, "")
 				if err != nil {
 					t.Fatalf("降级检索失败: %v", err)
 				}
@@ -186,7 +190,7 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 			t.Skipf("embedding 失败: %v", err)
 		}
 		// threshold=0 不过滤，依赖 SQL 层 c.content != '' 排除空切片。
-		hits, err := repo.SearchByVector(ctx, vec, 10, nil, 0)
+		hits, err := repo.SearchByVector(ctx, vec, 10, nil, 0, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
@@ -208,7 +212,7 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 		if err != nil {
 			t.Skipf("embedding 失败: %v", err)
 		}
-		hits, err := repo.SearchByVector(ctx, vec, 5, nil, threshold)
+		hits, err := repo.SearchByVector(ctx, vec, 5, nil, threshold, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
@@ -228,7 +232,7 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 			t.Skipf("embedding 失败: %v", err)
 		}
 		// 低阈值检索，观察最佳匹配的 VecScore 是否很低。
-		hits, err := repo.SearchByVector(ctx, vec, 5, nil, 0)
+		hits, err := repo.SearchByVector(ctx, vec, 5, nil, 0, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
@@ -268,12 +272,12 @@ func TestRAGRetrieval_QualityGates(t *testing.T) {
 			t.Skipf("embedding 失败: %v", err)
 		}
 		// 宽松阈值。
-		hitsLow, err := repo.SearchByVector(ctx, vec, 10, nil, 0)
+		hitsLow, err := repo.SearchByVector(ctx, vec, 10, nil, 0, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
 		// 严格阈值。
-		hitsHigh, err := repo.SearchByVector(ctx, vec, 10, nil, 0.9)
+		hitsHigh, err := repo.SearchByVector(ctx, vec, 10, nil, 0.9, "")
 		if err != nil {
 			t.Fatalf("检索失败: %v", err)
 		}
@@ -302,7 +306,7 @@ func TestRAGRetrieval_VectorOnly(t *testing.T) {
 		if err != nil {
 			t.Skipf("无向量数据，跳过: %v", err)
 		}
-		hits, err := repo.SearchByVector(ctx, vec.Slice(), 5, nil, 0)
+		hits, err := repo.SearchByVector(ctx, vec.Slice(), 5, nil, 0, "")
 		if err != nil {
 			t.Fatalf("向量检索失败: %v", err)
 		}
@@ -341,7 +345,7 @@ func TestRAGRetrieval_ScoreBounds(t *testing.T) {
 	if err != nil {
 		t.Skipf("embedding 失败: %v", err)
 	}
-	hits, err := repo.SearchByVector(ctx, vec, 5, nil, 0)
+	hits, err := repo.SearchByVector(ctx, vec, 5, nil, 0, "")
 	if err != nil {
 		t.Fatalf("检索失败: %v", err)
 	}

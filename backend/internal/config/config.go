@@ -111,24 +111,25 @@ type JWTConfig struct {
 }
 
 // LLMConfig LLM 客户端配置。
-// 主字段（BaseURL/APIKey/ChatModel/RewriteModel/EmbeddingModel/Timeout）作为 chat 默认 provider；
-// Embedding/Rerank/Rewrite 子配置可选，零值字段回退到主配置（向后兼容）。
+// 主字段（BaseURL/APIKey/ChatModel/EmbeddingModel/Timeout）作为 chat 默认 provider；
+// Embedding/Rerank 子配置可选，零值字段回退到主配置（向后兼容）。
+//
+// 注：原 RewriteModel/Rewrite（独立查询改写模型）已删除——检索改写并入统一理解与审查（Assessor），
+// 与风险判定同一次调用完成，不再需要独立的改写模型与 provider。
 type LLMConfig struct {
 	BaseURL        string        `mapstructure:"base_url"`
 	APIKey         string        `mapstructure:"api_key"`
 	ChatModel      string        `mapstructure:"chat_model"`
-	RewriteModel   string        `mapstructure:"rewrite_model"`
 	EmbeddingModel string        `mapstructure:"embedding_model"`
 	Timeout        time.Duration `mapstructure:"timeout"`
 	// 可选：分离的 provider 配置。零值字段回退到主配置。
 	Embedding ProviderConfig `mapstructure:"embedding"`
 	Rerank    ProviderConfig `mapstructure:"rerank"`
-	Rewrite   ProviderConfig `mapstructure:"rewrite"`
 }
 
-// ProviderConfig 单个 LLM provider 配置（embedding/rerank/rewrite）。
+// ProviderConfig 单个 LLM provider 配置（embedding/rerank）。
 // 零值字段表示继承主 LLMConfig 对应字段（BaseURL/APIKey/Timeout 通用，
-// Model 按能力回退：Embedding→EmbeddingModel，Rewrite→RewriteModel，Rerank 无主字段回退）。
+// Model 按能力回退：Embedding→EmbeddingModel，Rerank 无主字段回退）。
 type ProviderConfig struct {
 	BaseURL string        `mapstructure:"base_url"`
 	APIKey  string        `mapstructure:"api_key"`

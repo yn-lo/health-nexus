@@ -22,6 +22,10 @@ type Message struct {
 	Feedback         *string `json:"feedback"`
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	// Seq 全局单调递增序号（messages_seq）。同一事务写入的同轮 user/assistant
+	// 消息 seq 严格递增，保证"先问题后回答"的稳定定序（created_at 在同事务内相同）。
+	// json:"-"：不进入匿名环序列化与对外 DTO（前端契约不感知）。
+	Seq int64 `json:"-"`
 }
 
 // Reference 引用切片，存储在 messages.referenced_chunks JSONB。

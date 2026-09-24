@@ -28,6 +28,11 @@ type mockArticleFetcher struct {
 	err     error
 	lastID  int64
 	called  bool
+	// lockVersion 非 0 时 LockVersion 返回该值（模拟 embedding 期间文章已被更新）；
+	// lockErr 非 nil 时 LockVersion 返回该错误。
+	lockVersion int
+	lockErr     error
+	lockCalled  bool
 }
 
 func (m *mockArticleFetcher) GetByID(_ context.Context, id int64) (*entity.Article, error) {
@@ -37,6 +42,20 @@ func (m *mockArticleFetcher) GetByID(_ context.Context, id int64) (*entity.Artic
 		return nil, m.err
 	}
 	return m.article, nil
+}
+
+func (m *mockArticleFetcher) LockVersion(_ context.Context, _ int64) (int, error) {
+	m.lockCalled = true
+	if m.lockErr != nil {
+		return 0, m.lockErr
+	}
+	if m.lockVersion != 0 {
+		return m.lockVersion, nil
+	}
+	if m.article != nil {
+		return m.article.Version, nil
+	}
+	return 0, nil
 }
 
 // mockChunkWriter 模拟 chunkWriter 接口，记录调用以供断言。
@@ -92,6 +111,24 @@ func (m *mockEmbedder) Embed(_ context.Context, texts []string) ([][]float32, er
 		return nil, m.err
 	}
 	return m.vectors, nil
+}
+
+// mockModelEmbedder 额外暴露 EmbeddingModel（验证切片记录向量模型版本）。
+type mockModelEmbedder struct {
+	mockEmbedder
+	model string
+}
+
+func (m *mockModelEmbedder) EmbeddingModel() string { return m.model }
+
+// mockTxRunner 模拟 TxRunner，直接同步执行 fn 并记录调用。
+type mockTxRunner struct {
+	called bool
+}
+
+func (m *mockTxRunner) WithTx(_ context.Context, fn func(ctx context.Context) error) error {
+	m.called = true
+	return fn(context.Background())
 }
 
 // mockConfigProvider 模拟 wikiservice.RAGConfigProvider，返回预设的切片配置。
@@ -787,6 +824,110 @@ func TestHandleVectorize(t *testing.T) {
 		}
 		if len(chunks.createdChunks) != 0 {
 			t.Errorf("期望 0 个 chunk（deactivate 失败不应写），实际 %d", len(chunks.createdChunks))
+		}
+	})
+
+	t.Run("embedding期间文章版本变更_放弃写入旧切片", func(t *testing.T) {
+		// embedding 期间文章被再次更新（version 1 → 2）：本任务必须放弃写入，
+		// 否则会把新版本切片失效并删除（P0 向量版本一致性）。
+		fetcher := &mockArticleFetcher{
+			article: &entity.Article{
+				ID: 20, Status: constants.ArticleStatusPublished, Content: "旧内容", Version: 1,
+			},
+			lockVersion: 2,
+		}
+		embed := &mockEmbedder{vectors: [][]float32{{0.1}}}
+		chunks := &mockChunkWriter{}
+		h := &VectorizeHandler{articles: fetcher, chunks: chunks, embed: embed}
+
+		err := h.HandleVectorize(context.Background(), makeTask("20"))
+		if err == nil {
+			t.Fatal("期望 error 非 nil（版本已变化应放弃本次写入）")
+		}
+		if !errors.Is(err, asynqlib.SkipRetry) {
+			t.Errorf("期望错误含 SkipRetry（新版本自有其任务，旧任务不再重试），实际 %v", err)
+		}
+		if !fetcher.lockCalled {
+			t.Error("期望 LockVersion 被调用（写入前版本复核）")
+		}
+		if chunks.deactivateCall != 0 {
+			t.Error("版本不一致时不得失效切片")
+		}
+		if len(chunks.createdChunks) != 0 {
+			t.Errorf("版本不一致时不得写入切片，实际写入 %d", len(chunks.createdChunks))
+		}
+	})
+
+	t.Run("版本复核失败_返回可重试错误且不写切片", func(t *testing.T) {
+		lockErr := errors.New("lock db error")
+		fetcher := &mockArticleFetcher{
+			article: &entity.Article{
+				ID: 21, Status: constants.ArticleStatusPublished, Content: "内容", Version: 1,
+			},
+			lockErr: lockErr,
+		}
+		chunks := &mockChunkWriter{}
+		h := &VectorizeHandler{
+			articles: fetcher, chunks: chunks, embed: &mockEmbedder{vectors: [][]float32{{0.1}}},
+		}
+
+		err := h.HandleVectorize(context.Background(), makeTask("21"))
+		if err == nil {
+			t.Fatal("期望 error 非 nil")
+		}
+		if errors.Is(err, asynqlib.SkipRetry) {
+			t.Errorf("期望错误不含 SkipRetry（DB 错误应可重试），实际 %v", err)
+		}
+		if !errors.Is(err, lockErr) {
+			t.Errorf("期望错误包装 lockErr，实际 %v", err)
+		}
+		if chunks.deactivateCall != 0 || len(chunks.createdChunks) != 0 {
+			t.Error("版本复核失败时不得写入切片")
+		}
+	})
+
+	t.Run("注入事务管理器_切片替换在事务内执行", func(t *testing.T) {
+		fetcher := &mockArticleFetcher{article: &entity.Article{
+			ID: 22, Status: constants.ArticleStatusPublished, Content: "内容", Version: 1,
+		}}
+		chunks := &mockChunkWriter{}
+		tx := &mockTxRunner{}
+		h := &VectorizeHandler{
+			articles: fetcher, chunks: chunks, embed: &mockEmbedder{vectors: [][]float32{{0.1}}}, tx: tx,
+		}
+
+		if err := h.HandleVectorize(context.Background(), makeTask("22")); err != nil {
+			t.Fatalf("期望 nil error，实际 %v", err)
+		}
+		if !tx.called {
+			t.Error("期望 WithTx 被调用（切片原子替换）")
+		}
+		if len(chunks.createdChunks) != 1 {
+			t.Fatalf("期望 1 个切片，实际 %d", len(chunks.createdChunks))
+		}
+	})
+
+	t.Run("Embedder暴露模型名_切片记录模型版本", func(t *testing.T) {
+		fetcher := &mockArticleFetcher{article: &entity.Article{
+			ID: 23, Status: constants.ArticleStatusPublished, Content: "内容", Version: 1,
+		}}
+		chunks := &mockChunkWriter{}
+		h := &VectorizeHandler{
+			articles: fetcher, chunks: chunks,
+			embed: &mockModelEmbedder{
+				mockEmbedder: mockEmbedder{vectors: [][]float32{{0.1}}},
+				model:        "text-embedding-3-large",
+			},
+		}
+
+		if err := h.HandleVectorize(context.Background(), makeTask("23")); err != nil {
+			t.Fatalf("期望 nil error，实际 %v", err)
+		}
+		if len(chunks.createdChunks) != 1 {
+			t.Fatalf("期望 1 个切片，实际 %d", len(chunks.createdChunks))
+		}
+		if got := chunks.createdChunks[0].EmbeddingModel; got != "text-embedding-3-large" {
+			t.Errorf("切片 EmbeddingModel = %q，期望 %q", got, "text-embedding-3-large")
 		}
 	})
 
