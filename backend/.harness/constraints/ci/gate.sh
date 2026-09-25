@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Harness CI 门禁（Bash 版，Linux/macOS/CI）
-# 规范：../harness.md（§5.2 单一门禁入口与双平台一致性、§5.3 结果状态与失败策略、§6.1 门禁自测）。
+# 规范见 .harness/specs/conventions/README.md 的「门禁规则索引」：
+# 单一门禁入口（Bash/PowerShell 包装只负责启动与透传退出码）、结果状态语义（SKIP 不等于 PASS）、门禁自测。
 # 本脚本是后端唯一门禁实现；Makefile 的 verify/verify-strict 只是调用它的薄包装。
 # 约束输出原则：只输出错误，全部通过时输出一行确认。
 # 优雅降级：可选工具未安装时跳过并告警，不阻塞；
@@ -238,11 +239,16 @@ run_p1() {
   fi
 
   # P1-2 gofmt 强制（不允许未格式化代码入库）
-  local fmt_out
-  fmt_out="$(gofmt -l . 2>/dev/null | grep -v -E '^(vendor/|\.git/)' || true)"
-  if [ -n "$fmt_out" ]; then
-    fail "gofmt 发现未格式化文件" "运行 gofmt -w ." "AGENTS.md"
-    echo "$fmt_out" | head -n 20 | sed 's/^/    /'
+  # 必须经 require_tool：goimports 缺失尚有 golangci-lint 的 goimports 规则兜底，
+  # 但 gofmt 直接执行且缺失时 `gofmt -l` 输出为空、退出码被 `|| true` 吃掉——
+  # 「没有运行」会被静默记成「通过」。这是必须由 require_tool 兜住的检查。
+  if require_tool gofmt "P1-2 gofmt 格式检查" "安装 Go 工具链（gofmt 随 go 分发）"; then
+    local fmt_out
+    fmt_out="$(gofmt -l . 2>/dev/null | grep -v -E '^(vendor/|\.git/)' || true)"
+    if [ -n "$fmt_out" ]; then
+      fail "gofmt 发现未格式化文件" "运行 gofmt -w ." "AGENTS.md"
+      echo "$fmt_out" | head -n 20 | sed 's/^/    /'
+    fi
   fi
 
   # P1-3 goimports 强制（import 分组与排序）
@@ -256,10 +262,10 @@ run_p1() {
   fi
   # goimports 未安装时不重复告警——golangci-lint 的 goimports 规则已覆盖
 
-  # P1-4 错误码登记完整性（新增业务错误必须在 error-codes.md 登记）
-  if [ -f .harness/specs/reference/error-codes.md ]; then
-    : # 占位：错误码↔代码一致性检查留作后续 ratchet，当前由 review checklist 覆盖
-  fi
+  # P1-4 错误码登记完整性：当前不设自动检查。
+  # 错误码↔代码一致性属「需判断事项」（命名是否语义正确无法机械判定），由 review checklist 覆盖。
+  # 原 `if [ -f error-codes.md ]; then : ; fi` 是不检查任何东西的空占位——移除，
+  # 避免让人误以为这条门禁存在（规则清单见 .harness/specs/conventions/README.md 的门禁规则索引）。
 
   # P1-5 Playwright E2E（前后端联调；服务未启动时优雅降级为告警，不阻塞）
   if require_tool npx "P1-5 Playwright E2E" "安装 Node.js/npm 并执行 npm install"; then
@@ -355,7 +361,7 @@ run_p2() {
     echo "$cdn_out" | head -n 10 | sed 's/^/    /'
   fi
 
-  # P2-4 Doc Freshness（设计文档是否过期，harness.md §4.6）
+  # P2-4 Doc Freshness（设计文档是否过期）
   if [ -d .harness/specs/design ]; then
     local stale_days=60 stale_files
     if [ "$(uname)" = "Darwin" ]; then
@@ -370,7 +376,8 @@ run_p2() {
   fi
 
   # P2-5 git 卫生：禁止敏感文件入库（.env / 密钥 / 本地配置）
-  if has_tool git; then
+  # 必须经 require_tool：P2-5 是阻断项，git 缺失时静默跳过等于这道阻断从未执行。
+  if require_tool git "P2-5/6 git 卫生检查（敏感文件 / 大文件）" "安装 git"; then
     local sensitive
     sensitive="$(git ls-files 2>/dev/null | grep -E '(^|/)(\.env[a-z0-9._-]*|.*\.pem|.*\.key|config\.local\.yaml|.*\.p12|.*\.pfx)$' || true)"
     if [ -n "$sensitive" ]; then
@@ -425,6 +432,13 @@ run_selftest() {
     return 1
   }
 
+  # pf / probe_fail：探针断言的独立计数器。
+  # 多处探针会「记录后还原」主计数器（丢弃探针故意制造的内部失败）；若断言失败也用 fail()，
+  # 就会被同一次还原吞掉——自检会在 GATE_STRICT=1 下打印 ✗ 却仍报通过（自检自身的假绿灯）。
+  # 断言失败单独累计，全部还原完成后再一次性计入 FAILURES。
+  local pf=0
+  probe_fail() { fail "$1" "${2:-}"; pf=$((pf + 1)); }
+
   # 探针路径不用 local：EXIT trap 在函数返回后才执行，local 变量此时已出作用域，
   # cleanup 会拿到空值而删不掉故意违规的样例文件。
   probe_dir='internal/__gate_selftest__'
@@ -436,7 +450,7 @@ run_selftest() {
   local before="$FAILURES"
   { capture_fail "probe" "" "" -- false ; } >/dev/null 2>&1
   if [ "$FAILURES" -eq "$before" ]; then
-    fail "selftest: 失败退出码未被记为门禁失败" "检查 gate.sh 的 capture_fail 与管道写法"
+    probe_fail "selftest: 失败退出码未被记为门禁失败" "检查 gate.sh 的 capture_fail 与管道写法"
   fi
   FAILURES="$before"
 
@@ -455,6 +469,39 @@ run_selftest() {
   if go test ./internal/harness/arch/ -run TestArch_HandlerMustNotDependOnRepository -count=1 >/dev/null 2>&1; then
     fail "selftest: 架构测试未检出 handler → repository 反向依赖" "检查 internal/harness/arch/arch_test.go 的 AC-ARCH-01"
   fi
+
+  # S4 降级语义探针：同一个「被跳过」在本地只能告警，在 GATE_STRICT 下必须失败。
+  # 直接断言 skipped()/require_tool() 的分支，不嵌套跑整层——避免依赖服务是否已启动。
+  # 「非严格→告警」的断言必须显式把 STRICT 置空：直接用外层 GATE_STRICT=1 会让 skipped()
+  # 走严格分支，该断言必然失败（且会暴露为自检假绿灯）。
+  local f0 w0
+  f0="$FAILURES"; w0="$WARNINGS"
+  STRICT=""
+  skipped "selftest 降级探针" >/dev/null 2>&1
+  if [ "$FAILURES" -ne "$f0" ] || [ "$WARNINGS" -ne $((w0 + 1)) ]; then
+    probe_fail "selftest: 非严格模式下被跳过的检查未按告警处理" "检查 skipped() 的非严格分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"
+
+  STRICT=1
+  f0="$FAILURES"
+  skipped "selftest 严格探针" >/dev/null 2>&1
+  if [ "$FAILURES" -ne $((f0 + 1)) ]; then
+    probe_fail "selftest: 严格模式下被跳过的检查未记为失败" "检查 skipped() 的 GATE_STRICT 分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"
+
+  STRICT=""
+  f0="$FAILURES"; w0="$WARNINGS"
+  if require_tool '__gate_selftest_missing_tool__' "探针" >/dev/null 2>&1; then
+    probe_fail "selftest: require_tool 对不存在的工具返回成功" "检查 require_tool 的 has_tool 分支"
+  fi
+  if [ "$WARNINGS" -ne $((w0 + 1)) ]; then
+    probe_fail "selftest: require_tool 在工具缺失时未记告警" "检查 require_tool 的 skipped 分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"; STRICT="${GATE_STRICT:-}"
+
+  FAILURES=$((FAILURES + pf))
 }
 
 # ============================================================================

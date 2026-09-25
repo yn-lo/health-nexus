@@ -10,7 +10,6 @@ SHELL := /bin/bash
 # ============================================================================
 GO := go
 GOFLAGS := -trimpath
-MODULE := health-nexus
 # CURDIR 由 Make 自身提供，不 shell 出去；`$(shell pwd)` 在 Windows 上会失败并让 ROOT_DIR 为空。
 ROOT_DIR := $(CURDIR)
 BACKEND_GO := $(ROOT_DIR)/backend

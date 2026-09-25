@@ -16,7 +16,7 @@ Health Nexus Frontend 是一个双 MPA（多页应用）健康平台，包含患
 | 样式规范      | .harness/specs/conventions/styling.md              |
 | 认证页设计语言  | design.md                                          |
 | 约束工具      | .harness/constraints/README.md                     |
-| 门禁规范（单一入口 / 状态语义 / 自测） | 根目录 `../harness.md` |
+| 门禁规范（单一入口 / 状态语义 / 自测） | [.harness/constraints/README.md](.harness/constraints/README.md#门禁规则索引) |
 | 后端 API 端点（代码即文档） | 后端各域 `handler/router.go` + 契约测试 `backend/tests/api_contract_test.go` |
 | 真实环境 E2E 测试指南 | [.harness/specs/testing/e2e.md](.harness/specs/testing/e2e.md) |
 

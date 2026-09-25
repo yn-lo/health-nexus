@@ -361,7 +361,7 @@ func checkOne(f layerInfo, imp string) []violation {
 	return vs
 }
 
-// reportViolations 按 harness.md "约束输出只保留错误" 原则输出违规。
+// reportViolations 按 "约束输出只保留错误" 原则输出违规。
 // 全部通过时输出一行确认。
 func reportViolations(t *testing.T, vs []violation) {
 	t.Helper()

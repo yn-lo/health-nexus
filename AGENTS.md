@@ -15,7 +15,7 @@ AI 驱动的医院健康宣教平台，使用 RAG 技术实现 7x24 智能健康
 | 后端 | API 服务 + RAG 引擎 + 知识库 | [backend/AGENTS.md](backend/AGENTS.md) |
 | 前端 | 患者端 + 医护端 SPA | [frontend/AGENTS.md](frontend/AGENTS.md) |
 
-门禁设计与状态语义的统一规范见 [harness.md](harness.md)：单一门禁入口与双平台一致性（§5.2）、结果状态与失败策略（§5.3）、门禁自测（§6.1）、分阶段落地（§10.1）。
+门禁入口与结果状态语义见各子项目的门禁规则索引：[backend/.harness/specs/conventions/README.md](backend/.harness/specs/conventions/README.md)、[frontend/.harness/constraints/README.md](frontend/.harness/constraints/README.md)。要点：单一门禁入口（Bash/PowerShell 包装只负责启动与透传退出码）；结果状态 PASS / FAIL / ERROR / SKIP / WAIVED，**SKIP 不等于 PASS**；发布门禁用 `GATE_STRICT=1`，被跳过的检查按失败处理。
 
 ## 全局硬性规则
 跨子项目通用红线，子项目专属规则见各自 AGENTS.md。

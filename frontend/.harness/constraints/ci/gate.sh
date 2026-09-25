@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Harness CI 门禁（前端版，Bash 版，Linux/macOS/CI）
-# 规范：../harness.md（§5.2 单一门禁入口与双平台一致性、§5.3 结果状态与失败策略、§6.1 门禁自测）。
+# 规范见 .harness/constraints/README.md 的「门禁规则索引」：
+# 单一门禁入口（Bash/PowerShell 包装只负责启动与透传退出码）、结果状态语义（SKIP 不等于 PASS）、门禁自测。
 # 本脚本是前端唯一门禁实现；frontend/gate.sh 与 frontend/gate.ps1 只是调用它的薄包装。
 # 分层：P0 静态分析 + 类型 + 测试 + 构建 + 死代码；P1 安全；P2 工程债 + 卫生。
 # 约束输出原则：只输出错误，全部通过时输出一行确认。
@@ -186,6 +187,13 @@ run_selftest() {
     return 1
   }
 
+  # pf / probe_fail：探针断言的独立计数器。
+  # 多处探针会「记录后还原」主计数器（丢弃探针故意制造的内部失败）；若断言失败也用 fail()，
+  # 就会被同一次还原吞掉——自检会在 GATE_STRICT=1 下打印 ✗ 却仍报通过（自检自身的假绿灯）。
+  # 断言失败单独累计，全部还原完成后再一次性计入 FAILURES。
+  local pf=0
+  probe_fail() { fail "$1" "${2:-}"; pf=$((pf + 1)); }
+
   # 探针路径不用 local：EXIT trap 在函数返回后才执行，local 变量此时已出作用域，
   # cleanup 会拿到空值而删不掉故意违规的样例文件。
   probe_lint='src/__gate_selftest_probe__.ts'
@@ -197,7 +205,7 @@ run_selftest() {
   local before="$FAILURES"
   { capture_fail "probe" "" "" -- false ; } >/dev/null 2>&1
   if [ "$FAILURES" -eq "$before" ]; then
-    fail "selftest: 失败退出码未被记为门禁失败" "检查 gate.sh 的 capture_fail 与管道写法"
+    probe_fail "selftest: 失败退出码未被记为门禁失败" "检查 gate.sh 的 capture_fail 与管道写法"
   fi
   FAILURES="$before"
 
@@ -228,6 +236,39 @@ run_selftest() {
   if npx vitest run tests/arch/ -t 'AC-ARCH-FE-22' >/dev/null 2>&1; then
     fail "selftest: 架构测试未检出 shared → staff 反向依赖" "检查 tests/arch/governance.test.ts 的 AC-ARCH-FE-22"
   fi
+
+  # S5 降级语义探针：同一个「被跳过」在本地只能告警，在 GATE_STRICT 下必须失败。
+  # 直接断言 skipped()/require_tool() 的分支，不嵌套跑整层——避免依赖服务是否已启动。
+  # 「非严格→告警」的断言必须显式把 STRICT 置空：直接用外层 GATE_STRICT=1 会让 skipped()
+  # 走严格分支，该断言必然失败（且会暴露为自检假绿灯）。
+  local f0 w0
+  f0="$FAILURES"; w0="$WARNINGS"
+  STRICT=""
+  skipped "selftest 降级探针" >/dev/null 2>&1
+  if [ "$FAILURES" -ne "$f0" ] || [ "$WARNINGS" -ne $((w0 + 1)) ]; then
+    probe_fail "selftest: 非严格模式下被跳过的检查未按告警处理" "检查 skipped() 的非严格分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"
+
+  STRICT=1
+  f0="$FAILURES"
+  skipped "selftest 严格探针" >/dev/null 2>&1
+  if [ "$FAILURES" -ne $((f0 + 1)) ]; then
+    probe_fail "selftest: 严格模式下被跳过的检查未记为失败" "检查 skipped() 的 GATE_STRICT 分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"
+
+  STRICT=""
+  f0="$FAILURES"; w0="$WARNINGS"
+  if require_tool '__gate_selftest_missing_tool__' "探针" >/dev/null 2>&1; then
+    probe_fail "selftest: require_tool 对不存在的工具返回成功" "检查 require_tool 的 has_tool 分支"
+  fi
+  if [ "$WARNINGS" -ne $((w0 + 1)) ]; then
+    probe_fail "selftest: require_tool 在工具缺失时未记告警" "检查 require_tool 的 skipped 分支"
+  fi
+  FAILURES="$f0"; WARNINGS="$w0"; STRICT="${GATE_STRICT:-}"
+
+  FAILURES=$((FAILURES + pf))
 }
 
 # ============================================================================

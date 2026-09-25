@@ -16,7 +16,7 @@
 | 架构约束规则（AC-ARCH-*） | `internal/harness/arch/arch_test.go` |
 | lint 配置 | `.golangci.yml` |
 | 数据模型 | `internal/di/schema.sql`（幂等，启动自动应用） |
-| 门禁规范（单一入口 / 状态语义 / 自测） | 根目录 `../harness.md` |
+| 门禁规范（单一入口 / 状态语义 / 自测） | [.harness/specs/conventions/README.md](.harness/specs/conventions/README.md#门禁规则索引) |
 
 ## 构建与验证
 
