@@ -1,11 +1,9 @@
-import { apiClient, setTokens, clearTokens, getRefreshToken } from './client';
+import { apiClient, setTokens, clearTokens, getRefreshToken, isUnauthorizedError } from './client';
 import type {
   LoginRequest,
   RegisterRequest,
   TokenResponse,
   SuccessResponse,
-  PasswordResetRequestRequest,
-  PasswordResetConfirmRequest,
   ChangePasswordRequest,
   UpdateProfileRequest,
   TokenUser,
@@ -18,15 +16,26 @@ import type { Paginated } from '../types/base';
 import type { UserRole } from '../constants/roles';
 
 /** 用户登出 — 后端要求 body 传 refresh token 才能加黑名单 */
-export function logout() {
-  const refresh = getRefreshToken();
-  // ponytail: 即使本地无 refresh token 也发请求清服务端会话；后端会校验 refresh 非空，折中
-  return apiClient<{ success: boolean }>('/auth/logout', {
-    method: 'POST',
-    body: refresh ? { refresh } : {},
-  }).finally(() => {
+export async function logout() {
+  // 每次尝试都即时读取最新 refresh token：apiClient 在 401 时会轮换令牌，
+  // 若沿用旧 body 里的 token，后端会拒绝已消费的旧令牌，导致新令牌未被撤销（P2）。
+  const attempt = () => {
+    const refresh = getRefreshToken();
+    // ponytail: 即使本地无 refresh token 也发请求清服务端会话；后端会校验 refresh 非空，折中
+    return apiClient<{ success: boolean }>('/auth/logout', {
+      method: 'POST',
+      body: refresh ? { refresh } : {},
+    });
+  };
+  try {
+    return await attempt();
+  } catch (e) {
+    if (!isUnauthorizedError(e)) throw e;
+    // apiClient 已用旧 body 刷新并重试过一次（失败），此处用轮换后的最新 refresh 再试一次
+    return await attempt();
+  } finally {
     clearTokens();
-  });
+  }
 }
 
 /** 统一登录并存储 token（按 role 自动路由，无需选择 portal） */
@@ -41,22 +50,6 @@ export async function registerAndStore(data: RegisterRequest) {
   const tokens = await apiClient<TokenResponse>('/auth/register', { method: 'POST', body: data });
   setTokens(tokens.access, tokens.refresh);
   return tokens;
-}
-
-/** 请求密码重置 — 始终返回成功（安全设计：不泄露用户是否存在） */
-export function requestPasswordReset(username: string) {
-  return apiClient<SuccessResponse>('/auth/password-reset/request', {
-    method: 'POST',
-    body: { username } satisfies PasswordResetRequestRequest,
-  });
-}
-
-/** 确认密码重置 — 校验 token 并更新密码（token 一次性使用） */
-export function confirmPasswordReset(token: string, newPassword: string) {
-  return apiClient<SuccessResponse>('/auth/password-reset/confirm', {
-    method: 'POST',
-    body: { token, new_password: newPassword } satisfies PasswordResetConfirmRequest,
-  });
 }
 
 /** 已登录用户修改密码 — userID 由 JWT 注入，仅传新旧密码 */

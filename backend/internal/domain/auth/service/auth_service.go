@@ -50,7 +50,7 @@ type UserRepo interface {
 	GetByID(ctx context.Context, id int64) (*entity.User, error)
 	GetByIDIncludeDeleted(ctx context.Context, id int64) (*entity.User, error)
 	Create(ctx context.Context, username, passwordHash, role string) (*entity.User, error)
-	SetPrimaryDept(ctx context.Context, userID, deptID int64) error
+	CreateWithPrimaryDept(ctx context.Context, username, passwordHash, role string, deptID int64) (*entity.User, error)
 	UpdatePrimaryDept(ctx context.Context, userID, deptID int64) error
 	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error
 	UpdateProfile(ctx context.Context, userID int64, phone string, dateOfBirth *time.Time,
@@ -218,7 +218,7 @@ func (s *AuthService) login(
 			}
 		}
 	}
-	access, refresh, err = s.issuer.Issue(ctx, u.ID, u.Role, u.PrimaryDeptID)
+	access, refresh, err = s.issuer.Issue(ctx, u.ID, u.Role, u.PrimaryDeptID, u.TokenVersion)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("issue token: %w", err)
 	}
@@ -253,7 +253,7 @@ func (s *AuthService) Register(ctx context.Context, username, password, inviteCo
 		}
 		return nil, fmt.Errorf("register with invite: %w", err)
 	}
-	access, refresh, err := s.issuer.Issue(ctx, u.ID, u.Role, 0)
+	access, refresh, err := s.issuer.Issue(ctx, u.ID, u.Role, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("issue token: %w", err)
 	}
@@ -390,6 +390,11 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (access,
 	if u.IsLocked() {
 		return "", "", apperrors.Locked("AUTH_ACCOUNT_LOCKED", "账户已锁定，请联系管理员")
 	}
+	// 会话版本校验：密码变更后 token_version 递增，旧 refresh token 一并失效，
+	// 防止被盗 refresh token 在改密后继续轮换换取新令牌（P1）。
+	if claims.TokenVersion != u.TokenVersion {
+		return "", "", apperrors.Unauthorized("AUTH_INVALID_REFRESH", "refresh token 已失效")
+	}
 	// 原子占用旧 token：SETNX 消除 isBlacklisted+blacklist 之间的 TOCTOU 竞态。
 	// 并发 Refresh 携带同一 token 时，仅首个 SETNX 成功，其余直接拒绝--防止 token 复制。
 	// fail-closed：Redis 故障时拒绝刷新，用户需重新登录（UnifiedLogin 仅依赖 PostgreSQL）。
@@ -402,7 +407,7 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (access,
 	if !claimed {
 		return "", "", apperrors.Unauthorized("AUTH_INVALID_REFRESH", "refresh token 已失效")
 	}
-	access, refresh, err = s.issuer.Issue(ctx, u.ID, u.Role, u.PrimaryDeptID)
+	access, refresh, err = s.issuer.Issue(ctx, u.ID, u.Role, u.PrimaryDeptID, u.TokenVersion)
 	if err != nil {
 		return "", "", fmt.Errorf("issue token: %w", err)
 	}
@@ -641,7 +646,14 @@ func (s *AuthService) CreateAccount(
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
-	u, err := s.repo.Create(ctx, username, hash, role)
+	// 创建账户与绑定主科室必须原子：绑定失败（无效科室 ID 外键冲突 / DB 错误）时
+	// 不得留下可登录但无科室的医护账户（P1：无科室账户曾导致跨科室越权）。
+	var u *entity.User
+	if deptID > 0 {
+		u, err = s.repo.CreateWithPrimaryDept(ctx, username, hash, role, deptID)
+	} else {
+		u, err = s.repo.Create(ctx, username, hash, role)
+	}
 	if err != nil {
 		if postgres.IsUniqueViolation(err) {
 			return nil, apperrors.Conflict("AUTH_USERNAME_EXISTS", "用户名已存在")
@@ -649,9 +661,6 @@ func (s *AuthService) CreateAccount(
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 	if deptID > 0 {
-		if err := s.repo.SetPrimaryDept(ctx, u.ID, deptID); err != nil {
-			return nil, fmt.Errorf("set primary dept: %w", err)
-		}
 		// 重新加载用户以填充主科室名（JOIN departments）。
 		u, err = s.repo.GetByID(ctx, u.ID)
 		if err != nil {

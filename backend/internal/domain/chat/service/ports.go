@@ -55,6 +55,9 @@ type LockProvider interface {
 type TurnRegistry interface {
 	// Put 写入/覆盖登记值（ttl 后自动过期）。
 	Put(ctx context.Context, key, value string, ttl time.Duration) error
+	// PutIfAbsent 仅当 key 不存在时写入（原子 SET NX），返回是否成功写入。
+	// 用于并发同 request_id 的原子占用：两个请求同时到达时只有一个能占位（P2）。
+	PutIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error)
 	// Lookup 读取登记值；不存在返回 ("", false, nil)。
 	Lookup(ctx context.Context, key string) (string, bool, error)
 	// Delete 删除登记（未真正开始的请求不应阻塞后续重试）。

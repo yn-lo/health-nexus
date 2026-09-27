@@ -1,264 +1,59 @@
 <script setup lang="ts">
 /**
- * ForgotPassword 忘记密码页 — 两步重置流程
+ * ForgotPassword 忘记密码页 — 管理员协助流程
  *
- * 后端契约：
- * 1. POST /api/auth/password-reset/request { username }
- * 始终返回 success（安全设计：不泄露用户是否存在），生成 15 分钟有效的重置 token
- * 2. POST /api/auth/password-reset/confirm { token, new_password }
- * 校验 token 一次性使用 + 新密码强度
- *
- * UI/UX（ui-ux-pro-max §Forms）：
- * - 分步指示器明确当前阶段
- * - 密码显隐切换 / 实时强度指示
- * - 提交 loading + 成功/失败 toast
- * - 触摸目标 ≥44px / focus-visible 焦点环 / aria-label
+ * 平台不提供自助找回密码：重置令牌没有可靠的投递渠道（无短信/邮件），
+ * 仅写入后端 Redis 会让患者卡在无法获取令牌的步骤上（P2）。
+ * 因此本页只做引导：由医院信息科 / 服务窗口核验身份后由管理员重置密码。
+ * 管理员重置通道见 `resetStaffAccountPassword`（POST /api/staff/auth/accounts/{id}/reset-password）。
  */
-import { ref, computed } from 'vue'
-import { Eye, EyeOff, CircleAlert, CheckCircle2, ShieldCheck } from '@lucide/vue'
-import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, AuthHero, PasswordStrength } from '@/shared/components'
-import { requestPasswordReset, confirmPasswordReset } from '@/shared/api/auth'
-import { errmsg } from '@/shared/api/client'
-
-const { showFailToast, showSuccessToast } = useDsToast()
-
-/** 当前步骤：1=请求重置 / 2=确认重置 / 3=完成 */
-const step = ref<1 | 2 | 3>(1)
-
-/* ── Step 1：请求重置 ── */
-const username = ref('')
-const requesting = ref(false)
-const requestError = ref('')
-
-/* ── Step 2：确认重置 ── */
-const token = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
-const showNewPassword = ref(false)
-const showConfirmPassword = ref(false)
-const confirming = ref(false)
-const confirmError = ref('')
-
-const passwordMismatch = computed(
- () => confirmPassword.value.length > 0 && newPassword.value !== confirmPassword.value,
-)
+import { ShieldCheck } from '@lucide/vue'
+import { PageShell, AuthHero } from '@/shared/components'
 
 function goLogin() {
- // 统一登录页在 /login（chat SPA），需跨 MPA 跳转
- window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
-}
-
-async function handleRequest() {
- requestError.value = ''
- if (!username.value.trim()) {
- requestError.value = '请输入用户名'
- showFailToast(requestError.value)
- return
- }
- requesting.value = true
- try {
- await requestPasswordReset(username.value.trim())
- step.value = 2
- } catch (e) {
- requestError.value = errmsg(e, '请求失败，请稍后重试')
- showFailToast(requestError.value)
- } finally {
- requesting.value = false
- }
-}
-
-async function handleConfirm() {
- confirmError.value = ''
- if (!token.value.trim()) {
- confirmError.value = '请输入重置令牌'
- showFailToast(confirmError.value)
- return
- }
- if (!newPassword.value) {
- confirmError.value = '请输入新密码'
- showFailToast(confirmError.value)
- return
- }
- if (newPassword.value !== confirmPassword.value) {
- confirmError.value = '两次输入的密码不一致'
- showFailToast(confirmError.value)
- return
- }
- confirming.value = true
- try {
- await confirmPasswordReset(token.value.trim(), newPassword.value)
- showSuccessToast('密码重置成功')
- step.value = 3
- } catch (e) {
- confirmError.value = errmsg(e, '重置失败，请检查令牌是否正确')
- showFailToast(confirmError.value)
- } finally {
- confirming.value = false
- }
+  // 统一登录页在 /login（chat SPA），需跨 MPA 跳转
+  window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转
 }
 </script>
 
 <template>
- <PageShell
-  :bottom-nav="false"
-  :padded="false"
-  background="var(--auth-bg)"
-  class="auth-page relative overflow-hidden"
- >
-  <div class="auth-aura auth-aura--top" aria-hidden="true" />
+  <PageShell
+    :bottom-nav="false"
+    :padded="false"
+    background="var(--auth-bg)"
+    class="auth-page relative overflow-hidden"
+  >
+    <div class="auth-aura auth-aura--top" aria-hidden="true" />
 
-  <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
-   <!-- 上半屏：品牌叙事区（视觉重心） -->
-   <AuthHero>
-    <template #title>{{ step === 1 ? '找回密码' : step === 2 ? '设置新密码' : '重置完成' }}</template>
-    <template #subtitle>
-     <template v-if="step === 1">输入用户名，我们将为您生成重置令牌</template>
-     <template v-else-if="step === 2">输入收到的重置令牌与新密码</template>
-     <template v-else>请使用新密码登录</template>
-    </template>
-   </AuthHero>
+    <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
+      <!-- 上半屏：品牌叙事区 -->
+      <AuthHero>
+        <template #title>找回密码</template>
+        <template #subtitle>密码重置需由医院信息科协助完成</template>
+      </AuthHero>
 
-   <!-- 步骤指示器（极简） -->
-   <div class="mt-[var(--spacer-16)] flex items-center gap-[var(--spacer-8)]" aria-hidden="true">
-    <div
-     v-for="s in [1, 2, 3]"
-     :key="s"
-     class="h-1 rounded-[var(--radius-full)] transition-colors duration-[var(--duration-normal)] ease-[var(--ease-out)]"
-     :class="step >= (s as 1 | 2 | 3)
-      ? 'w-8 bg-[var(--bg-brand)]'
-      : 'w-4 bg-[var(--bg-overlay-l3)]'"
-    />
-   </div>
+      <!-- 下半屏：协助说明 -->
+      <section class="auth-form-area flex flex-1 flex-col justify-center gap-[var(--spacer-16)] pb-[var(--spacer-16)]">
+        <div class="ds-alert ds-alert--warning">
+          <ShieldCheck class="icon" />
+          <p class="text-body-sm">
+            为保障账户安全，本平台不提供自助重置密码，请通过以下方式联系我们：
+          </p>
+        </div>
 
-   <!-- 下半屏：表单区（功能） -->
-   <section class="auth-form-area flex flex-1 flex-col justify-center pb-[var(--spacer-16)]">
-    <!-- Step 1：请求重置 -->
-    <form v-if="step === 1" class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleRequest">
-     <div class="auth-field">
-      <label class="auth-label" for="fp-username">用户名</label>
-      <div class="ds-field-wrap ds-field-wrap--underline">
-       <input id="fp-username" v-model="username" type="text" placeholder="请输入用户名" autocomplete="username" aria-label="用户名">
-      </div>
-     </div>
+        <ol class="flex flex-col gap-[var(--spacer-12)] text-body-base text-text-secondary">
+          <li>前往医院信息科现场办理；</li>
+          <li>携带本人有效证件至服务窗口核验身份；</li>
+          <li>由管理员重置后，使用新密码重新登录。</li>
+        </ol>
 
-     <div
-      v-if="requestError"
-      class="ds-alert ds-alert--error"
-      role="alert"
-     >
-      <CircleAlert class="icon" />
-      <span>{{ requestError }}</span>
-     </div>
-
-     <button
-      type="submit"
-      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
-      :class="{ 'ds-btn--loading': requesting }"
-      :disabled="requesting"
-     >
-      <span v-if="requesting" class="ds-btn__spinner" />
-      获取重置令牌
-     </button>
-    </form>
-
-    <!-- Step 2：确认重置 -->
-    <form v-else-if="step === 2" class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleConfirm">
-     <!-- 重置令牌 -->
-     <div class="auth-field">
-      <label class="auth-label" for="fp-token">重置令牌</label>
-      <div class="ds-field-wrap ds-field-wrap--underline">
-       <input id="fp-token" v-model="token" type="text" placeholder="重置令牌" autocomplete="off" aria-label="重置令牌">
-      </div>
-      <p class="text-body-sm text-text-tertiary">
-       令牌已发送至您的注册联系方式，15 分钟内有效
-      </p>
-     </div>
-
-     <!-- 新密码 -->
-     <div class="auth-field">
-      <label class="auth-label" for="fp-new">新密码</label>
-      <div class="ds-field-wrap ds-field-wrap--underline">
-       <input id="fp-new" v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
-       <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showNewPassword ? '隐藏密码' : '显示密码'" @click="showNewPassword = !showNewPassword">
-        <Eye v-if="!showNewPassword" class="h-4 w-4" />
-        <EyeOff v-else class="h-4 w-4" />
-       </button>
-      </div>
-      <PasswordStrength :password="newPassword" :segments="4" />
-     </div>
-
-     <!-- 确认新密码 -->
-     <div class="auth-field">
-      <label class="auth-label" for="fp-confirm">确认新密码</label>
-      <div class="ds-field-wrap ds-field-wrap--underline" :class="{ 'ds-field-wrap--error': passwordMismatch }">
-       <input id="fp-confirm" v-model="confirmPassword" :type="showConfirmPassword ? 'text' : 'password'" placeholder="确认新密码" autocomplete="new-password" aria-label="确认新密码">
-       <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center p-0 text-icon-tertiary hover:text-icon" :aria-label="showConfirmPassword ? '隐藏密码' : '显示密码'" @click="showConfirmPassword = !showConfirmPassword">
-        <Eye v-if="!showConfirmPassword" class="h-4 w-4" />
-        <EyeOff v-else class="h-4 w-4" />
-       </button>
-      </div>
-      <p
-       v-if="passwordMismatch"
-       class="text-body-sm text-[var(--status-error-default)]"
-      >
-       两次输入的密码不一致
-      </p>
-     </div>
-
-     <!-- 错误提示 -->
-     <div
-      v-if="confirmError"
-      class="ds-alert ds-alert--error"
-      role="alert"
-     >
-      <CircleAlert class="icon" />
-      <span>{{ confirmError }}</span>
-     </div>
-
-     <button
-      type="submit"
-      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
-      :class="{ 'ds-btn--loading': confirming }"
-      :disabled="confirming"
-     >
-      <span v-if="confirming" class="ds-btn__spinner" />
-      重置密码
-     </button>
-    </form>
-
-    <!-- Step 3：完成 -->
-    <div v-else class="flex flex-col items-center gap-[var(--spacer-20)]">
-     <div class="flex items-center justify-center w-16 h-16 rounded-full bg-[var(--status-success-surface-l1)]">
-      <CheckCircle2 :size="32" class="text-[var(--status-success-default)]" />
-     </div>
-     <p class="text-center text-body-base text-text-secondary">
-      您的密码已重置成功，请使用新密码登录
-     </p>
-     <button
-      class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
-      @click="goLogin"
-     >
-      前往登录
-     </button>
+        <button
+          class="auth-submit-btn ds-btn ds-btn--primary ds-btn--block"
+          @click="goLogin"
+        >
+          返回登录
+        </button>
+      </section>
     </div>
-
-    <!-- 兜底提示：医疗场景下令牌可能需管理员协助 -->
-    <div v-if="step !== 3" class="ds-alert ds-alert--warning mt-[var(--spacer-16)]">
-     <ShieldCheck class="icon" />
-     <p class="text-body-sm ">
-      未收到令牌？请联系医院信息科或携带有效证件前往服务窗口办理
-     </p>
-    </div>
-
-    <!-- 底部登录链接 -->
-    <footer v-if="step !== 3" class="auth-footer mt-[var(--spacer-24)] flex flex-col items-center gap-[var(--spacer-12)] text-center">
-     <p class="text-body-base text-text-secondary">
-      想起密码了？
-      <button class="ds-link-btn font-medium" @click="goLogin">立即登录</button>
-     </p>
-    </footer>
-   </section>
-  </div>
- </PageShell>
+  </PageShell>
 </template>

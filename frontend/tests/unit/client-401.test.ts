@@ -198,4 +198,35 @@ describe('apiClient 401 刷新逻辑', () => {
     // 两个原请求各自重试 1 次，总共 4 次（2 原始 + 2 重试）
     expect(router.callsFor((u) => u.includes('/api/protected-'))).toBe(4)
   })
+
+  it('刷新失败但 token 已被其它标签页轮换 → 复用新 token 重试，不清除跳登录', async () => {
+    setTokens('expired-access', 'old-refresh')
+    const router = mockFetchRouter()
+    router.addMatcher({
+      name: 'protected',
+      match: (url) => url.includes('/api/protected'),
+      respond: ({ callNumForUrl }) => {
+        if (callNumForUrl === 1) return jsonRes(401, { detail: 'expired' })
+        return jsonRes(200, { ok: true })
+      },
+    })
+    router.addMatcher({
+      name: 'refresh',
+      // 模拟"另一标签页已完成轮换"：本标签页刷新失败，但存储中的 refresh 已被替换为新值
+      match: (url) => url.includes('/api/auth/refresh'),
+      respond: () => {
+        setTokens('tab2-access', 'tab2-refresh')
+        return jsonRes(401, { detail: 'refresh consumed by another tab' })
+      },
+    })
+
+    const { apiClient } = await import('@/shared/api/client')
+    const data = await apiClient<{ ok: boolean }>('/protected')
+
+    // 复用其它标签页轮换出的新 token，重试成功；未被清空、未跳转
+    expect(data).toEqual({ ok: true })
+    expect(getRefreshToken()).toBe('tab2-refresh')
+    expect(getAccessToken()).toBe('tab2-access')
+    expect(window.location.href).toBe('')
+  })
 })

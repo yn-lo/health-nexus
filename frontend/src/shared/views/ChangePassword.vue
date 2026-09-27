@@ -63,14 +63,18 @@ async function handleChange() {
  }
  loading.value = true
  try {
- await authStore.changePassword(oldPassword.value, newPassword.value)
- showSuccessToast('密码修改成功')
- router.back()
+  await authStore.changePassword(oldPassword.value, newPassword.value)
+  // 改密会递增服务端 token_version，当前 access/refresh 立即失效（P2）。
+  // 必须立刻清理本地认证状态并跳登录页：否则页面仍显示"已登录"，
+  // 直到下一次请求收到 401 才被动跳转，期间用户处于不可用状态。
+  showSuccessToast('密码修改成功，请使用新密码重新登录')
+  await authStore.clearAuth()
+  window.location.href = '/login' // ponytail:allow-location 跨 MPA 跳转（chat/staff 共用统一登录页）
  } catch (e) {
- errorMsg.value = errmsg(e, '修改失败，请稍后重试')
- showFailToast(errorMsg.value)
+  errorMsg.value = errmsg(e, '修改失败，请稍后重试')
+  showFailToast(errorMsg.value)
  } finally {
- loading.value = false
+  loading.value = false
  }
 }
 </script>

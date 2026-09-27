@@ -38,17 +38,6 @@ export interface SuccessResponse {
   success: boolean
 }
 
-/** POST /api/auth/password-reset/request — 请求密码重置 */
-export interface PasswordResetRequestRequest {
-  username: string
-}
-
-/** POST /api/auth/password-reset/confirm — 确认密码重置 */
-export interface PasswordResetConfirmRequest {
-  token: string
-  new_password: string
-}
-
 /** POST /api/auth/change-password — 已登录用户修改密码 */
 export interface ChangePasswordRequest {
   old_password: string

@@ -24,8 +24,9 @@ import (
 // articleFetcher 暴露 handler 所需的 article 读取与行锁版本读取能力（便于测试 mock）。
 type articleFetcher interface {
 	GetByID(ctx context.Context, id int64) (*entity.Article, error)
-	// LockVersion 事务内锁定文章行并返回当前版本（FOR UPDATE），见 ArticleRepo.LockVersion。
-	LockVersion(ctx context.Context, id int64) (int, error)
+	// LockPublishedVersion 事务内锁定文章行并返回当前已发布快照版本（FOR UPDATE），
+	// 见 ArticleRepo.LockPublishedVersion。切片只与 published_version 绑定。
+	LockPublishedVersion(ctx context.Context, id int64) (int, error)
 }
 
 // chunkWriter 暴露 handler 所需的 chunk 写入能力（便于测试 mock）。
@@ -114,19 +115,31 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	}
 
 	chunkSize, chunkOverlap := h.resolveChunkConfig(ctx)
+	// P1：切片必须重建自**已审核发布快照**（published_content + published_version），
+	// 而非当前编辑稿。理由有二：
+	//   1. 检索按 c.version = a.published_version 绑定审核版本，若按当前 version 写入切片，
+	//      纯元数据变更（封面/来源等）递增 version 后，重建产物版本与前缀版本不符 → 整篇被检索排除；
+	//   2. 编辑稿可能尚未审核，直接向量化会让他人检索到未审核内容。
+	pubContent, pubVersion := article.PublishedContent, article.PublishedVersion
+	if pubVersion <= 0 {
+		// 兼容无快照的历史行（published_version=0）：退回当前编辑稿，避免清空既有切片。
+		slog.WarnContext(ctx, "wiki: article has no published snapshot, fallback to current draft",
+			"article_id", id, "version", article.Version)
+		pubContent, pubVersion = article.Content, article.Version
+	}
 	// 切片用纯文本：正文为富文本 HTML，直接切片会把标签、样式与 <img src> URL 一并喂给
 	// embedding，成为检索噪声（且图片本身不参与向量化）。
-	plainText := htmlToPlainText(article.Content)
+	plainText := htmlToPlainText(pubContent)
 	chunkTexts := chunkContent(plainText, chunkSize, chunkOverlap)
 	// P1：纯图片/空正文是**有效重建结果**（新版正文不含可检索文本），必须清除旧切片——
 	// 直接 return nil 会让已被替换的旧指引持续被检索命中（患者收到过期内容）。
 	// 走与正常路径相同的版本复核 + 事务性清除，只是不写入新切片。
 	if len(chunkTexts) == 0 {
-		if err := h.clearChunks(ctx, id, article.Version); err != nil {
+		if err := h.clearChunks(ctx, id, pubVersion); err != nil {
 			return err
 		}
 		slog.WarnContext(ctx, "wiki: vectorize empty content, cleared stale chunks",
-			"article_id", id, "version", article.Version)
+			"article_id", id, "version", pubVersion)
 		return nil
 	}
 	slog.InfoContext(ctx, "wiki: vectorize chunking",
@@ -148,13 +161,15 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	// 事务内原子替换切片：锁定文章行复核版本 → 失效旧切片 → 删除已失效 → 写入新切片。
 	// embedding 是长耗时操作，期间文章可能已被再次更新（新任务已入队）。若不复核就直接写入，
 	// 后完成的旧任务会把新版本切片失效并删除，造成旧内容覆盖新版本（P0 向量版本一致性）。
+	// 复核对象为 published_version（切片绑定的版本）：纯元数据变更只递增 version，
+	// 不改变已发布快照，不应因此丢弃本次重建（P1）。
 	swap := func(ctx context.Context) error {
 		if h.tx == nil {
 			// 未注入事务管理器（单测）时不具备行锁，仍执行版本复核。
-			return h.swapChunks(ctx, id, article.Version, model, chunkTexts, embeddings)
+			return h.swapChunks(ctx, id, pubVersion, model, chunkTexts, embeddings)
 		}
 		return h.tx.WithTx(ctx, func(ctx context.Context) error {
-			return h.swapChunks(ctx, id, article.Version, model, chunkTexts, embeddings)
+			return h.swapChunks(ctx, id, pubVersion, model, chunkTexts, embeddings)
 		})
 	}
 	if err := swap(ctx); err != nil {
@@ -162,7 +177,7 @@ func (h *VectorizeHandler) HandleVectorize(ctx context.Context, t *asynqlib.Task
 	}
 
 	slog.InfoContext(ctx, "wiki: vectorize article done",
-		"article_id", id, "chunks", len(chunkTexts), "version", article.Version)
+		"article_id", id, "chunks", len(chunkTexts), "version", pubVersion)
 	return nil
 }
 
@@ -204,14 +219,14 @@ func (h *VectorizeHandler) clearChunks(ctx context.Context, id int64, version in
 
 // clearChunksTx 在调用方事务内完成版本复核 + 旧切片清除。
 func (h *VectorizeHandler) clearChunksTx(ctx context.Context, id int64, version int) error {
-	cur, err := h.articles.LockVersion(ctx, id)
+	cur, err := h.articles.LockPublishedVersion(ctx, id)
 	if err != nil {
-		return fmt.Errorf("lock article %d version: %w", id, err)
+		return fmt.Errorf("lock article %d published version: %w", id, err)
 	}
 	if cur != version {
-		slog.WarnContext(ctx, "wiki: article version changed during embedding, skip clearing chunks",
-			"article_id", id, "embedded_version", version, "current_version", cur)
-		return fmt.Errorf("article %d version changed %d -> %d during embedding: %w",
+		slog.WarnContext(ctx, "wiki: article published version changed during embedding, skip clearing chunks",
+			"article_id", id, "embedded_version", version, "current_published_version", cur)
+		return fmt.Errorf("article %d published version changed %d -> %d during embedding: %w",
 			id, version, cur, asynqlib.SkipRetry)
 	}
 	if _, err := h.chunks.DeactivateByArticle(ctx, id); err != nil {
@@ -224,19 +239,20 @@ func (h *VectorizeHandler) clearChunksTx(ctx context.Context, id int64, version 
 }
 
 // swapChunks 在调用方事务内完成版本复核 + 切片原子替换。
-// 版本已变化（embedding 期间文章被更新）时放弃本次写入：新版本自有其入队任务负责重建，
+// 版本已变化（embedding 期间文章被重新审核发布）时放弃本次写入：新版本自有其入队任务负责重建，
 // 本任务返回 SkipRetry 避免重复覆盖（重试也仍会被版本复核拦下）。
+// 复核的是 published_version：纯元数据变更（封面/来源）只递增 version，不影响已发布快照。
 func (h *VectorizeHandler) swapChunks(
 	ctx context.Context, id int64, version int, model string, chunkTexts []string, embeddings [][]float32,
 ) error {
-	cur, err := h.articles.LockVersion(ctx, id)
+	cur, err := h.articles.LockPublishedVersion(ctx, id)
 	if err != nil {
-		return fmt.Errorf("lock article %d version: %w", id, err)
+		return fmt.Errorf("lock article %d published version: %w", id, err)
 	}
 	if cur != version {
-		slog.WarnContext(ctx, "wiki: article version changed during embedding, discard stale chunks",
-			"article_id", id, "embedded_version", version, "current_version", cur)
-		return fmt.Errorf("article %d version changed %d -> %d during embedding: %w",
+		slog.WarnContext(ctx, "wiki: article published version changed during embedding, discard stale chunks",
+			"article_id", id, "embedded_version", version, "current_published_version", cur)
+		return fmt.Errorf("article %d published version changed %d -> %d during embedding: %w",
 			id, version, cur, asynqlib.SkipRetry)
 	}
 	// 先失效旧切片再写入新切片（与 Update 路径协同：Update 已先 DeactivateByArticle，

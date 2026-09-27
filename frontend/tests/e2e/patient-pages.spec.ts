@@ -132,8 +132,12 @@ test.describe('患者端 - 对话页', () => {
       // 对话页输入框 placeholder 是"输入您的健康问题..."
       const msgInput = page.getByPlaceholder('输入您的健康问题...')
       await expect(msgInput).toBeVisible({ timeout: 5000 })
+      // 等待首条消息的流式生成结束：生成期间发送按钮被"停止生成"替换，
+      // 不等待直接点击会超时（LLM 响应慢时必现的竞态）。
+      const sendBtn = page.getByRole('button', { name: '发送', exact: false })
+      await expect(sendBtn).toBeVisible({ timeout: 30000 })
       await msgInput.fill('头疼')
-      await page.getByRole('button', { name: '发送', exact: false }).click()
+      await sendBtn.click()
       // 应调用 SSE stream 端点
       await expect.poll(
         () => calls.filter((c) => c.url.includes('/api/chat/stream')),

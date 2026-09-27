@@ -551,7 +551,7 @@ func validateUpdateInput(in UpdateInput) error {
 
 // prepareUpdateFields 构建待更新字段：内容变化时检测 content_hash（REQ-WIKI-015），
 // summary 空则自动截取（仅在 content 也更新时生效），已发布文章修改后版本号递增（REQ-WIKI-005）。
-// P1：已发布文章的内容变更同时把状态置回 pending——新内容必须重新审核通过后才对患者生效。
+// P1：已发布文章的患者可见/安全字段（正文、标题、摘要、风险等级）变更必须重新审核才对患者生效。
 func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.UpdateFields {
 	fields := repository.UpdateFields{
 		Title:                in.Title,
@@ -586,10 +586,11 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 		summary := truncateRunes(stripHTMLTags(*fields.Content))
 		fields.Summary = &summary
 	}
-	// 内容变更一律要求在 SQL 内判定重新审核（published → pending + 版本递增），
-	// 不依赖此处读到的状态——它与写入时的实际状态可能已漂移（P1 并发编辑绕过审核）。
-	// 非 published 的文章由 SQL 的 CASE 保持原状态与版本（draft/pending 内容编辑不变状态）。
-	if fields.ContentHash != nil {
+	// 内容变更，或患者可见/安全相关字段（标题、摘要、风险等级）变更，一律要求在 SQL 内判定重新
+	// 审核（published → pending + 版本递增），不依赖此处读到的状态——它与写入时的实际状态可能已
+	// 漂移（P1 并发编辑绕过审核）。非 published 的文章由 SQL 的 CASE 保持原状态与版本
+	// （draft/pending 内容编辑不变状态）。
+	if fields.ContentHash != nil || patientVisibleFieldChanged(article, in, fields.Summary) {
 		fields.ReReviewOnContentChange = true
 	} else if article.Status == constants.ArticleStatusPublished {
 		fields.IncrementVersion = true
@@ -597,10 +598,31 @@ func prepareUpdateFields(article *entity.Article, in UpdateInput) repository.Upd
 	return fields
 }
 
+// patientVisibleFieldChanged 判断患者可见/安全相关字段（标题、摘要、风险等级）是否相对当前值发生变化。
+// 只认 content_hash 会放过"单独改标题/摘要/content_risk"——患者端读取的是当前标题与摘要，
+// 降低风险等级还会改变检索与答案审核策略（P1 绕过审核）。summary 传规范化后的待写入值（nil 表示未改）。
+func patientVisibleFieldChanged(article *entity.Article, in UpdateInput, summary *string) bool {
+	if in.Title != nil && *in.Title != article.Title {
+		return true
+	}
+	if summary != nil && *summary != article.Summary {
+		return true
+	}
+	if in.ContentRisk == nil {
+		return false
+	}
+	risk := *in.ContentRisk
+	if risk == "" {
+		risk = entity.ContentRiskNormal
+	}
+	return risk != article.ContentRisk
+}
+
 // commitUpdate 事务内落库更新（REQ-WIKI-016/High 3/High 4）：
 // 已发布文章内容变更后回到待审核（P1）——不失效旧切片、不写 outbox，
 // 审核通过前检索继续服务上一次审核通过的切片；审核通过时（Approve）再重建切片。
-// 审计日志仅在 content_hash 变化时记录，元数据变化（title/cover/allow_reference）不记审计，
+// 审计日志在触发重新审核的更新时记录（正文/标题/摘要/content_risk 变更），
+// 记录状态迁移（published→pending）与版本递增；纯元数据变更（封面/来源等）不记审计，
 // 避免 FromStatus==ToStatus 的混淆噪声。
 func (s *ArticleService) commitUpdate(
 	ctx context.Context, articleID int64, fromStatus string, actor Actor, fields repository.UpdateFields,
@@ -628,7 +650,7 @@ func (s *ArticleService) commitUpdate(
 				return fmt.Errorf("outbox insert on update: %w", oErr)
 			}
 		}
-		if fields.ContentHash != nil {
+		if fields.ReReviewOnContentChange {
 			if err := s.audit.Create(ctx, &entity.ArticleAuditLog{
 				ArticleID:  a.ID,
 				OperatorID: actor.UserID,

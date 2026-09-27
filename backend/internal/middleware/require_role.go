@@ -43,6 +43,13 @@ func RequireAdmin() func(http.Handler) http.Handler {
 	return RequireRole(constants.RoleSuperAdmin, constants.RoleDeptAdmin)
 }
 
+// RequireSuperAdmin 要求超级管理员角色。用于全院级/全局安全配置（AI Provider、敏感词、
+// 安全规则、安全话术、审计日志等）——这些配置影响所有科室，科室管理员不得读写，
+// 与前端 superAdminRouteGuard 的页面限制保持同一权限边界。
+func RequireSuperAdmin() func(http.Handler) http.Handler {
+	return RequireRole(constants.RoleSuperAdmin)
+}
+
 // RequireAnyRole 要求已认证（角色非空），不限具体角色。
 // 适用于所有已登录用户均可访问的端点（如 AI 聊天）。
 func RequireAnyRole() func(http.Handler) http.Handler {

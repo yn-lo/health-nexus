@@ -1,5 +1,5 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
-import { clearTokens, getAccessToken, getDeviceId, tryRefreshToken } from '@/shared/api/client'
+import { clearTokens, getAccessToken, getDeviceId, getRefreshToken, tryRefreshToken } from '@/shared/api/client'
 import { type NoticeKind, type Reference, type SSEEvent, type TurnResult } from '@/shared/types/chat'
 import { parseSSELine } from './sseParse'
 
@@ -132,8 +132,19 @@ export function useSSEChat(options: UseSSEChatOptions) {
           })
 
           if (response.status === 401 && token) {
+            const attemptedRefresh = getRefreshToken()
             const refreshed = await tryRefreshToken()
             if (refreshed) {
+              headers['Authorization'] = `Bearer ${getAccessToken()}`
+              response = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body),
+                signal: controller.value.signal,
+              })
+            } else if (getRefreshToken() && getRefreshToken() !== attemptedRefresh) {
+              // 刷新失败但 refresh token 已被其它标签页轮换（跨标签页并发刷新）→ 复用新 token 重试，
+              // 避免一个页面成功、另一个被清空跳登录（P2）。
               headers['Authorization'] = `Bearer ${getAccessToken()}`
               response = await fetch(endpoint, {
                 method: 'POST',

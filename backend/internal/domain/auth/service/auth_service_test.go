@@ -14,6 +14,7 @@ import (
 
 	"health-nexus/internal/config"
 	"health-nexus/internal/domain/auth/entity"
+	"health-nexus/internal/middleware"
 	"health-nexus/internal/platform/crypto"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
@@ -83,8 +84,8 @@ func (m *mockUserRepo) Create(_ context.Context, _, _, _ string) (*entity.User, 
 	return m.createUser, m.createErr
 }
 
-func (m *mockUserRepo) SetPrimaryDept(_ context.Context, _, _ int64) error {
-	return nil
+func (m *mockUserRepo) CreateWithPrimaryDept(_ context.Context, _, _, _ string, _ int64) (*entity.User, error) {
+	return m.createUser, m.createErr
 }
 
 func (m *mockUserRepo) UpdatePrimaryDept(_ context.Context, _, _ int64) error {
@@ -697,8 +698,60 @@ func TestUpdateAccountRole_RepoDown_PropagatesError(t *testing.T) {
 }
 
 // ============================================================================
-// 测试辅助
+// Refresh：会话版本（P1）
 // ============================================================================
+
+// TestRefresh_TokenVersionMismatch_RejectsOldRefresh P1：改密后 token_version 递增，
+// 旧 refresh token 即使签名有效也必须被拒绝，不能继续轮换换取新令牌。
+func TestRefresh_TokenVersionMismatch_RejectsOldRefresh(t *testing.T) {
+	user := &entity.User{ID: 42, Role: constants.RoleDoctor, IsActive: true, TokenVersion: 1}
+	svc, refresh := newRefreshTestService(t, user, 0) // 旧令牌签发时版本为 0
+	_, _, err := svc.Refresh(context.Background(), refresh)
+	assertAppErr(t, err, 401, "AUTH_INVALID_REFRESH")
+}
+
+// TestRefresh_TokenVersionMatch_Succeeds 确保版本校验未误伤正常轮换路径。
+func TestRefresh_TokenVersionMatch_Succeeds(t *testing.T) {
+	user := &entity.User{ID: 42, Role: constants.RoleDoctor, IsActive: true, TokenVersion: 3}
+	svc, refresh := newRefreshTestService(t, user, 3)
+	access, newRefresh, err := svc.Refresh(context.Background(), refresh)
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
+	if access == "" || newRefresh == "" {
+		t.Error("期望签发新的 access/refresh token 对")
+	}
+}
+
+// newRefreshTestService 构造带真实 TokenIssuer/Authenticator 的 AuthService，
+// 并按 issueVersion 签发一枚 refresh token（模拟"改密前签发"的旧令牌）。
+func newRefreshTestService(t *testing.T, user *entity.User, issueVersion int64) (svc *AuthService, refresh string) {
+	t.Helper()
+	jwtCfg := config.JWTConfig{
+		Secret: "test-secret-at-least-32-bytes-long!!", Issuer: "test",
+		AccessTTL: time.Minute, RefreshTTL: time.Hour,
+	}
+	issuer, err := NewTokenIssuer(jwtCfg)
+	if err != nil {
+		t.Fatalf("构造 TokenIssuer: %v", err)
+	}
+	auth, err := middleware.NewAuthenticator(jwtCfg, nil)
+	if err != nil {
+		t.Fatalf("构造 Authenticator: %v", err)
+	}
+	_, refresh, err = issuer.Issue(context.Background(), user.ID, user.Role, user.PrimaryDeptID, issueVersion)
+	if err != nil {
+		t.Fatalf("签发 refresh token: %v", err)
+	}
+	svc = &AuthService{
+		repo:   &mockUserRepo{user: user},
+		rdb:    newMockRedis(),
+		issuer: issuer,
+		auth:   auth,
+		cfg:    testConfig(),
+	}
+	return svc, refresh
+}
 
 func newTestAuthService(repo *mockUserRepo, rdb *mockRedis) *AuthService {
 	if rdb == nil {

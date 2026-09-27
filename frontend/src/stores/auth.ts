@@ -31,14 +31,24 @@ export const useAuthStore = defineStore('auth', () => {
     } catch {
       // ponytail: 即使后端调用失败也清除本地状态，安全优先于一致性，折中
     }
-    // 立即清空 user ref，缩短 UI 陈旧窗口；authApi.logout 内部 .finally 已调 clearTokens
+    await clearAuth()
+  }
+
+  /**
+   * 仅清理本地认证状态（不调用后端登出）。
+   * 用于会话已在服务端失效的场景：改密后 token_version 递增，当前 access/refresh 立即失效，
+   * 再调 /auth/logout 只会拿到 401（P2）。此时必须立刻清状态并跳登录页，
+   * 否则用户停留在"看似已登录"的页面上，直到下一次请求 401 才被踢出。
+   */
+  async function clearAuth() {
+    // 立即清空 user ref，缩短 UI 陈旧窗口
     user.value = null
     // 延迟导入避免循环依赖；chunk 加载失败时跳过 store 重置，clearTokens 仍保证本地状态清理
     try {
       const { useChatStore } = await import('@/stores/chat')
       useChatStore().$reset()
     } catch {
-      // ponytail: 弱网下动态 import 可能失败，不应阻塞登出，折中
+      // ponytail: 弱网下动态 import 可能失败，不应阻塞清理，折中
     }
     clearTokens()
   }
@@ -64,5 +74,5 @@ export const useAuthStore = defineStore('auth', () => {
     return profile
   }
 
-  return { user, login, register, logout, changePassword, fetchProfile, updateProfile }
+  return { user, login, register, logout, clearAuth, changePassword, fetchProfile, updateProfile }
 })

@@ -23,19 +23,25 @@ type Article struct {
 	// PublishedVersion 快照对应的文章版本号（published_content 写入时的 version）。
 	// 检索据此只命中与该版本一致的切片，避免并发重建产生的超前版本切片被命中。0 表示无快照。
 	PublishedVersion int
-	AuthorID         int64
-	DepartmentID     *int64
-	ReviewerID       *int64
-	ReviewComment    string
-	ViewCount        int64
-	FeaturedRank     int
-	IsDeleted        bool
-	AllowReference   bool
-	ReviewOverdue    bool
-	ReviewOverdueAt  *time.Time
-	PublishedAt      *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// PublishedTitle/PublishedSummary/PublishedContentRisk 与 PublishedContent 同属已发布快照：
+	// 患者在详情页看到的是标题/摘要，检索与答案审核策略读的是 content_risk。若这三者读当前编辑稿，
+	// 作者改标题/摘要即可绕过审核直接对患者生效，降 risk 还会提前放宽审核策略（P1）。
+	PublishedTitle       string
+	PublishedSummary     string
+	PublishedContentRisk string
+	AuthorID             int64
+	DepartmentID         *int64
+	ReviewerID           *int64
+	ReviewComment        string
+	ViewCount            int64
+	FeaturedRank         int
+	IsDeleted            bool
+	AllowReference       bool
+	ReviewOverdue        bool
+	ReviewOverdueAt      *time.Time
+	PublishedAt          *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 
 	// 知识条目元数据（P1）：来源 / 适用人群 / 有效期 / 内容风险等级。
 	// ContentRisk 决定逾期策略与检索可见性：high 的资料有效期更短，

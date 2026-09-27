@@ -137,9 +137,10 @@ type ChunkSearchHit struct {
 // 且全文重复占用上下文，长文章尾部的有效证据会被挤掉（P1）。
 // 切片内容来源于审核通过时写入的版本（切片仅在 Approve/重建时写入，见 vectorize handler），
 // 故命中的切片即"已审核版本"的切片；文章当前是否 pending 由可见性条件约束。
+// 标题与风险等级同样取已审核快照 published_*：待审核的标题/降级后的 risk 不得影响引用展示与答案审核策略（P1）。
 const chunkSearchColumns = `c.id, c.article_id, c.chunk_index, c.content, c.content_hash,
 	c.embedding, c.embedding_model, c.is_active, c.version, c.created_at,
-	COALESCE(a.title, ''), a.content_risk`
+	a.published_title, a.published_content_risk`
 
 // deptVisibilitySQL 生成科室可见性子条件：deptIDs 为 nil/空时不限制，非空时
 // 允许文章所属科室命中 OR 文章被 approved 引用授权给该科室。
@@ -213,7 +214,7 @@ func (r *ChunkRepo) SearchByVector(
 		  AND c.version = a.published_version
 		  AND (a.status = '%s' OR (a.status = '%s' AND a.published_at IS NOT NULL))
 		  AND (a.valid_until IS NULL OR a.valid_until > now())
-		  AND NOT (a.content_risk = '%s' AND a.review_overdue = true)
+		  AND NOT (a.published_content_risk = '%s' AND a.review_overdue = true)
 		  AND %s%s%s
 		ORDER BY c.embedding <=> $1
 		LIMIT $2`, chunkSearchColumns,

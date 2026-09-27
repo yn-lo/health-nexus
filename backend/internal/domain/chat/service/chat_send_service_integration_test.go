@@ -37,6 +37,11 @@ func (m *mockDeptResolver) ResolveForPatient(_ context.Context, _ int64, _ *int6
 	return m.dept, m.err
 }
 
+// ResolveForAnonymous 匿名科室解析：mock 返回预设 dept（ID<=0 视为"全部科室"）。
+func (m *mockDeptResolver) ResolveForAnonymous(_ context.Context, _ *int64) (rag.Department, error) {
+	return m.dept, m.err
+}
+
 // --- mockKnowledgeSearcher ---
 
 type mockKnowledgeSearcher struct {
@@ -124,6 +129,8 @@ type mockStreamer struct {
 	// （模拟上游提前断流：代理/网络在 finish_reason 之前关闭连接）。
 	noDone  bool
 	lastReq llm.ChatRequest
+	// onStream 非 nil 时在投递 token 前调用（并发用例用于阻塞生成阶段制造重叠）。
+	onStream func()
 }
 
 func (m *mockStreamer) IsReady() bool { return m.ready }
@@ -136,6 +143,9 @@ func (m *mockStreamer) StreamChat(_ context.Context, req llm.ChatRequest) (<-cha
 	ch := make(chan llm.StreamChunk)
 	go func() {
 		defer close(ch)
+		if m.onStream != nil {
+			m.onStream()
+		}
 		for _, tok := range m.tokens {
 			ch <- llm.StreamChunk{Token: tok}
 		}
@@ -154,13 +164,15 @@ func (m *mockStreamer) StreamChat(_ context.Context, req llm.ChatRequest) (<-cha
 // --- mockConversationPort ---
 
 type mockConversationPort struct {
-	mu   sync.Mutex
-	conv *entity.Conversation
+	mu          sync.Mutex
+	conv        *entity.Conversation
+	createCalls int // Create 调用次数（并发幂等用例断言未重复创建会话）
 }
 
 func (m *mockConversationPort) Create(_ context.Context, patientID int64, lockedDeptID *int64) (*entity.Conversation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.createCalls++
 	m.conv = &entity.Conversation{
 		ID:           uuid.New(),
 		PatientID:    patientID,
@@ -368,6 +380,17 @@ func (m *mockTurnRegistry) Put(_ context.Context, key, value string, _ time.Dura
 	defer m.mu.Unlock()
 	m.data[key] = value
 	return nil
+}
+
+// PutIfAbsent 原子占位（对齐 Redis SET NX）：key 已存在返回 false。
+func (m *mockTurnRegistry) PutIfAbsent(_ context.Context, key, value string, _ time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.data[key]; ok {
+		return false, nil
+	}
+	m.data[key] = value
+	return true, nil
 }
 
 func (m *mockTurnRegistry) Lookup(_ context.Context, key string) (value string, found bool, err error) {
@@ -2374,5 +2397,78 @@ func TestStream_InFlightRequest_Conflicts(t *testing.T) {
 	defer msg.mu.Unlock()
 	if len(msg.messages) != 1 {
 		t.Errorf("生成中的重复提交不应落库新消息，实际 %d 条", len(msg.messages))
+	}
+}
+
+// TestStream_ConcurrentSameRequestID_OnlyOneWins 并发同一 request_id 提交，只允许一个进入生成链路，
+// 另一个必须 409——原实现"先查后写（普通 SET）"存在竞态，两个请求都会通过首次查询各自创建会话（P2）。
+func TestStream_ConcurrentSameRequestID_OnlyOneWins(t *testing.T) {
+	// 生成阶段阻塞，确保两个请求真正并发重叠（否则第一个已登记完成、第二个走回放路径）。
+	gate := make(chan struct{})
+	started := make(chan struct{}, 1)
+	streamer := &mockStreamer{
+		ready:  true,
+		tokens: []string{"高血压", "需", "规律", "服药"},
+		onStream: func() {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-gate
+		},
+	}
+	knowledge := &mockKnowledgeSearcher{
+		chunks: []rag.Chunk{{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "t", Content: "c", Score: 0.9, VecScore: 0.9}},
+	}
+	conv := &mockConversationPort{}
+	msg := &mockMessagePort{}
+	crisis := &mockCrisisPort{}
+
+	svc := newTestChatSendService(t, streamer, knowledge, conv, msg, crisis)
+	svc.turns = newMockTurnRegistry()
+
+	requestID := uuid.NewString()
+	in := newStreamInput("高血压怎么控制")
+	in.RequestID = requestID
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = svc.Stream(context.Background(), in, &mockSSEWriter{})
+		}(i)
+	}
+	// 等第一个请求进入生成阶段，再放行——此时两个请求必然已并发。
+	<-started
+	close(gate)
+	wg.Wait()
+
+	// 核心不变量：只有一个请求真正创建会话并生成。
+	// 另一请求的出口取决于时序——并发重叠时被原子占位挡下（409），
+	// 若在完成后才到达则走幂等回放（nil）。两者都不允许重复生成。
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if appErr, ok := err.(*apperrors.AppError); ok && appErr.HTTP == 409 {
+			continue
+		}
+		t.Fatalf("非预期错误: %v", err)
+	}
+
+	// 只落一对消息（未重复生成），且仅创建一个会话。
+	msg.mu.Lock()
+	msgCount := len(msg.messages)
+	msg.mu.Unlock()
+	if msgCount != 2 {
+		t.Errorf("并发同 request_id 应只生成一轮（user+assistant 共 2 条），实际 %d 条: %v", msgCount, errs)
+	}
+	conv.mu.Lock()
+	createCount := conv.createCalls
+	conv.mu.Unlock()
+	if createCount != 1 {
+		t.Errorf("并发同 request_id 应只创建一个会话，实际 %d 个", createCount)
 	}
 }

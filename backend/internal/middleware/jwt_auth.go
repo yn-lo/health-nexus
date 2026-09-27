@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -23,23 +24,44 @@ type Claims struct {
 	Role      string `json:"role"`
 	DeptID    int64  `json:"dept_id,omitempty"`
 	TokenType string `json:"token_type,omitempty"` // "access" 或 "refresh"；空表示历史 token
+	// TokenVersion 会话版本（签发时的 users.token_version）。与当前值不一致即视为失效：
+	// 密码变更后旧令牌不可再用（P1）。
+	TokenVersion int64 `json:"ver,omitempty"`
+}
+
+// SessionInfo 令牌对应用户的**当前**会话状态（取自 DB，不信任令牌内声明）。
+type SessionInfo struct {
+	Role         string
+	DeptID       int64
+	TokenVersion int64
+	Active       bool
+}
+
+// SessionStore 读取用户当前会话状态，用于令牌失效与权限变更即时生效。
+// 由 adapter 桥接 auth 域 UserRepo 实现，在装配时注入 Authenticator。
+type SessionStore interface {
+	// CurrentSession 返回用户当前会话状态；用户不存在/已删除返回 (nil, nil)。
+	CurrentSession(ctx context.Context, userID int64) (*SessionInfo, error)
 }
 
 // authScheme Authorization 头中的认证方案。
 const authScheme = "Bearer"
 
 // Authenticator JWT 验证器，持有 HS256 对称密钥和签发者。
+// sessions 非 nil 时，每次请求校验账户当前状态（未锁定/未删除）与令牌版本一致，
+// 并以 DB 中的 role/dept 覆盖令牌内声明——锁定、降权、调科后旧 access token 立即失效（P1）。
 type Authenticator struct {
-	secret []byte
-	issuer string
+	secret   []byte
+	issuer   string
+	sessions SessionStore
 }
 
-// NewAuthenticator 用 cfg.JWT.Secret 构造验证器。
-func NewAuthenticator(cfg config.JWTConfig) (*Authenticator, error) {
+// NewAuthenticator 用 cfg.JWT.Secret 构造验证器。sessions 可为 nil（仅验签，不校验账户状态）。
+func NewAuthenticator(cfg config.JWTConfig, sessions SessionStore) (*Authenticator, error) {
 	if cfg.Secret == "" {
 		return nil, fmt.Errorf("jwt secret is empty")
 	}
-	return &Authenticator{secret: []byte(cfg.Secret), issuer: cfg.Issuer}, nil
+	return &Authenticator{secret: []byte(cfg.Secret), issuer: cfg.Issuer, sessions: sessions}, nil
 }
 
 // Parse 验证 token 的 HS256 签名、签发者，返回声明。
@@ -76,10 +98,27 @@ func JWTAuth(auth *Authenticator) func(http.Handler) http.Handler {
 				response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "无效的访问令牌"))
 				return
 			}
+			role, deptID := claims.Role, claims.DeptID
+			// 账户状态与权限以当前 DB 为准，不信任令牌内可能过期的 role/dept。
+			// fail-closed：DB 故障时拒绝请求，避免故障窗口内旧令牌继续持有原权限。
+			if auth.sessions != nil {
+				info, err := auth.sessions.CurrentSession(r.Context(), claims.UserID)
+				if err != nil {
+					slog.ErrorContext(r.Context(), "jwt: load session state failed",
+						"err", err, "user_id", claims.UserID)
+					response.WriteError(w, r, apperrors.ServiceUnavailable("AUTH_SESSION_UNAVAILABLE", "鉴权服务暂不可用"))
+					return
+				}
+				if info == nil || !info.Active || info.TokenVersion != claims.TokenVersion {
+					response.WriteError(w, r, apperrors.Unauthorized("UNAUTHORIZED", "无效的访问令牌"))
+					return
+				}
+				role, deptID = info.Role, info.DeptID
+			}
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, contextkeys.UserID, claims.UserID)
-			ctx = context.WithValue(ctx, contextkeys.UserRole, claims.Role)
-			ctx = context.WithValue(ctx, contextkeys.DeptID, claims.DeptID)
+			ctx = context.WithValue(ctx, contextkeys.UserRole, role)
+			ctx = context.WithValue(ctx, contextkeys.DeptID, deptID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

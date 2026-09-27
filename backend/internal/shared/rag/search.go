@@ -19,6 +19,10 @@ type DepartmentResolver interface {
 	// ResolveForPatient 校验患者可访问 selectedDeptID（nil 表示用患者主科室），
 	// 返回锁定的 Department。
 	ResolveForPatient(ctx context.Context, patientID int64, selectedDeptID *int64) (Department, error)
+	// ResolveForAnonymous 校验匿名用户可选 selectedDeptID：仅允许公共且启用的科室；
+	// nil 或 0 表示"全部科室"（不限定）；具体 id 不在公共科室列表中返回 403。
+	// 匿名用户不得访问非公共科室（与患者端"公共科室"可见性一致）。
+	ResolveForAnonymous(ctx context.Context, selectedDeptID *int64) (Department, error)
 }
 
 // Chunk 检索命中的知识切片。对应 wiki 域 article_chunks。

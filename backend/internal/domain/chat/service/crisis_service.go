@@ -68,6 +68,11 @@ func (s *CrisisService) List(
 ) ([]*CrisisListItem, int64, error) {
 	filter := repository.CrisisFilter{Level: level, Handled: handled}
 	if actor.Role != constants.RoleSuperAdmin {
+		// 非超管必须绑定科室：DeptID=0 会被仓储解释为"不过滤科室"，导致跨科室泄露患者姓名/触发内容。
+		// 超管的全局权限不与该零值共用语义。
+		if actor.DeptID <= 0 {
+			return nil, 0, apperrors.Forbidden("CHAT_CRISIS_FORBIDDEN", "未绑定科室，无法查看危机事件")
+		}
 		filter.DeptID = actor.DeptID
 	}
 	rows, total, err := s.crisis.List(ctx, filter, limit, offset)

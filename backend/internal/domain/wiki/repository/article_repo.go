@@ -34,6 +34,7 @@ const articleColumns = `id, title, content, summary, cover_image_url, status, ve
 	is_deleted, allow_reference, review_overdue, review_overdue_at, published_at,
 	source, applicable_population, valid_until, content_risk,
 	published_content, published_content_hash, published_version,
+	published_title, published_summary, published_content_risk,
 	created_at, updated_at`
 
 // articleScanCols 与 articleColumns 一一对应（两处必须同步修改）。
@@ -42,6 +43,7 @@ const articleScanCols = `i.id, i.title, i.content, i.summary, i.cover_image_url,
 	i.is_deleted, i.allow_reference, i.review_overdue, i.review_overdue_at, i.published_at,
 	i.source, i.applicable_population, i.valid_until, i.content_risk,
 	i.published_content, i.published_content_hash, i.published_version,
+	i.published_title, i.published_summary, i.published_content_risk,
 	i.created_at, i.updated_at`
 
 // ArticleRepo 文章仓储。
@@ -79,7 +81,8 @@ func (r *ArticleRepo) Create(ctx context.Context, a *entity.Article) error {
 		&a.ContentHash, &a.AuthorID, &a.DepartmentID, &a.ReviewerID, &a.ReviewComment, &a.ViewCount, &a.FeaturedRank,
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
-		&a.PublishedContent, &a.PublishedContentHash,
+		&a.PublishedContent, &a.PublishedContentHash, &a.PublishedVersion,
+		&a.PublishedTitle, &a.PublishedSummary, &a.PublishedContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)
@@ -99,19 +102,21 @@ func (r *ArticleRepo) GetByID(ctx context.Context, id int64) (*entity.Article, e
 	return a, nil
 }
 
-// LockVersion 事务内锁定文章行（FOR UPDATE）并返回当前版本。
-// 供向量化 Worker 在写入切片前复核版本：并发发布/更新会在锁上排队，
-// 保证同文章的"读版本 → 写切片"串行化，防止旧任务覆盖新版本切片。
+// LockPublishedVersion 事务内锁定文章行（FOR UPDATE）并返回当前**已发布快照版本**（published_version）。
+// 供向量化 Worker 在写入切片前复核版本：切片与 published_version 绑定（检索条件 c.version = a.published_version），
+// 因此复核对象必须是 published_version——纯元数据变更（封面/来源等）只递增 version，
+// 若改用 version 复核会导致重建产物版本与检索条件不符、整篇被排除（P1）。
+// 并发发布/重新审核会在锁上排队，保证同文章的"读版本 → 写切片"串行化。
 // 必须在调用方事务内执行（postgres.Q 取 ctx 事务）；未找到返回 ErrNotFound。
-func (r *ArticleRepo) LockVersion(ctx context.Context, id int64) (int, error) {
-	const sql = `SELECT version FROM articles WHERE id = $1 AND is_deleted = false FOR UPDATE`
+func (r *ArticleRepo) LockPublishedVersion(ctx context.Context, id int64) (int, error) {
+	const sql = `SELECT published_version FROM articles WHERE id = $1 AND is_deleted = false FOR UPDATE`
 	var v int
 	err := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, id).Scan(&v)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotFound
 	}
 	if err != nil {
-		return 0, fmt.Errorf("lock article version: %w", err)
+		return 0, fmt.Errorf("lock article published version: %w", err)
 	}
 	return v, nil
 }
@@ -144,9 +149,13 @@ func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.A
 	if err != nil {
 		return nil, err
 	}
-	// 患者端只读已审核快照：编辑稿 content 在此替换为 published_content。
+	// 患者端只读已审核快照：正文、标题、摘要、风险等级一律替换为 published_* 快照。
+	// 否则作者改标题/摘要（或把 risk 降为 normal）后，患者与检索策略会立即读取未审核的新值（P1）。
 	a.Content = a.PublishedContent
 	a.ContentHash = a.PublishedContentHash
+	a.Title = a.PublishedTitle
+	a.Summary = a.PublishedSummary
+	a.ContentRisk = a.PublishedContentRisk
 	return a, nil
 }
 
@@ -193,6 +202,7 @@ func (r *ArticleRepo) ListPublished(
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.published_content, a.published_content_hash, a.published_version,
+		a.published_title, a.published_summary, a.published_content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -231,6 +241,7 @@ func (r *ArticleRepo) ListFeatured(ctx context.Context, departmentID *int64, lim
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.published_content, a.published_content_hash, a.published_version,
+		a.published_title, a.published_summary, a.published_content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -294,6 +305,7 @@ func (r *ArticleRepo) ListForStaff(
 		a.is_deleted, a.allow_reference, a.review_overdue, a.review_overdue_at, a.published_at,
 		a.source, a.applicable_population, a.valid_until, a.content_risk,
 		a.published_content, a.published_content_hash, a.published_version,
+		a.published_title, a.published_summary, a.published_content_risk,
 		a.created_at, a.updated_at,
 		COALESCE(d.name, ''), COALESCE(u.username, '')
 	FROM articles a
@@ -343,6 +355,7 @@ func (r *ArticleRepo) UpdateFields(ctx context.Context, id int64, fields UpdateF
 		u.is_deleted, u.allow_reference, u.review_overdue, u.review_overdue_at, u.published_at,
 		u.source, u.applicable_population, u.valid_until, u.content_risk,
 		u.published_content, u.published_content_hash, u.published_version,
+		u.published_title, u.published_summary, u.published_content_risk,
 		u.created_at, u.updated_at,
 		COALESCE(d.name, ''), COALESCE(u2.username, '')
 	FROM updated u
@@ -417,16 +430,17 @@ func (b *updateBuilder) applyUpdateFields(f UpdateFields) {
 	}
 	// 内容变更时按行**当前**状态判定（P1）：
 	//   - published → pending 并递增版本（重新审核）；
-	//   - pending：状态保持，但**同样递增版本**——否则"待审核期间改正文"版本不变，
-	//     审批绑定的版本校验无法发现内容已变，旧审批仍会批准未审阅的新内容（P1）。
-	//   - draft/archived：状态与版本不变（archived 为终态只读，draft 无审核语义）。
-	// 判定必须在 SQL 内完成，不能依赖服务端读取时的状态快照（并发编辑绕过审核）。
+	//   - 其余状态（draft/pending/archived）：状态保持不变，但**同样递增版本**。
+	//
+	// 版本号是编辑修订号（乐观锁 + 审批绑定版本），必须在每次有效修改时递增——
+	// 否则草稿的 version 恒定不变，"旧页面保存"总能通过 version 守卫而静默覆盖新内容，
+	// 待审核期间改正文也无法被审批绑定的版本校验发现（P1 并发编辑绕过审核）。
+	// 发布版本由 published_version 单独维护（发布快照），与本编辑修订号解耦。
 	if f.ReReviewOnContentChange {
 		b.sets = append(b.sets,
 			fmt.Sprintf("status = CASE WHEN status = '%s' THEN '%s' ELSE status END",
 				constants.ArticleStatusPublished, constants.ArticleStatusPending),
-			fmt.Sprintf("version = CASE WHEN status IN ('%s','%s') THEN version + 1 ELSE version END",
-				constants.ArticleStatusPublished, constants.ArticleStatusPending))
+			"version = version + 1")
 	} else if f.IncrementVersion {
 		b.sets = append(b.sets, "version = version + 1")
 	}
@@ -455,11 +469,21 @@ type UpdateFields struct {
 	ExpectedVersion  *int // 非 nil 时启用乐观锁：仅当当前 version 与之相等才更新，否则 ErrVersionConflict
 }
 
+// publishSnapshotSets 审核通过时固化的"已发布快照"列。快照必须覆盖患者可见与检索/审核策略
+// 所依赖的全部字段：正文、标题、摘要、风险等级。只固化正文会让作者改标题/摘要或降 risk
+// 后绕过审核直接生效（P1）。
+var publishSnapshotSets = []string{
+	"published_content = content", "published_content_hash = content_hash",
+	"published_version = version",
+	"published_title = title", "published_summary = summary",
+	"published_content_risk = content_risk",
+}
+
 // UpdateStatus 状态机迁移：更新 status，可选设置 reviewer_id/review_comment/published_at。
 // 仅当当前状态匹配 fromStatus 时才更新（乐观锁，防并发状态漂移）。
 //
-// 发布（toStatus=published）时建立已发布快照：published_content = content，
-// 使患者端/RAG 读到本轮审核通过的正文；后续编辑只改 content，不再影响已发布版本（P1）。
+// 发布（toStatus=published）时建立已发布快照（见 publishSnapshotSets：正文 + 标题/摘要/风险等级），
+// 使患者端/RAG 读到本轮审核通过的版本；后续编辑只改编辑稿列，不再影响已发布版本（P1）。
 //
 // 返回 ErrStatusConflict 表示状态不匹配（service 层区分 404/409）；
 // 带 ExpectedVersion 时版本不匹配同样返回 ErrStatusConflict（审批者看到的是旧版本，需重新审阅，P1）。
@@ -482,8 +506,7 @@ func (r *ArticleRepo) UpdateStatus(
 	// 发布：把当前编辑稿固化为已发布快照（与 status 同一条 UPDATE，天然原子）。
 	// published_version 记录快照所属版本，检索据此只命中与审核版本一致的切片（P1）。
 	if toStatus == constants.ArticleStatusPublished {
-		sets = append(sets, "published_content = content", "published_content_hash = content_hash",
-			"published_version = version")
+		sets = append(sets, publishSnapshotSets...)
 	}
 	// 重新审核通过即清除复审逾期标记：否则高风险逾期文章即使重新审核发布，
 	// 仍因 review_overdue=true 被检索层排除（P2）。审核动作本身已代表"已重新复审"。
@@ -615,6 +638,7 @@ func scanArticle(s postgres.Scanner) (*entity.Article, error) {
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
 		&a.PublishedContent, &a.PublishedContentHash, &a.PublishedVersion,
+		&a.PublishedTitle, &a.PublishedSummary, &a.PublishedContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
@@ -631,6 +655,7 @@ func scanArticleWithNames(s postgres.Scanner) (*entity.Article, error) {
 		&a.IsDeleted, &a.AllowReference, &a.ReviewOverdue, &a.ReviewOverdueAt, &a.PublishedAt,
 		&a.Source, &a.ApplicablePopulation, &a.ValidUntil, &a.ContentRisk,
 		&a.PublishedContent, &a.PublishedContentHash, &a.PublishedVersion,
+		&a.PublishedTitle, &a.PublishedSummary, &a.PublishedContentRisk,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.DepartmentName, &a.AuthorName,
 	)

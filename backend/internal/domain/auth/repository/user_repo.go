@@ -27,7 +27,7 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 const userSelectPrefix = `
 	SELECT u.id, u.username, u.role, u.password_hash,
 	       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
-	       u.is_active, u.is_deleted,
+	       u.is_active, u.is_deleted, u.token_version,
 	       u.created_at, u.updated_at,
 	       COALESCE(ud.department_id, 0) AS primary_dept_id,
 	       COALESCE(d.name, '') AS primary_dept_name
@@ -43,7 +43,7 @@ func (r *UserRepo) getUser(ctx context.Context, predicate string, arg any, how s
 	err := r.pool.QueryRow(ctx, q, arg).Scan(
 		&u.ID, &u.Username, &u.Role, &u.PasswordHash,
 		&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
-		&u.IsActive, &u.IsDeleted,
+		&u.IsActive, &u.IsDeleted, &u.TokenVersion,
 		&u.CreatedAt, &u.UpdatedAt,
 		&u.PrimaryDeptID, &u.PrimaryDeptName,
 	)
@@ -74,10 +74,13 @@ func (r *UserRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*entity
 	return r.getUser(ctx, "u.id = $1", id, "by id (include deleted)")
 }
 
-// UpdatePasswordHash 更新用户密码哈希。
+// UpdatePasswordHash 更新用户密码哈希，并在同一语句内递增 token_version——
+// 改密（自助改密 / 找回重置 / 管理员重置）即撤销该用户全部旧 access/refresh token（P1）。
+// 两步合并为一条 UPDATE，避免"哈希已改、版本未增"的部分失败导致旧令牌继续有效。
 // 用户不存在时返回 nil error（由调用方校验 user 是否存在）。
 func (r *UserRepo) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error {
-	const q = `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1 AND is_deleted = false`
+	const q = `UPDATE users SET password_hash = $2, token_version = token_version + 1, ` +
+		`updated_at = NOW() WHERE id = $1 AND is_deleted = false`
 	_, err := r.pool.Exec(ctx, q, userID, passwordHash)
 	if err != nil {
 		return fmt.Errorf("update password hash: %w", err)
@@ -163,7 +166,7 @@ func (r *UserRepo) List(ctx context.Context, limit, offset int, includeDeleted b
 	listQ := `
 		SELECT u.id, u.username, u.role, u.password_hash,
 		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
-		       u.is_active, u.is_deleted,
+		       u.is_active, u.is_deleted, u.token_version,
 		       u.created_at, u.updated_at,
 		       COALESCE(ud.department_id, 0) AS primary_dept_id,
 		       COALESCE(d.name, '') AS primary_dept_name
@@ -185,7 +188,7 @@ func (r *UserRepo) List(ctx context.Context, limit, offset int, includeDeleted b
 		if err := rows.Scan(
 			&u.ID, &u.Username, &u.Role, &u.PasswordHash,
 			&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
-			&u.IsActive, &u.IsDeleted,
+			&u.IsActive, &u.IsDeleted, &u.TokenVersion,
 			&u.CreatedAt, &u.UpdatedAt,
 			&u.PrimaryDeptID, &u.PrimaryDeptName,
 		); err != nil {
@@ -215,7 +218,7 @@ func (r *UserRepo) ListByDept(ctx context.Context, deptID, limit, offset int64) 
 	const listQ = `
 		SELECT u.id, u.username, u.role, u.password_hash,
 		       u.phone, u.date_of_birth, u.gender, u.emergency_contact, u.emergency_phone,
-		       u.is_active, u.is_deleted,
+		       u.is_active, u.is_deleted, u.token_version,
 		       u.created_at, u.updated_at,
 		       COALESCE(ud2.department_id, 0) AS primary_dept_id,
 		       COALESCE(d2.name, '') AS primary_dept_name
@@ -238,7 +241,7 @@ func (r *UserRepo) ListByDept(ctx context.Context, deptID, limit, offset int64) 
 		if err := rows.Scan(
 			&u.ID, &u.Username, &u.Role, &u.PasswordHash,
 			&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
-			&u.IsActive, &u.IsDeleted,
+			&u.IsActive, &u.IsDeleted, &u.TokenVersion,
 			&u.CreatedAt, &u.UpdatedAt,
 			&u.PrimaryDeptID, &u.PrimaryDeptName,
 		); err != nil {
@@ -260,12 +263,12 @@ func (r *UserRepo) Create(ctx context.Context, username, passwordHash, role stri
 		VALUES ($1, $2, $3)
 		RETURNING id, username, role, password_hash,
 		          phone, date_of_birth, gender, emergency_contact, emergency_phone,
-		          is_active, is_deleted, created_at, updated_at`
+		          is_active, is_deleted, token_version, created_at, updated_at`
 	u := &entity.User{}
 	err := r.pool.QueryRow(ctx, q, username, role, passwordHash).Scan(
 		&u.ID, &u.Username, &u.Role, &u.PasswordHash,
 		&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
-		&u.IsActive, &u.IsDeleted, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsActive, &u.IsDeleted, &u.TokenVersion, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
@@ -274,19 +277,43 @@ func (r *UserRepo) Create(ctx context.Context, username, passwordHash, role stri
 	return u, nil
 }
 
-// SetPrimaryDept 设置用户主科室（user_departments.is_primary=true）。
-// 幂等：若已存在该 (user_id, department_id) 行则更新 is_primary；否则插入。
-// 依赖 uq_user_departments_one_primary 部分唯一索引保证每用户至多一个主科室。
-func (r *UserRepo) SetPrimaryDept(ctx context.Context, userID, deptID int64) error {
-	const q = `
-		INSERT INTO user_departments (user_id, department_id, is_primary)
-		VALUES ($1, $2, TRUE)
-		ON CONFLICT (user_id, department_id)
-		DO UPDATE SET is_primary = TRUE`
-	if _, err := r.pool.Exec(ctx, q, userID, deptID); err != nil {
-		return fmt.Errorf("set primary dept: %w", err)
+// CreateWithPrimaryDept 在**同一事务**内创建用户并绑定主科室。
+// 避免"用户已创建、绑定科室失败"留下可登录但无科室的医护账户（P1：无科室账户曾导致跨科室越权）。
+// username 唯一约束冲突时返回 *pgconn.PgError（Code=23505），由 service 层映射为 409。
+// 事务失败（含无效科室 ID 外键冲突）时用户与科室绑定一并回滚。
+func (r *UserRepo) CreateWithPrimaryDept(
+	ctx context.Context, username, passwordHash, role string, deptID int64,
+) (*entity.User, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	return nil
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const insertUser = `
+		INSERT INTO users (username, role, password_hash)
+		VALUES ($1, $2, $3)
+		RETURNING id, username, role, password_hash,
+		          phone, date_of_birth, gender, emergency_contact, emergency_phone,
+		          is_active, is_deleted, token_version, created_at, updated_at`
+	u := &entity.User{}
+	if err := tx.QueryRow(ctx, insertUser, username, role, passwordHash).Scan(
+		&u.ID, &u.Username, &u.Role, &u.PasswordHash,
+		&u.Phone, &u.DateOfBirth, &u.Gender, &u.EmergencyContact, &u.EmergencyPhone,
+		&u.IsActive, &u.IsDeleted, &u.TokenVersion, &u.CreatedAt, &u.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO user_departments (user_id, department_id, is_primary)
+		VALUES ($1, $2, TRUE)`, u.ID, deptID); err != nil {
+		return nil, fmt.Errorf("set primary dept: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	u.PrimaryDeptID = deptID
+	return u, nil
 }
 
 // UpdatePrimaryDept 切换用户主科室（事务内：旧主科室置 false，新科室置 true）。

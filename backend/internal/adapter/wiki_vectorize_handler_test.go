@@ -28,8 +28,8 @@ type mockArticleFetcher struct {
 	err     error
 	lastID  int64
 	called  bool
-	// lockVersion 非 0 时 LockVersion 返回该值（模拟 embedding 期间文章已被更新）；
-	// lockErr 非 nil 时 LockVersion 返回该错误。
+	// lockVersion 非 0 时 LockPublishedVersion 返回该值（模拟 embedding 期间快照版本已变化）；
+	// lockErr 非 nil 时返回该错误。
 	lockVersion int
 	lockErr     error
 	lockCalled  bool
@@ -44,7 +44,7 @@ func (m *mockArticleFetcher) GetByID(_ context.Context, id int64) (*entity.Artic
 	return m.article, nil
 }
 
-func (m *mockArticleFetcher) LockVersion(_ context.Context, _ int64) (int, error) {
+func (m *mockArticleFetcher) LockPublishedVersion(_ context.Context, _ int64) (int, error) {
 	m.lockCalled = true
 	if m.lockErr != nil {
 		return 0, m.lockErr
@@ -53,6 +53,10 @@ func (m *mockArticleFetcher) LockVersion(_ context.Context, _ int64) (int, error
 		return m.lockVersion, nil
 	}
 	if m.article != nil {
+		if m.article.PublishedVersion > 0 {
+			return m.article.PublishedVersion, nil
+		}
+		// 无发布快照：与 handler 的退回逻辑一致，退回当前 version。
 		return m.article.Version, nil
 	}
 	return 0, nil
@@ -1028,6 +1032,41 @@ func TestHandleVectorize(t *testing.T) {
 			t.Errorf("期望 1 个 chunk 被尝试创建，实际 %d", len(chunks.createdChunks))
 		}
 	})
+}
+
+// TestHandleVectorize_RebuildFromPublishedSnapshot P1：切片必须重建自**已审核发布快照**
+// （published_content + published_version），而非当前编辑稿。
+// 场景：文章已发布（快照版本 1），作者改封面等元数据使 version 递增为 2，published_version 仍为 1。
+// 若按当前 version 重建，写入的切片 version=2 与检索条件 c.version = a.published_version(=1) 不符，
+// 整篇文章会被检索排除（症状：重建后文章彻底搜不到）。
+func TestHandleVectorize_RebuildFromPublishedSnapshot(t *testing.T) {
+	fetcher := &mockArticleFetcher{article: &entity.Article{
+		ID:               30,
+		Status:           constants.ArticleStatusPublished,
+		Content:          "未审核的新编辑稿",
+		Version:          2, // 元数据变更后递增
+		PublishedContent: "已审核的旧正文",
+		PublishedVersion: 1, // 快照版本
+	}}
+	chunks := &mockChunkWriter{}
+	h := &VectorizeHandler{
+		articles: fetcher, chunks: chunks,
+		embed: &mockEmbedder{vectors: [][]float32{{0.1}}},
+	}
+
+	if err := h.HandleVectorize(context.Background(), makeTask("30")); err != nil {
+		t.Fatalf("期望 nil error，实际 %v", err)
+	}
+	if len(chunks.createdChunks) != 1 {
+		t.Fatalf("期望 1 个切片，实际 %d", len(chunks.createdChunks))
+	}
+	got := chunks.createdChunks[0]
+	if got.Version != 1 {
+		t.Errorf("切片版本 = %d，期望 1（必须等于 published_version，否则检索整篇不命中）", got.Version)
+	}
+	if got.Content != "已审核的旧正文" {
+		t.Errorf("切片内容 = %q，期望已审核快照正文（不得用未审核编辑稿）", got.Content)
+	}
 }
 
 // ============================================================================

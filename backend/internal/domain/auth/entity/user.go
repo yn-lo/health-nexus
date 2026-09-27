@@ -17,10 +17,12 @@ type User struct {
 	EmergencyPhone   string
 	IsActive         bool
 	IsDeleted        bool
-	PrimaryDeptID    int64
-	PrimaryDeptName  string // View 字段：主科室名（JOIN departments 填充，写操作忽略）
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// TokenVersion 会话版本：随密码变更递增，令牌版本不一致即视为失效（P1）。
+	TokenVersion    int64
+	PrimaryDeptID   int64
+	PrimaryDeptName string // View 字段：主科室名（JOIN departments 填充，写操作忽略）
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // IsLocked 账户是否被禁用：is_active=false 表示管理员手动禁用。

@@ -17,6 +17,13 @@ const (
 	DevEncryptionKey = "dev-encryption-key-change-in-production" // #nosec G101 -- 开发占位密钥，生产用 env 覆盖
 )
 
+// EnvDevelopment / EnvProduction 运行环境取值（config.env / HEALTH_NEXUS_ENV）。
+// 仅 development 会加载测试数据（seed.dev.sql）；其他取值数据库保持干净。
+const (
+	EnvDevelopment = "development"
+	EnvProduction  = "production"
+)
+
 // WarnIfDevSecrets 安全密钥仍为开发占位值或为空时输出 ERROR 级启动告警。
 // 不阻断启动：本地开发依赖 config.yaml 的 dev 值。
 // ponytail: 告警而非 panic——强拒绝会破坏本地开发流（air/make run 直接用 config.yaml）；
@@ -61,6 +68,9 @@ const (
 
 // Config 应用配置根结构。
 type Config struct {
+	// Env 运行环境：development 时加载测试数据（seed.dev.sql），其余取值数据库保持干净。
+	// 环境变量：HEALTH_NEXUS_ENV。默认 development（本地开发友好）。
+	Env       string          `mapstructure:"env"`
 	Server    ServerConfig    `mapstructure:"server"`
 	Postgres  PostgresConfig  `mapstructure:"postgres"`
 	Redis     RedisConfig     `mapstructure:"redis"`
@@ -71,6 +81,19 @@ type Config struct {
 	Security  SecurityConfig  `mapstructure:"security"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 	Upload    UploadConfig    `mapstructure:"upload"`
+	Seed      SeedConfig      `mapstructure:"seed"`
+}
+
+// SeedConfig 初始超管账号配置。
+// AdminPassword 为空时跳过创建/更新 admin，退化为"数据库无内置账号"（生产推荐留空，
+// 由运维通过环境变量注入一次性初始密码）。明文仅存在于进程内存，落库前用 argon2id 现算哈希。
+type SeedConfig struct {
+	AdminPassword string `mapstructure:"admin_password"`
+}
+
+// IsDevelopment 是否为开发环境（决定是否加载 seed.dev.sql 测试数据）。
+func (c *Config) IsDevelopment() bool {
+	return c.Env == "" || c.Env == EnvDevelopment
 }
 
 // ServerConfig HTTP 服务器配置。
@@ -153,6 +176,17 @@ type Argon2Config struct {
 	Parallelism uint8  `mapstructure:"parallelism"` // 2
 	SaltLength  uint32 `mapstructure:"salt_length"` // 16
 	KeyLength   uint32 `mapstructure:"key_length"`  // 32
+}
+
+// DefaultArgon2 返回 OWASP 2023 推荐的 argon2id 默认参数（与 setDefaults 注册值一致）。
+func DefaultArgon2() Argon2Config {
+	return Argon2Config{
+		Memory:      defaultArgon2Memory,
+		Iterations:  defaultArgon2Iterations,
+		Parallelism: defaultArgon2Parallelism,
+		SaltLength:  defaultArgon2SaltLength,
+		KeyLength:   defaultArgon2KeyLength,
+	}
 }
 
 // SecurityConfig 安全配置。

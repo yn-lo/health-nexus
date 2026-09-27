@@ -2,7 +2,11 @@
  * E2E 测试共享工具 — 认证、API 断言、等待策略
  */
 import { test as base, expect, type Page, type APIRequestContext } from '@playwright/test'
-import { CONSENT_STORAGE_KEY, CONSENT_VERSION } from '../../src/shared/utils/consent'
+
+// 镜像 src/shared/utils/consent.ts 的私有常量（该模块不导出：仅测试引用的导出会命中 AC-ARCH-FE-12 死代码门禁）。
+// 漂移自检：版本/键名不一致时 hasAcceptedConsent() 失效，患者端用例会因同意弹层拦截点击而显式失败。
+const CONSENT_VERSION = '2026-09-23'
+const CONSENT_STORAGE_KEY = 'hn_consent_version'
 
 /** 测试账号凭据（来自 TestAccounts.vue / 后端种子数据） */
 export const ACCOUNTS = {
@@ -13,7 +17,7 @@ export const ACCOUNTS = {
   doctor_wang: { username: 'doctor_wang', password: 'password123', portal: 'STAFF' as const },
   nurse_liu: { username: 'nurse_liu', password: 'password123', portal: 'STAFF' as const },
   dept_admin: { username: 'dept_admin', password: 'password123', portal: 'STAFF' as const },
-  admin: { username: 'admin', password: 'admin', portal: 'STAFF' as const },
+  admin: { username: 'admin', password: 'password123', portal: 'STAFF' as const },
 } as const
 
 export type AccountKey = keyof typeof ACCOUNTS

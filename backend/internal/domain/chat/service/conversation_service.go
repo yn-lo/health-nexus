@@ -270,6 +270,10 @@ func (s *ConversationService) FeedbackStats(
 ) (*FeedbackStats, error) {
 	deptID := int64(0)
 	if actor.Role != constants.RoleSuperAdmin {
+		// 非超管必须绑定科室：DeptID=0 会被仓储解释为"不过滤科室"，导致跨科室泄露反馈正文与消息标识。
+		if actor.DeptID <= 0 {
+			return nil, apperrors.Forbidden("CHAT_FEEDBACK_FORBIDDEN", "未绑定科室，无法查看反馈统计")
+		}
 		deptID = actor.DeptID
 	}
 	counts, err := s.msg.FeedbackSummary(ctx, deptID)

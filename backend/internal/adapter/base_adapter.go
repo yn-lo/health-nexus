@@ -65,6 +65,27 @@ func (r *BaseDepartmentResolver) ResolveForPatient(
 	return rag.Department{}, apperrors.Forbidden("CHAT_DEPT_NOT_ACCESSIBLE", "所选科室不可访问")
 }
 
+// ResolveForAnonymous 校验匿名用户可选的科室：仅允许公共且启用的科室（ListPublic）。
+// selectedDeptID 为 nil 或 0 表示"全部科室"，返回零值 Department（不限定检索范围）。
+// 具体 id 不在公共科室列表中（含不存在的 id）返回 403，避免匿名请求携带任意科室 id。
+func (r *BaseDepartmentResolver) ResolveForAnonymous(
+	ctx context.Context, selectedDeptID *int64,
+) (rag.Department, error) {
+	if selectedDeptID == nil || *selectedDeptID == 0 {
+		return rag.Department{}, nil
+	}
+	depts, err := r.repo.ListPublic(ctx)
+	if err != nil {
+		return rag.Department{}, err
+	}
+	for _, d := range depts {
+		if d.ID == *selectedDeptID {
+			return rag.Department{ID: d.ID, Name: d.Name}, nil
+		}
+	}
+	return rag.Department{}, apperrors.Forbidden("CHAT_DEPT_NOT_ACCESSIBLE", "所选科室不可访问")
+}
+
 // BaseDepartmentLookup 实现 wiki/service.DepartmentLookup。
 // 桥接 base 域到 wiki 域的引用授权校验。
 type BaseDepartmentLookup struct {

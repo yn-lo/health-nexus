@@ -9,9 +9,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // 注册 pgx database/sql 驱动
+
+	"health-nexus/internal/config"
+	"health-nexus/internal/platform/crypto"
 )
 
 const (
@@ -29,24 +33,29 @@ var schemaSQL string
 //go:embed seed.sql
 var seedSQL string
 
-// allSchema 待应用（按顺序）的 SQL 文件。每个文件都是一个独立的第个字段：
-// 文件级内容哈希决定是否重跑；文件内语句由 PG 以单个隐式事务整体执行，失败整体回滚。
-var allSchema = []struct {
+//go:embed seed.dev.sql
+var seedDevSQL string
+
+// adminPasswordPlaceholder seed.sql 中超管密码哈希的占位符，
+// 由 ApplySchema 用运行时计算的 argon2id 哈希替换（明文密码经 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 注入，不入库文件）。
+const adminPasswordPlaceholder = "{{ADMIN_PASSWORD_HASH}}"
+
+// seedFile 一个待应用的种子 SQL 文件。
+type seedFile struct {
 	name string
 	sql  string
-}{
-	{name: "schema.sql", sql: schemaSQL},
-	{name: "seed.sql", sql: seedSQL},
 }
 
-// ApplySchema 在启动时按"内容哈希"幂等应用 schema.sql 与 seed.sql：
-//   - 该文件从未应用 / 内容哈希已变化 → 整文件重跑，随后记录新哈希；
-//   - 哈希未变化 → 直接跳过（幂等）。
+// ApplySchema 在启动时按"内容哈希"幂等应用数据库结构与种子数据：
+//   - schema.sql：结构（始终应用）；
+//   - seed.sql：内置超管（始终应用，密码为空时跳过）；
+//   - seed.dev.sql：测试数据（仅 env=development 应用，生产保持数据库干净）。
 //
-// 两个文件 DDL/种子均已写成幂等形式（IF NOT EXISTS / ON CONFLICT 等），
-// 即使内容哈希变化导致重跑，对已存在对象也安全。
-// 使用 PG advisory lock 防止 server + worker 并发同时应用。
-func ApplySchema(ctx context.Context, dsn string) error {
+// 每个文件用内容哈希判断是否重跑，全部写成幂等形式（IF NOT EXISTS / ON CONFLICT / WHERE NOT EXISTS），
+// 重跑对已有对象安全。使用 PG advisory lock 防止 server + worker 并发同时应用。
+//
+// env 为运行环境（config.EnvDevelopment 时加载测试数据）；adminPassword 为空则不创建内置超管账号。
+func ApplySchema(ctx context.Context, dsn, env, adminPassword string) error {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return fmt.Errorf("open db for schema apply: %w", err)
@@ -64,7 +73,11 @@ func ApplySchema(ctx context.Context, dsn string) error {
 		return fmt.Errorf("ensure schema_applied table: %w", err)
 	}
 
-	for _, f := range allSchema {
+	files, err := buildSeedFiles(env, adminPassword)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
 		hash := hashSQL(f.sql)
 		applied, err := isApplied(db, f.name, hash)
 		if err != nil {
@@ -85,6 +98,38 @@ func ApplySchema(ctx context.Context, dsn string) error {
 		slog.Info("schema file applied", "file", f.name)
 	}
 	return nil
+}
+
+// buildSeedFiles 组装按顺序应用的文件列表。
+// adminPassword 非空时用 argon2id 现算哈希替换 seed.sql 占位符；
+// 为空时改写占位符为 NULL 语义（此处直接替换为空 hash，配合 seed.sql 的 WHERE 守卫跳过插入）。
+// 仅 env=development 追加 seed.dev.sql 测试数据。
+func buildSeedFiles(env, adminPassword string) ([]seedFile, error) {
+	seedContent, err := renderSeed(seedSQL, adminPassword)
+	if err != nil {
+		return nil, err
+	}
+	files := []seedFile{
+		{name: "schema.sql", sql: schemaSQL},
+		{name: "seed.sql", sql: seedContent},
+	}
+	if env == config.EnvDevelopment {
+		files = append(files, seedFile{name: "seed.dev.sql", sql: seedDevSQL})
+	}
+	return files, nil
+}
+
+// renderSeed 将 seed.sql 中的超管密码占位符替换为 argon2id 哈希。
+// adminPassword 为空时替换为空串，seed.sql 的 WHERE 守卫据此跳过写入（生产不内置账号）。
+func renderSeed(sqlText, adminPassword string) (string, error) {
+	if adminPassword == "" {
+		return strings.ReplaceAll(sqlText, adminPasswordPlaceholder, ""), nil
+	}
+	hash, err := crypto.HashPassword(adminPassword, config.DefaultArgon2())
+	if err != nil {
+		return "", fmt.Errorf("hash seed admin password: %w", err)
+	}
+	return strings.ReplaceAll(sqlText, adminPasswordPlaceholder, hash), nil
 }
 
 // ensureAppliedTable 创建 schema 应用记录表（幂等）。

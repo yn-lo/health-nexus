@@ -52,7 +52,7 @@ func TestMain(m *testing.M) {
 		Issuer:     "health-nexus-test",
 		AccessTTL:  30 * time.Minute,
 		RefreshTTL: 7 * 24 * time.Hour,
-	})
+	}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create authenticator: %v\n", err)
 		os.Exit(1)
@@ -386,6 +386,30 @@ var chatEndpoints = []endpoint{
 	{http.MethodPost, "/api/chat/messages/1/feedback"},
 }
 
+// superAdminConfigEndpoints 需 JWT + SUPER_ADMIN 的全局安全配置端点（18 个）。
+// 这些配置影响全院（AI Provider / 敏感词 / 安全规则 / 安全话术 / 审计日志），
+// 科室管理员（DEPT_ADMIN）必须同样被拒——与前端 superAdminRouteGuard 保持一致（P1）。
+var superAdminConfigEndpoints = []endpoint{
+	{http.MethodGet, "/api/staff/config/ai-providers"},
+	{http.MethodPost, "/api/staff/config/ai-providers"},
+	{http.MethodGet, "/api/staff/config/ai-providers/1"},
+	{http.MethodPut, "/api/staff/config/ai-providers/1"},
+	{http.MethodDelete, "/api/staff/config/ai-providers/1"},
+	{http.MethodPost, "/api/staff/config/ai-providers/1/test"},
+	{http.MethodGet, "/api/staff/config/sensitive-words"},
+	{http.MethodPost, "/api/staff/config/sensitive-words"},
+	{http.MethodPut, "/api/staff/config/sensitive-words/1"},
+	{http.MethodDelete, "/api/staff/config/sensitive-words/1"},
+	{http.MethodGet, "/api/staff/config/safety-rules"},
+	{http.MethodPost, "/api/staff/config/safety-rules"},
+	{http.MethodPut, "/api/staff/config/safety-rules/1"},
+	{http.MethodDelete, "/api/staff/config/safety-rules/1"},
+	{http.MethodGet, "/api/staff/config/safety-messages"},
+	{http.MethodGet, "/api/staff/config/safety-policy"},
+	{http.MethodPut, "/api/staff/config/safety-messages"},
+	{http.MethodGet, "/api/staff/config/audit-logs"},
+}
+
 // configEndpoints 需 JWT + Admin 角色的端点（27 个）。
 var configEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/ai-providers"},
@@ -517,6 +541,33 @@ func TestRoleGate_ConfigEndpoints_RequireAdmin(t *testing.T) {
 			rec := doRequest(ep.method, ep.path, token)
 			if rec.Code != http.StatusForbidden {
 				t.Errorf("expected 403, got %d", rec.Code)
+			}
+		})
+	}
+}
+
+// TestRoleGate_SuperAdminConfigEndpoints_RejectDeptAdmin 科室管理员访问全局安全配置端点应返回 403（P1）。
+// 覆盖问题：前端 superAdminRouteGuard 限制页面，但后端仅 RequireAdmin，科室管理员可绕过页面直接调 API。
+func TestRoleGate_SuperAdminConfigEndpoints_RejectDeptAdmin(t *testing.T) {
+	token := signTestToken(1, constants.RoleDeptAdmin, 100)
+	for _, ep := range superAdminConfigEndpoints {
+		t.Run(ep.method+"_"+ep.path, func(t *testing.T) {
+			rec := doRequest(ep.method, ep.path, token)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("expected 403 for DEPT_ADMIN, got %d", rec.Code)
+			}
+		})
+	}
+}
+
+// TestRoleGate_SuperAdminConfigEndpoints_AllowSuperAdmin 超管访问全局安全配置端点不应返回 403。
+func TestRoleGate_SuperAdminConfigEndpoints_AllowSuperAdmin(t *testing.T) {
+	token := signTestToken(1, constants.RoleSuperAdmin, 0)
+	for _, ep := range superAdminConfigEndpoints {
+		t.Run(ep.method+"_"+ep.path, func(t *testing.T) {
+			rec := doRequest(ep.method, ep.path, token)
+			if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnauthorized {
+				t.Errorf("super admin should pass role gate, got %d", rec.Code)
 			}
 		})
 	}

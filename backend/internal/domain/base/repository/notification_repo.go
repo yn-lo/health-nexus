@@ -22,9 +22,12 @@ func NewNotificationRepo(pool *pgxpool.Pool) *NotificationRepo {
 
 const notificationColumns = `id, recipient_role, recipient_dept_id, type, title, body, ref_id, is_read, created_at`
 
-// deptVisibility 科室可见性子句：广播通知（recipient_dept_id IS NULL）对所有科室可见，
-// 定向通知仅对 recipient_dept_id = $2 可见；$2 为 NULL 时仅广播通知可见。
-const deptVisibility = `(recipient_dept_id IS NULL OR ($2::BIGINT IS NOT NULL AND recipient_dept_id = $2))`
+// notificationDeptVisibility 科室可见性子句：广播通知（recipient_dept_id IS NULL）对所有科室可见，
+// 定向通知仅对 recipient_dept_id = $2 可见；该参数为 NULL 时仅广播通知可见。
+// 约定：四个查询一律把**科室参数放在 $2**（markReadQuery 因此把角色放到 $3）。早期版本在
+// markReadQuery 里把角色放在 $2、却仍以 $2 表示科室，结果角色字符串被当 BIGINT 使用、第三个参数
+// 无处可放，语句必然执行失败（P2）。
+const notificationDeptVisibility = `(recipient_dept_id IS NULL OR ($2::BIGINT IS NOT NULL AND recipient_dept_id = $2))`
 
 const createNotificationQuery = `
 INSERT INTO notifications (recipient_role, recipient_dept_id, type, title, body, ref_id)
@@ -48,10 +51,10 @@ func (r *NotificationRepo) Create(ctx context.Context, n *entity.Notification) e
 	return nil
 }
 
-const listForRoleQuery = `
+var listForRoleQuery = `
 SELECT ` + notificationColumns + `
 FROM notifications
-WHERE recipient_role = $1 AND ` + deptVisibility + `
+WHERE recipient_role = $1 AND ` + notificationDeptVisibility + `
 ORDER BY is_read ASC, created_at DESC
 LIMIT $3`
 
@@ -82,9 +85,10 @@ func (r *NotificationRepo) ListForRole(
 	return result, nil
 }
 
-const markReadQuery = `
+// markReadQuery 单条标记：$1=id、$2=deptID、$3=role（科室固定 $2，角色因 id 占位后移到 $3）。
+var markReadQuery = `
 UPDATE notifications SET is_read = true
-WHERE id = $1 AND recipient_role = $2 AND ` + deptVisibility
+WHERE id = $1 AND ` + notificationDeptVisibility + ` AND recipient_role = $3`
 
 // MarkRead 将单条通知标记为已读（含角色+科室校验，防 IDOR）。
 func (r *NotificationRepo) MarkRead(ctx context.Context, id int64, role string, deptID *int64) error {
@@ -93,7 +97,8 @@ func (r *NotificationRepo) MarkRead(ctx context.Context, id int64, role string, 
 	if tx != nil {
 		exec = tx.Exec
 	}
-	tag, err := exec(ctx, markReadQuery, id, role, deptID)
+	// 参数顺序对齐 markReadQuery 的占位符：$1=id、$2=deptID、$3=role（故科室在 role 之前）。
+	tag, err := exec(ctx, markReadQuery, id, deptID, role)
 	if err != nil {
 		return fmt.Errorf("mark notification read: %w", err)
 	}
@@ -103,9 +108,9 @@ func (r *NotificationRepo) MarkRead(ctx context.Context, id int64, role string, 
 	return nil
 }
 
-const markAllReadQuery = `
+var markAllReadQuery = `
 UPDATE notifications SET is_read = true
-WHERE recipient_role = $1 AND ` + deptVisibility + ` AND NOT is_read`
+WHERE recipient_role = $1 AND ` + notificationDeptVisibility + ` AND NOT is_read`
 
 // MarkAllRead 将指定角色+科室可见的全部未读通知标记为已读。
 func (r *NotificationRepo) MarkAllRead(ctx context.Context, role string, deptID *int64) error {
@@ -120,9 +125,9 @@ func (r *NotificationRepo) MarkAllRead(ctx context.Context, role string, deptID 
 	return nil
 }
 
-const unreadCountQuery = `
+var unreadCountQuery = `
 SELECT COUNT(*) FROM notifications
-WHERE recipient_role = $1 AND ` + deptVisibility + ` AND NOT is_read`
+WHERE recipient_role = $1 AND ` + notificationDeptVisibility + ` AND NOT is_read`
 
 // UnreadCount 返回指定角色+科室可见的未读通知数量。
 func (r *NotificationRepo) UnreadCount(ctx context.Context, role string, deptID *int64) (int, error) {

@@ -189,10 +189,14 @@ func TestVectorizeAtomicSwap(t *testing.T) {
 	newArticle := func(ctx context.Context, title string, version int) int64 {
 		t.Helper()
 		var id int64
+		// 模拟"已审核发布"的文章：发布快照（正文/标题/风险等级）与当前编辑稿一致，
+		// published_version = version。切片只与 published_version 绑定（P1）。
+		const content = "集成校验正文：高血压患者应每天固定时间测量血压并记录。"
 		err := postgres.Q(ctx, pool).QueryRow(ctx,
-			`INSERT INTO articles (title, content, status, version, content_hash, author_id, published_at)
-			 VALUES ($1, $2, 'published', $3, '', $4, now()) RETURNING id`,
-			title, "集成校验正文：高血压患者应每天固定时间测量血压并记录。", version, authorID).Scan(&id)
+			`INSERT INTO articles (title, content, status, version, content_hash, author_id, published_at,
+				published_version, published_content, published_title, published_content_risk)
+			 VALUES ($1, $2, 'published', $3, '', $4, now(), $3, $2, $1, 'normal') RETURNING id`,
+			title, content, version, authorID).Scan(&id)
 		if err != nil {
 			t.Fatalf("插入校验文章失败: %v", err)
 		}
@@ -240,18 +244,20 @@ func TestVectorizeAtomicSwap(t *testing.T) {
 			t.Errorf("切片 embedding_model = %q，期望记录当前模型", model)
 		}
 		if version != 2 {
-			t.Errorf("切片 version = %d，期望 2（文章当前版本）", version)
+			t.Errorf("切片 version = %d，期望 2（published_version）", version)
 		}
 		if content == "旧版本切片" {
 			t.Error("生效切片仍是旧内容")
 		}
 
-		// 竞态路径：embedding 期间文章版本 5 → 6，本任务必须放弃写入。
+		// 竞态路径：embedding 期间文章被**重新审核发布**（published_version 5 → 6），
+		// 本任务基于旧快照，必须放弃写入。注意：纯 version 递增（元数据变更）不改变快照，
+		// 不应导致放弃（P1 修复点），故此处必须前移 published_version。
 		raceID := newArticle(ctx, "集成校验-竞态", 5)
 		insertChunk(ctx, raceID, "竞态前的生效切片", 5, "integration-check-model")
 		racer := &fakeEmbedder{onEmbed: func() {
 			_, _ = postgres.Q(ctx, pool).Exec(ctx,
-				`UPDATE articles SET version = version + 1 WHERE id = $1`, raceID)
+				`UPDATE articles SET version = version + 1, published_version = version + 1 WHERE id = $1`, raceID)
 		}}
 		rh := adapter.NewVectorizeHandler(articleRepo, chunkRepo, racer, nil, txm)
 		raceTask := asynqlib.NewTask("wiki:vectorize_article", []byte(fmt.Sprint(raceID)))
@@ -316,9 +322,15 @@ func TestRetrievalVisibility(t *testing.T) {
 			pubAt, validUntil := "NULL", "NULL"
 			// published_version 与首次发布版本一致（越早发布过则为 1）；从未发布为 0。
 			publishedVersion := 0
+			// 已发布快照：曾发布的文章其正文/标题/风险等级快照与当前值一致
+			// （真实流程由审核发布时固化）。检索读取的是 published_content_risk（P1）。
+			pubContent, pubTitle, pubRisk := "", "", ""
 			if s.everPubbed {
 				pubAt = "now()"
 				publishedVersion = 1
+				pubContent = "集成校验内容"
+				pubTitle = fmt.Sprintf("集成校验文章-%d", i)
+				pubRisk = s.risk
 			}
 			if s.validPast {
 				validUntil = "now() - interval '1 day'"
@@ -329,10 +341,12 @@ func TestRetrievalVisibility(t *testing.T) {
 			}
 			var id int64
 			sql := fmt.Sprintf(`INSERT INTO articles
-				(title, content, status, version, content_hash, author_id, content_risk, published_at, valid_until, review_overdue, published_version)
-				VALUES ($1, $2, $3, 1, '', $4, $5, %s, %s, $6, %d) RETURNING id`, pubAt, validUntil, publishedVersion)
+				(title, content, status, version, content_hash, author_id, content_risk, published_at, valid_until, review_overdue, published_version,
+				 published_content, published_title, published_content_risk)
+				VALUES ($1, $2, $3, 1, '', $4, $5, %s, %s, $6, %d, $7, $8, $9) RETURNING id`, pubAt, validUntil, publishedVersion)
 			if err := postgres.Q(ctx, pool).QueryRow(ctx, sql,
 				fmt.Sprintf("集成校验文章-%d", i), "集成校验内容", s.status, authorID, s.risk, s.overdue,
+				pubContent, pubTitle, pubRisk,
 			).Scan(&id); err != nil {
 				t.Fatalf("插入文章 %s 失败: %v", s.name, err)
 			}

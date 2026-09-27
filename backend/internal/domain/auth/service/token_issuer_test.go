@@ -47,7 +47,7 @@ func TestNewTokenIssuer_EmptySecret(t *testing.T) {
 
 func TestIssue_HappyPath(t *testing.T) {
 	issuer := newTestTokenIssuer(t)
-	access, refresh, err := issuer.Issue(context.Background(), 42, "patient", 1)
+	access, refresh, err := issuer.Issue(context.Background(), 42, "patient", 1, 0)
 	if err != nil {
 		t.Fatalf("Issue 返回 error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestIssue_HappyPath(t *testing.T) {
 
 func TestIssue_TokenClaims(t *testing.T) {
 	issuer := newTestTokenIssuer(t)
-	access, _, err := issuer.Issue(context.Background(), 7, "doctor", 3)
+	access, _, err := issuer.Issue(context.Background(), 7, "doctor", 3, 5)
 	if err != nil {
 		t.Fatalf("Issue 返回 error: %v", err)
 	}
@@ -79,6 +79,9 @@ func TestIssue_TokenClaims(t *testing.T) {
 	}
 	if claims.DeptID != 3 {
 		t.Errorf("期望 DeptID=3，实际 %d", claims.DeptID)
+	}
+	if claims.TokenVersion != 5 {
+		t.Errorf("期望 TokenVersion=5（会话版本随令牌签发），实际 %d", claims.TokenVersion)
 	}
 	if claims.Issuer != "health-nexus-test" {
 		t.Errorf("期望 Issuer=health-nexus-test，实际 %s", claims.Issuer)
@@ -96,7 +99,7 @@ func TestIssue_TokenClaims(t *testing.T) {
 
 func TestIssue_AccessTokenType(t *testing.T) {
 	issuer := newTestTokenIssuer(t)
-	access, _, err := issuer.Issue(context.Background(), 1, "admin", 0)
+	access, _, err := issuer.Issue(context.Background(), 1, "admin", 0, 0)
 	if err != nil {
 		t.Fatalf("Issue 返回 error: %v", err)
 	}
@@ -108,7 +111,7 @@ func TestIssue_AccessTokenType(t *testing.T) {
 
 func TestIssue_RefreshTokenType(t *testing.T) {
 	issuer := newTestTokenIssuer(t)
-	_, refresh, err := issuer.Issue(context.Background(), 1, "admin", 0)
+	_, refresh, err := issuer.Issue(context.Background(), 1, "admin", 0, 0)
 	if err != nil {
 		t.Fatalf("Issue 返回 error: %v", err)
 	}

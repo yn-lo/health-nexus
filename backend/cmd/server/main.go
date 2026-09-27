@@ -34,8 +34,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// 启动时自动应用数据库 schema + 种子（幂等：内容哈希未变则跳过）
-	if err := di.ApplySchema(ctx, cfg.Postgres.DSN); err != nil {
+	// 启动时自动应用数据库 schema + 种子（幂等：内容哈希未变则跳过）。
+	// env=development 时额外加载 seed.dev.sql 测试数据；生产环境数据库保持干净。
+	if err := di.ApplySchema(ctx, cfg.Postgres.DSN, cfg.Env, cfg.Seed.AdminPassword); err != nil {
 		slog.Error("run schema apply failed", "err", err)
 		panic(err)
 	}

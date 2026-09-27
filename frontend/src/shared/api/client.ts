@@ -74,17 +74,117 @@ export function clearTokens(): void {
 /** 统一登录页路径（chat SPA 下的 /login，所有端共享） */
 const LOGIN_PATH = '/login';
 
+/** 跨标签页刷新锁 key（localStorage 共享，同一 Web Storage 域内可见） */
+const REFRESH_LOCK_KEY = 'hn_refresh_lock';
+/** 刷新完成广播频道名（跨标签页通知"已轮换出新 token，请复用"） */
+const REFRESH_CHANNEL = 'hn_refresh';
+
+/** 跨标签页刷新锁租约（毫秒）。持锁标签页崩溃后，其它标签页等待超时后可抢锁，避免死锁 */
+const REFRESH_LOCK_TTL = 10_000;
+/** 等待其它标签页刷新完成的最长时间（毫秒） */
+const REFRESH_WAIT_TIMEOUT = 8_000;
+/** 轮询间隔（storage 事件在部分场景不可靠，辅以轮询兜底） */
+const REFRESH_POLL_INTERVAL = 150;
+
+/** 刷新锁记录：持有者 id + 获取时间戳（判断租约是否过期） */
+interface RefreshLock {
+  id: string;
+  ts: number;
+}
+
+function readLock(): RefreshLock | null {
+  const raw = localStorage.getItem(REFRESH_LOCK_KEY);
+  if (!raw) return null;
+  try {
+    const lock = JSON.parse(raw) as RefreshLock;
+    return typeof lock?.id === 'string' && typeof lock?.ts === 'number' ? lock : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 尝试获取跨标签页刷新锁。
+ * localStorage 无原子 CAS，采用"写入后回读校验"：写入自己的 id 后立即回读，
+ * 若仍是自己的 id 则视为抢锁成功（并发写入时最后写入者胜出，其余回读者读到他人 id 而放弃）。
+ */
+function acquireRefreshLock(id: string): boolean {
+  const lock = readLock();
+  if (lock && Date.now() - lock.ts < REFRESH_LOCK_TTL && lock.id !== id) return false;
+  localStorage.setItem(REFRESH_LOCK_KEY, JSON.stringify({ id, ts: Date.now() }));
+  const check = readLock();
+  return check?.id === id;
+}
+
+/** 释放刷新锁（仅当锁属于自己时删除，避免误删他人刚获取的锁）。 */
+function releaseRefreshLock(id: string): void {
+  if (readLock()?.id === id) localStorage.removeItem(REFRESH_LOCK_KEY);
+}
+
+/** 广播刷新完成/失败（跨标签页通知；BroadcastChannel 不可用时静默降级为轮询）。 */
+function broadcastRefresh(result: 'ok' | 'fail'): void {
+  try {
+    const ch = new BroadcastChannel(REFRESH_CHANNEL);
+    ch.postMessage(result);
+    ch.close();
+  } catch {
+    /* 不支持 BroadcastChannel：依赖轮询兜底 */
+  }
+}
+
+/** 等待其它标签页完成刷新：轮询 token 是否已被轮换，或广播已到达成功/失败。 */
+function waitForOtherTabRefresh(originalRefresh: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + REFRESH_WAIT_TIMEOUT;
+    let settled = false;
+    let ch: BroadcastChannel | null = null;
+    // 用持有对象承载 timer，避免 finish 引用后声明的变量（TDZ），也不触发 prefer-const
+    const state: { timer?: ReturnType<typeof setInterval> } = {};
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (state.timer) clearInterval(state.timer);
+      try {
+        ch?.close();
+      } catch {
+        /* noop */
+      }
+      resolve(ok);
+    };
+
+    try {
+      ch = new BroadcastChannel(REFRESH_CHANNEL);
+      ch.onmessage = (ev) => finish(ev.data === 'ok');
+    } catch {
+      /* 不支持广播：仅轮询 */
+    }
+
+    state.timer = setInterval(() => {
+      // 令牌已被其它标签页轮换（存储中的 refresh 与本次失败使用的不同）→ 复用新 token
+      const current = getRefreshToken();
+      if (current && current !== originalRefresh) finish(true);
+      else if (Date.now() > deadline) finish(false);
+    }, REFRESH_POLL_INTERVAL);
+  });
+}
+
 /** 刷新锁，防止并发刷新。模块级全局唯一——useSSEChat 复用此锁，避免两处各自刷新竞态消费同一 refresh token */
 let refreshPromise: Promise<boolean> | null = null;
 
 /** 尝试刷新 token，返回是否成功。全局共享：并发 401（含 SSE 流）复用同一个刷新请求 */
 export async function tryRefreshToken(): Promise<boolean> {
-  // 复用正在进行的刷新请求
+  // 复用正在进行的刷新请求（同一标签页内）
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     const refresh = getRefreshToken();
     if (!refresh) return false;
+
+    // 跨标签页协调：抢锁失败说明另一标签页正在刷新，等它完成并复用轮换出的新 token（P2）。
+    const lockId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    if (!acquireRefreshLock(lockId)) {
+      return waitForOtherTabRefresh(refresh);
+    }
 
     try {
       const data = await ofetch<TokenResponse>('/api/auth/refresh', {
@@ -92,10 +192,19 @@ export async function tryRefreshToken(): Promise<boolean> {
         body: { refresh },
       });
       setTokens(data.access, data.refresh);
+      broadcastRefresh('ok');
       return true;
     } catch {
+      // 失败可能因另一标签页已完成轮换（本次 refresh 已被消费）：先确认存储是否已更新。
+      // 若已被轮换出新 token，视为成功（复用），避免"一个页面成功、另一个被清空而跳登录"（P2）。
+      if (getRefreshToken() && getRefreshToken() !== refresh) {
+        broadcastRefresh('ok');
+        return true;
+      }
+      broadcastRefresh('fail');
       return false;
     } finally {
+      releaseRefreshLock(lockId);
       refreshPromise = null;
     }
   })();
@@ -118,7 +227,7 @@ const baseClient = ofetch.create({
 });
 
 /** 判断是否为 ofetch 抛出的 HTTP 401 错误 */
-function isUnauthorizedError(err: unknown): boolean {
+export function isUnauthorizedError(err: unknown): boolean {
   return (err as { response?: { status?: number } })?.response?.status === 401;
 }
 
@@ -138,8 +247,15 @@ export async function apiClient<T>(request: string, options?: FetchOptions<'json
     // 匿名请求（无 token）的 401 由调用方自行处理，避免匿名页面被强制跳转 login。
     if (!getAccessToken() && !getRefreshToken()) throw err;
 
+    const attemptedRefresh = getRefreshToken();
     const refreshed = await tryRefreshToken();
     if (!refreshed) {
+      // 清理前校验：仅当存储中的 refresh token 已被**轮换**（与本次失败尝试使用的不同）时，
+      // 说明另一标签页已成功刷新，登录态仍有效 → 复用新 token 重试，而非清空跳登录（P2）。
+      const currentRefresh = getRefreshToken();
+      if (currentRefresh && currentRefresh !== attemptedRefresh) {
+        return await baseClient<T>(request, options);
+      }
       clearTokens();
       // ponytail:allow-location - 401 刷新失败后必须跳转登录页，跨 MPA 无 Vue Router 替代方案，折中
       window.location.href = LOGIN_PATH;

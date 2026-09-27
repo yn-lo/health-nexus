@@ -5,8 +5,6 @@ export type {
   TokenResponse,
   TokenUser,
   SuccessResponse,
-  PasswordResetRequestRequest,
-  PasswordResetConfirmRequest,
   ChangePasswordRequest,
   UpdateProfileRequest,
   StaffAccount,

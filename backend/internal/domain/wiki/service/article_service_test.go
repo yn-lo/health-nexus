@@ -85,15 +85,12 @@ func (m *mockArticleRepo) UpdateFields(_ context.Context, _ int64, f repository.
 		updated.ContentHash = *f.ContentHash
 	}
 	if f.ReReviewOnContentChange {
-		switch updated.Status {
-		case constants.ArticleStatusPublished:
-			// 内容变更且行当前为 published → 回退待审核 + 版本递增（与 SQL CASE 一致）。
+		// 内容变更：published → pending 回退待审核；其余状态保持不变。
+		// 任何状态都递增编辑修订号（P1，与 SQL 一致）——否则草稿的乐观锁形同虚设。
+		if updated.Status == constants.ArticleStatusPublished {
 			updated.Status = constants.ArticleStatusPending
-			updated.Version++
-		case constants.ArticleStatusPending:
-			// pending 期间内容变更：状态不变，但同样递增版本（P1，与 SQL CASE 一致）。
-			updated.Version++
 		}
+		updated.Version++
 	} else if f.IncrementVersion {
 		updated.Version++
 	}
@@ -453,6 +450,69 @@ func TestArticleService_Update_ContentChangeEvenIfStalePending_CarriesReReviewGu
 	if d.chunks.deactivateCall != 0 || d.outbox.insertCall != 0 || d.vector.enqueueCnt != 0 {
 		t.Errorf("待重新审核期间不得动切片/向量化：deactivate=%d outbox=%d enqueue=%d",
 			d.chunks.deactivateCall, d.outbox.insertCall, d.vector.enqueueCnt)
+	}
+}
+
+// TestArticleService_Update_PatientVisibleFieldChange_RequiresReReview P1：标题、摘要、content_risk
+// 均为患者端直接可见或影响检索/答案审核策略的字段，单独修改（正文未变）也必须回到待审核。
+func TestArticleService_Update_PatientVisibleFieldChange_RequiresReReview(t *testing.T) {
+	actor := Actor{UserID: 1, Role: constants.RoleDoctor, DeptID: 10}
+	cases := []struct {
+		name  string
+		input func() UpdateInput
+	}{
+		{
+			name: "仅改标题",
+			input: func() UpdateInput {
+				title := "新标题"
+				return UpdateInput{Title: &title, ArticleID: 42, Actor: actor}
+			},
+		},
+		{
+			name: "仅改摘要",
+			input: func() UpdateInput {
+				summary := "新摘要"
+				return UpdateInput{Summary: &summary, ArticleID: 42, Actor: actor}
+			},
+		},
+		{
+			name: "仅降风险等级",
+			input: func() UpdateInput {
+				risk := entity.ContentRiskNormal
+				return UpdateInput{ContentRisk: &risk, ArticleID: 42, Actor: actor}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deptID := int64(10)
+			article := &entity.Article{
+				ID:           42,
+				Status:       constants.ArticleStatusPublished,
+				AuthorID:     1,
+				DepartmentID: &deptID,
+				Title:        "原标题",
+				Summary:      "原摘要",
+				Content:      "same content",
+				ContentHash:  "same_hash",
+				ContentRisk:  entity.ContentRiskHigh,
+			}
+			d := buildSvcWithOutbox(article)
+
+			dto, err := d.svc.Update(context.Background(), tc.input())
+			if err != nil {
+				t.Fatalf("Update 返回错误: %v", err)
+			}
+			if !d.repo.updateFields.ReReviewOnContentChange {
+				t.Error("期望写入 ReReviewOnContentChange=true（患者可见/安全字段变更需重新审核）")
+			}
+			if dto.Status != constants.ArticleStatusPending {
+				t.Errorf("更新后状态 = %q，期望 %q", dto.Status, constants.ArticleStatusPending)
+			}
+			if d.audit.createCnt != 1 {
+				t.Errorf("期望审计写入 1 条，实际 %d", d.audit.createCnt)
+			}
+		})
 	}
 }
 

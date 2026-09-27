@@ -10,18 +10,14 @@
 -- ============================================================================
 -- 初始化默认超级管理员账号
 -- ----------------------------------------------------------------------------
--- 默认凭据（登录后请立即在「个人中心 → 修改密码」更换）：
---   用户名: admin
---   密码:   Pass1234   （与测试环境约定一致；生产部署须通过管理后台改密）
+-- 密码来源：环境变量 HEALTH_NEXUS_SEED_ADMIN_PASSWORD（明文），启动时由后端用
+-- argon2id 现算哈希注入下方 {{{{ADMIN_PASSWORD_HASH}}}} 占位符，哈希/明文均不写入仓库。
+-- 未配置该变量时占位符替换为空串，SELECT ... WHERE 守卫使本条不插入 → 生产数据库保持干净。
 --
--- 说明：password_hash 为 argon2id（m=65536,t=3,p=2）生成的固定哈希，
--- 仅作初始化凭据；不同环境请勿共用此账号的长期密码。
+-- 注意：占位符替换发生在 ApplySchema 读取本文件后（见 schema.go renderSeed）。
 -- ============================================================================
 
 INSERT INTO users (username, role, password_hash)
-VALUES (
-    'admin',
-    'SUPER_ADMIN',
-    'argon2id$v=19$m=65536,t=3,p=2$wWnyNI7XvpyqnZ4IslGZTA==$HdnL49YMReWiOYP1ebkpYILLTbKBHwS+gynKGz4RMw4='
-)
+SELECT 'admin', 'SUPER_ADMIN', '{{ADMIN_PASSWORD_HASH}}'
+WHERE '{{ADMIN_PASSWORD_HASH}}' <> ''
 ON CONFLICT (username) DO NOTHING;

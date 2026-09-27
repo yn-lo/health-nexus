@@ -25,6 +25,11 @@ func (r *TurnRegistry) Put(ctx context.Context, key, value string, ttl time.Dura
 	return r.cli.Set(ctx, key, value, ttl).Err()
 }
 
+// PutIfAbsent 仅当 key 不存在时写入（原子 SET NX）。返回 true 表示本次写入成功（占位成功）。
+func (r *TurnRegistry) PutIfAbsent(ctx context.Context, key, value string, ttl time.Duration) (bool, error) {
+	return r.cli.SetNX(ctx, key, value, ttl).Result()
+}
+
 // Lookup 读取登记值；不存在返回 ("", false, nil)。
 func (r *TurnRegistry) Lookup(ctx context.Context, key string) (value string, found bool, err error) {
 	val, gerr := r.cli.Get(ctx, key).Result()

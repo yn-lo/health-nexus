@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -185,7 +186,15 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 		return err
 	}
 
-	// (1)~(2) 会话准备（REQ-CHAT-019）：统一构建 Session（认证=DB 会话+科室锁定；匿名=Redis 瞬态会话，不限科室）。
+	// (0.5) 原子占用 request_id（SET NX）：防止同 request_id 的并发提交各自创建会话并生成（P2）。
+	// 占位成功后才继续；释放回调在本请求未产生终态时清除占位，避免异常中断后无法重试。
+	release, err := s.reserveTurn(ctx, in)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	// (1)~(2) 会话准备（REQ-CHAT-019）：统一构建 Session（认证=DB 会话+科室锁定；匿名=Redis 瞬态会话）。
 	sess, err := s.buildSession(ctx, in)
 	if err != nil {
 		return err
@@ -430,9 +439,11 @@ func (s *ChatSendService) handleRuleBlocked(
 const llmSelfHarmMarker = "llm_self_harm"
 
 // turnRef 幂等登记值：本轮所属会话 + 轮次标识（uuid.UUID 按文本序列化）。
+// reserved 为瞬态标志（不参与序列化）：登记值为"进行中"占位时置位，表示另一并发请求已占位。
 type turnRef struct {
-	SID    string    `json:"sid"`
-	TurnID uuid.UUID `json:"turn_id"`
+	SID      string    `json:"sid"`
+	TurnID   uuid.UUID `json:"turn_id"`
+	reserved bool      `json:"-"`
 }
 
 // idempotencyKey 身份作用域 + request_id：跨身份无法命中他人的登记，
@@ -442,6 +453,42 @@ func idempotencyKey(in StreamInput, requestID string) string {
 		return "chat_turn:anon:" + in.Identity.DeviceID + ":" + requestID
 	}
 	return fmt.Sprintf("chat_turn:user:%d:%s", in.Identity.UserID, requestID)
+}
+
+// turnReservedMarker 幂等登记的"进行中"占位值。原子占位（SET NX）成功时先写此标记，
+// 生成完成后由 registerTurn 覆盖为权威 turnRef。第二个并发请求查到该标记即判 409（生成中）。
+const turnReservedMarker = "__reserved__"
+
+// reserveTurn 原子占用 request_id（SET NX），防止同 request_id 并发提交重复创建会话与生成。
+//   - 未携带 request_id / 登记能力不可用：跳过（返回 nil，降级为不幂等）；
+//   - 占位成功：返回 release 回调（本请求后续失败且未产生终态时清除占位，允许重试）；
+//   - 占位失败（已存在）：返回 409——另一并发请求正在进行或已完成（已完成者由 replayTurn 优先回放）。
+//
+// 必须在创建会话之前调用：原实现"先查后写（普通 SET）"存在竞态，两个并发请求都能通过首次查询，
+// 各自创建会话并生成（P2）。
+func (s *ChatSendService) reserveTurn(ctx context.Context, in StreamInput) (func(), error) {
+	if s.turns == nil || in.RequestID == "" {
+		return func() {}, nil
+	}
+	key := idempotencyKey(in, in.RequestID)
+	ok, err := s.turns.PutIfAbsent(ctx, key, turnReservedMarker, idempotencyTTL)
+	if err != nil {
+		// 占位失败（Redis 故障）不阻断问答：降级为不幂等，与未启用幂等一致。
+		slog.WarnContext(ctx, "chat: idempotency reserve failed, continue without it", "err", err)
+		return func() {}, nil
+	}
+	if !ok {
+		return nil, apperrors.Conflict("CHAT_TURN_IN_PROGRESS", "会话正在生成中，请稍后重试")
+	}
+	// 本请求失败（未产生终态）时清除占位，避免异常中断后 request_id 被长期占用无法重试。
+	// 成功产生终态时 registerTurn 已覆盖为权威 turnRef，release 的幂等删除不影响。
+	return func() {
+		if raw, found, lerr := s.turns.Lookup(ctx, key); lerr == nil && found && raw == turnReservedMarker {
+			if derr := s.turns.Delete(ctx, key); derr != nil {
+				slog.WarnContext(ctx, "chat: idempotency release failed", "err", derr)
+			}
+		}
+	}, nil
 }
 
 // registerTurn 登记本轮（request_id → 会话 + 轮次），使重复提交可回放或拒绝。
@@ -472,6 +519,10 @@ func (s *ChatSendService) replayTurn(ctx context.Context, in StreamInput, out SS
 	ref := s.lookupTurnRef(ctx, in)
 	if ref == nil {
 		return false, nil
+	}
+	if ref.reserved {
+		// 已存在"进行中"占位（另一并发请求已原子占用同一 request_id）→ 409，不重复生成。
+		return true, apperrors.Conflict("CHAT_TURN_IN_PROGRESS", "会话正在生成中，请稍后重试")
 	}
 	sess, err := s.sessionByID(ctx, in, ref.SID)
 	if err != nil {
@@ -514,6 +565,10 @@ func (s *ChatSendService) lookupTurnRef(ctx context.Context, in StreamInput) *tu
 	}
 	if !ok {
 		return nil
+	}
+	// "进行中"占位：另一并发请求已原子占用同一 request_id（尚未产生权威结果）。
+	if raw == turnReservedMarker {
+		return &turnRef{reserved: true}
 	}
 	var ref turnRef
 	if jerr := json.Unmarshal([]byte(raw), &ref); jerr != nil || ref.TurnID == uuid.Nil {
@@ -581,13 +636,17 @@ func (s *ChatSendService) loadConversation(
 }
 
 // buildSession 统一构建会话：认证用户承载 DB 会话（含科室锁定与持久化）；
-// 匿名用户承载 Redis 瞬态会话（多轮上下文，TTL 自动过期，不限科室，危机不记录）。
+// 匿名用户承载 Redis 瞬态会话（多轮上下文，TTL 自动过期，危机不记录）。
 // 链条自此只与 Session 交互，不区分身份。
 func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Session, error) {
 	if in.Identity.Anon() {
 		// 匿名：会话身份独立于设备身份——同设备可拥有多个会话（新建/续聊语义与认证路径一致）。
 		sid := anonSessionID(in)
-		return &Session{SID: sid, DeptID: nil, store: newMemSessionStore(s.ring, in.Identity.DeviceID, sid)}, nil
+		deptID, err := s.resolveAnonDept(ctx, in, sid)
+		if err != nil {
+			return nil, err
+		}
+		return &Session{SID: sid, DeptID: deptID, store: newMemSessionStore(s.ring, in.Identity.DeviceID, sid)}, nil
 	}
 	_, conv, err := s.resolveDeptAndConversation(ctx, in)
 	if err != nil {
@@ -599,6 +658,72 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 		DeptID: deptIDPtr(in.SelectedDeptID, conv),
 		store:  store,
 	}, nil
+}
+
+// resolveAnonDept 解析匿名会话的检索科室范围（REQ-CHAT-019）：
+//   - 首轮携带 selected_dept_id（>0）：校验其属于公共启用科室，通过后锁定并持久化，
+//     续聊（仅带 conversation_id）复用锁定值，避免匿名用户绕过科室选择或携带任意 id；
+//   - selected_dept_id 为 0/nil：不限科室（返回 nil），并清除续聊会话上的锁定值。
+//
+// 原实现直接 DeptID: nil 忽略用户选择，且不校验 id 是否存在（P2）。
+func (s *ChatSendService) resolveAnonDept(
+	ctx context.Context, in StreamInput, sid string,
+) (*int64, error) {
+	if in.ConversationID != nil {
+		// 续聊：以首轮锁定的科室为准；仅在明确携带新选择时更新锁定。
+		if in.SelectedDeptID == nil {
+			return s.loadAnonDept(ctx, in.Identity.DeviceID, sid), nil
+		}
+	}
+	dept, err := s.dept.ResolveForAnonymous(ctx, in.SelectedDeptID)
+	if err != nil {
+		return nil, err
+	}
+	if dept.ID <= 0 {
+		s.storeAnonDept(ctx, in.Identity.DeviceID, sid, nil)
+		return nil, nil
+	}
+	id := dept.ID
+	s.storeAnonDept(ctx, in.Identity.DeviceID, sid, &id)
+	return &id, nil
+}
+
+// anonDeptKey 匿名会话锁定科室的 Redis key（与消息环同命名空间，TTL 一致）。
+func anonDeptKey(deviceID, sid string) string {
+	return "chat_anon_dept:" + deviceID + ":" + sid
+}
+
+// loadAnonDept 读取匿名会话锁定的科室；无记录或能力不可用时返回 nil（不限科室）。
+func (s *ChatSendService) loadAnonDept(ctx context.Context, deviceID, sid string) *int64 {
+	if s.turns == nil {
+		return nil
+	}
+	raw, ok, err := s.turns.Lookup(ctx, anonDeptKey(deviceID, sid))
+	if err != nil || !ok {
+		return nil
+	}
+	id, perr := strconv.ParseInt(raw, 10, 64)
+	if perr != nil || id <= 0 {
+		return nil
+	}
+	return &id
+}
+
+// storeAnonDept 持久化/清除匿名会话锁定科室（尽力而为，失败仅告警不阻断问答）。
+func (s *ChatSendService) storeAnonDept(ctx context.Context, deviceID, sid string, deptID *int64) {
+	if s.turns == nil {
+		return
+	}
+	if deptID == nil {
+		if err := s.turns.Delete(ctx, anonDeptKey(deviceID, sid)); err != nil {
+			slog.WarnContext(ctx, "chat: clear anon dept failed", "err", err)
+		}
+		return
+	}
+	val := strconv.FormatInt(*deptID, 10)
+	if err := s.turns.Put(ctx, anonDeptKey(deviceID, sid), val, anonymousContextTTL); err != nil {
+		slog.WarnContext(ctx, "chat: persist anon dept failed", "err", err)
+	}
 }
 
 // anonSessionID 解析匿名会话标识：请求携带 conversation_id 表示续聊该会话，否则分配全新会话。

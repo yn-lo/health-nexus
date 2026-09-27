@@ -40,17 +40,19 @@ func NewTokenIssuer(cfg config.JWTConfig) (*TokenIssuer, error) {
 	}, nil
 }
 
-// Issue 签发 access 与 refresh token，二者携带相同 user_id/role/dept_id 但 TTL 与 token_type 不同。
-// JWTAuth 中间件校验 token_type=access，Refresh 校验 token_type=refresh，双向互斥。
+// Issue 签发 access 与 refresh token，二者携带相同 user_id/role/dept_id/token_version
+// 但 TTL 与 token_type 不同。
+// JWTAuth 中间件校验 token_type=access，Refresh 校验 token_type=refresh，双向互斥；
+// token_version 与 users.token_version 比对，密码变更后旧令牌立即失效（P1）。
 func (t *TokenIssuer) Issue(
-	ctx context.Context, userID int64, role string, deptID int64,
+	ctx context.Context, userID int64, role string, deptID int64, tokenVersion int64,
 ) (access, refresh string, err error) {
 	_ = ctx
-	access, err = t.sign(userID, role, deptID, TokenTypeAccess, t.accessTTL)
+	access, err = t.sign(userID, role, deptID, TokenTypeAccess, t.accessTTL, tokenVersion)
 	if err != nil {
 		return "", "", fmt.Errorf("sign access: %w", err)
 	}
-	refresh, err = t.sign(userID, role, deptID, TokenTypeRefresh, t.refreshTTL)
+	refresh, err = t.sign(userID, role, deptID, TokenTypeRefresh, t.refreshTTL, tokenVersion)
 	if err != nil {
 		return "", "", fmt.Errorf("sign refresh: %w", err)
 	}
@@ -61,7 +63,7 @@ func (t *TokenIssuer) Issue(
 func (t *TokenIssuer) RefreshTTL() time.Duration { return t.refreshTTL }
 
 func (t *TokenIssuer) sign(
-	userID int64, role string, deptID int64, tokenType string, ttl time.Duration,
+	userID int64, role string, deptID int64, tokenType string, ttl time.Duration, tokenVersion int64,
 ) (string, error) {
 	now := time.Now()
 	claims := &middleware.Claims{
@@ -71,10 +73,11 @@ func (t *TokenIssuer) sign(
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
-		UserID:    userID,
-		Role:      role,
-		DeptID:    deptID,
-		TokenType: tokenType,
+		UserID:       userID,
+		Role:         role,
+		DeptID:       deptID,
+		TokenType:    tokenType,
+		TokenVersion: tokenVersion,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(t.secret)

@@ -68,6 +68,10 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON users (is_deleted) WHERE is_deleted = FALSE;
 
+-- 会话版本：密码变更（自助改密/找回重置/管理员重置）时递增，使旧 access/refresh token 立即失效。
+-- 令牌携带签发时的版本，JWTAuth 与 Refresh 校验其与当前值一致（P1：改密后旧令牌仍可续期）。
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version BIGINT NOT NULL DEFAULT 0;
+
 -- ============================================================================
 -- wiki 域
 -- ============================================================================
@@ -125,6 +129,17 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_version INT NOT NULL DEF
 UPDATE articles
    SET published_content = content, published_content_hash = content_hash, published_version = version
  WHERE status = 'published' AND published_content = '' AND content <> '';
+
+-- P1 补全：快照不止正文。标题/摘要是患者详情页直接可见的内容，content_risk 决定检索可见性与
+-- 答案审核策略（high=用药/检查准备）。若这三者读当前编辑稿，作者改标题/摘要即可绕过审核立即生效，
+-- 降 risk 还会提前放宽审核。三者随 published_content 一起在审核通过时固化。
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_title VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_content_risk VARCHAR(20) NOT NULL DEFAULT '';
+-- 存量回填仅限当前确为 published 的文章（此时当前值就是已审核值）；published_content_risk 非空即已回填，幂等。
+UPDATE articles
+   SET published_title = title, published_summary = summary, published_content_risk = content_risk
+ WHERE status = 'published' AND published_content_risk = '';
 
 -- 污染修复：修正此前按"published_at 非空"误回填的 pending 文章快照。
 -- 这些文章的 published_content 是未审核的新稿，必须清空（宁可暂时不可读，也不公开未审核内容）。

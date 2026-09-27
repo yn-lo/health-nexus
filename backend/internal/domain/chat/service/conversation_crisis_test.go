@@ -412,6 +412,21 @@ func TestCrisisService_List(t *testing.T) {
 			t.Error("期望 HandledAt 非 nil")
 		}
 	})
+
+	// P1：非超管未绑定科室（DeptID=0）不得退化为"全科室可见"，否则跨科室泄露患者姓名/触发内容。
+	t.Run("非超管未绑定科室_返回403", func(t *testing.T) {
+		svc := NewCrisisService(&mockCrisisRepo{listRows: nil, listTotal: 0})
+		_, _, err := svc.List(context.Background(), "", nil, CrisisActor{UserID: 1, Role: constants.RoleDoctor, DeptID: 0}, 10, 0)
+		assertAppErr(t, err, 403, "CHAT_CRISIS_FORBIDDEN")
+	})
+
+	t.Run("超管未绑定科室_放行", func(t *testing.T) {
+		svc := NewCrisisService(&mockCrisisRepo{})
+		_, _, err := svc.List(context.Background(), "", nil, CrisisActor{UserID: 1, Role: constants.RoleSuperAdmin, DeptID: 0}, 10, 0)
+		if err != nil {
+			t.Fatalf("期望 nil，实际 %v", err)
+		}
+	})
 }
 
 func TestCrisisService_Handle(t *testing.T) {
@@ -528,6 +543,18 @@ func TestConversationService_FeedbackStats_DepartmentIsolation(t *testing.T) {
 		}
 		if msg.lastDeptID == nil || *msg.lastDeptID != 0 {
 			t.Errorf("超管期望 deptID=0（不限科室），实际 %v", msg.lastDeptID)
+		}
+	})
+
+	// P1：非超管未绑定科室（DeptID=0）不得被仓储解释为"不过滤科室"，否则跨科室泄露反馈正文。
+	t.Run("非超管未绑定科室_返回403", func(t *testing.T) {
+		msg := &mockMsgRepo{}
+		svc := NewConversationService(&mockConvRepo{}, msg)
+		_, err := svc.FeedbackStats(context.Background(),
+			CrisisActor{UserID: 1, Role: constants.RoleDoctor, DeptID: 0}, 20)
+		assertAppErr(t, err, 403, "CHAT_FEEDBACK_FORBIDDEN")
+		if msg.lastDeptID != nil {
+			t.Errorf("拒绝路径不应查询仓储，实际 lastDeptID=%v", *msg.lastDeptID)
 		}
 	})
 }

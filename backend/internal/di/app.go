@@ -91,7 +91,8 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	infra.Locker = redis.NewLocker(infra.Redis)
 	infra.RateLimiter = middleware.NewRateLimiter(infra.Redis, cfg.Server.TrustedProxies)
 
-	auth, err := middleware.NewAuthenticator(cfg.JWT)
+	auth, err := middleware.NewAuthenticator(
+		cfg.JWT, adapter.NewAuthSessionStore(authrepo.NewUserRepo(pool)))
 	if err != nil {
 		return nil, fmt.Errorf("init jwt auth: %w", err)
 	}

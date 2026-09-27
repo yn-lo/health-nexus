@@ -1,3 +1,7 @@
+# 运行环境：development 时加载 seed.dev.sql（E2E 测试账号/科室，密码统一 password123），
+# 其他取值（如 production）数据库保持干净。生产必须用 HEALTH_NEXUS_ENV=production 覆盖。
+env: development
+
 server:
   port: 5230
   read_timeout: 15s
@@ -84,3 +88,10 @@ upload:
   dir: "uploads"
   # 单张图片大小上限（MB），超限返回 413
   max_size_mb: 5
+
+# 初始超管账号（seed.sql 写入 admin 时使用）。
+# admin_password 为明文，启动时由后端用 argon2id 现算哈希，明文/哈希均不落仓库。
+# 生产环境请留空本文件字段，改用环境变量 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 注入一次性初始密码；
+# 留空时不会创建 admin 账号（数据库保持干净，由运维另行开通）。
+seed:
+  admin_password: "Pass1234"
