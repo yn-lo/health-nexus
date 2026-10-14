@@ -378,17 +378,23 @@ run_p2() {
   # P2-5 git 卫生：禁止敏感文件入库（.env / 密钥 / 本地配置）
   # 必须经 require_tool：P2-5 是阻断项，git 缺失时静默跳过等于这道阻断从未执行。
   if require_tool git "P2-5/6 git 卫生检查（敏感文件 / 大文件）" "安装 git"; then
+    # 从仓库根（而非 backend/）扫描：否则仓库根的 .env / docker-compose.yml 等不在扫描范围。
+    local git_root
+    git_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$REPO_ROOT")"
     local sensitive
-    sensitive="$(git ls-files 2>/dev/null | grep -E '(^|/)(\.env[a-z0-9._-]*|.*\.pem|.*\.key|config\.local\.yaml|.*\.p12|.*\.pfx)$' || true)"
+    # 排除 .env.example/.sample/.template/.dist——这些是故意入库的模板，不含真实凭据。
+    sensitive="$(git -C "$git_root" ls-files 2>/dev/null \
+      | grep -E '(^|/)(\.env[a-z0-9._-]*|.*\.pem|.*\.key|config\.local\.yaml|.*\.p12|.*\.pfx)$' \
+      | grep -vE '(^|/)\.env\.(example|sample|template|dist)$' || true)"
     if [ -n "$sensitive" ]; then
       fail "git 追踪了敏感文件（.env/密钥/本地配置）" "从索引移除（git rm --cached）并确保在 .gitignore" ".gitignore"
       echo "$sensitive" | head -n 10 | sed 's/^/    /'
     fi
     # P2-6 git 卫生：大文件（>5MB）入库警告
     local big
-    big="$(git ls-files 2>/dev/null | while IFS= read -r f; do
+    big="$(git -C "$git_root" ls-files 2>/dev/null | while IFS= read -r f; do
       local s
-      s="$(git cat-file -s "HEAD:$f" 2>/dev/null || echo 0)"
+      s="$(git -C "$git_root" cat-file -s "HEAD:$f" 2>/dev/null || echo 0)"
       if [ -n "$s" ] && [ "$s" -gt 5242880 ] 2>/dev/null; then
         echo "$f ($s bytes)"
       fi

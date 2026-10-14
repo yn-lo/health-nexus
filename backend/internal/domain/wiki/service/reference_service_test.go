@@ -27,6 +27,13 @@ type mockRefRepo struct {
 	hasPendErr  error
 	hasApproved bool
 	hasApprErr  error
+
+	listRefs        []*entity.ArticleReference
+	listTotal       int64
+	listErr         error
+	updateStatusErr error
+	revokeCount     int64
+	revokeErr       error
 }
 
 func (m *mockRefRepo) Create(_ context.Context, ref *entity.ArticleReference) error {
@@ -52,13 +59,13 @@ func (m *mockRefRepo) HasApproved(_ context.Context, _, _ int64) (bool, error) {
 	return m.hasApproved, m.hasApprErr
 }
 func (m *mockRefRepo) List(_ context.Context, _ repository.ListFilter, _, _ int) ([]*entity.ArticleReference, int64, error) {
-	return nil, 0, nil
+	return m.listRefs, m.listTotal, m.listErr
 }
 func (m *mockRefRepo) UpdateStatus(_ context.Context, _ int64, _, _ string, _ repository.RefStatusOpts) error {
-	return nil
+	return m.updateStatusErr
 }
 func (m *mockRefRepo) RevokeByArticle(_ context.Context, _ int64) (int64, error) {
-	return 0, nil
+	return m.revokeCount, m.revokeErr
 }
 
 type mockArticleLookup struct {
