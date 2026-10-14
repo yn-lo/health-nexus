@@ -44,7 +44,7 @@ const { showDialog } = useDsDialog()
 
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
-/** 引用标记 `[资料N]`：N 对应本轮 references 中第 N 条切片所属的文章 */
+/** 引用标记 `[资料N]`：N 对应"参考来源"（按 article_id 去重后）第 N 篇文章 */
 const CITE_RE = /\[资料\s*(\d+)\]/g
 /** 文章 ID 属性白名单（仅字母/数字/_/-），避免拼接进 HTML 属性时被注入 */
 const SAFE_ARTICLE_ID = /^[A-Za-z0-9_-]+$/
@@ -57,11 +57,21 @@ const SAFE_ARTICLE_ID = /^[A-Za-z0-9_-]+$/
 function renderMd(text: string, refs: Reference[] = []): string {
   const html = sanitizeHtml(md.render(text))
   if (!html.includes('[资料')) return html
+  // 引用单位 = 文章：把角标 N 解析为第 N 条原始 reference 所属的文章，
+  // 再映射到"参考来源"去重列表中的文章序号（角标文案）。
+  // - 新会话：references 已是文章级，N 即文章序号，文案不变；
+  // - 历史会话：references 仍为切片级，文案会归一到同一篇文章的序号，避免"列表 1 条、正文引用 3"。
+  const articles = dedupeRefs(refs)
+  const posByArticle = new Map<number, number>()
+  articles.forEach((a, i) => posByArticle.set(a.article_id, i + 1))
   return html.replace(CITE_RE, (_m, n: string) => {
     const raw = refs[Number(n) - 1]?.article_id
-    const article = raw !== undefined ? String(raw) : ''
-    if (article && SAFE_ARTICLE_ID.test(article)) {
-      return `<sup class="cite-chip" data-cite-article="${article}" role="button">${n}</sup>`
+    if (raw !== undefined) {
+      const article = String(raw)
+      if (SAFE_ARTICLE_ID.test(article)) {
+        const label = posByArticle.get(raw) ?? n
+        return `<sup class="cite-chip" data-cite-article="${article}" role="button">${label}</sup>`
+      }
     }
     return `<sup class="cite-chip cite-chip--plain">${n}</sup>`
   })

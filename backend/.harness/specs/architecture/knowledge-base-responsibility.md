@@ -75,7 +75,14 @@ owner: backend-team
   降级为检索（落实审查规则 7，消除 LLM 判定非确定性导致的"有知识却反复澄清/暂无"）；
   检索 0 命中时由"暂无相关内容"兜底。安全动作（crisis/emergency/restricted/reject）优先级更高，不受影响。
 
-## 6. 相关代码位置
+## 6. 引用编号单位
+
+答案中的 `[资料N]` 的 N 以**文章**为单位：同篇文章的多个命中切片在后端归并为一条，
+编号 = 文章首次出现顺序，与前端"参考来源"列表（按 `article_id` 去重）逐项对应。
+实现：检索后 `groupChunksByArticle` 归并，生成侧 `chunkContentsForLLM`、审核侧证据、
+落库 `referenced_chunks`、SSE `references` 事件均复用该归并结果，避免"列表 1 条、正文却引用 [资料3]"。
+
+## 7. 相关代码位置
 
 - 可见性 SQL：`internal/domain/wiki/repository/chunk_repo.go` `deptVisibilitySQL`
 - 引用申请/审批/撤销：`internal/domain/wiki/service/reference_service.go`

@@ -4,6 +4,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -440,6 +441,71 @@ func TestChunkContents(t *testing.T) {
 		}
 		if got[0] != "内容一" || got[1] != "内容二" {
 			t.Errorf("内容不匹配: %v", got)
+		}
+	})
+}
+
+// ============================================================================
+// groupChunksByArticle：引用编号以"文章"为单位，与前端参考来源列表（按 article_id 去重）一致
+// ============================================================================
+
+func TestGroupChunksByArticle(t *testing.T) {
+	t.Run("同篇文章多切片_归并为一条_分数取最大_风险不稀释", func(t *testing.T) {
+		chunks := []rag.Chunk{
+			{ChunkID: "c1", ArticleID: "1", Content: "切口护理", Score: 0.71, VecScore: 0.71, ContentRisk: "normal"},
+			{ChunkID: "c2", ArticleID: "1", Content: "疼痛管理", Score: 0.68, VecScore: 0.68},
+			{ChunkID: "c3", ArticleID: "1", Content: "饮食营养", Score: 0.66, VecScore: 0.66, ContentRisk: contentRiskHigh},
+		}
+		got := groupChunksByArticle(chunks)
+		if len(got) != 1 {
+			t.Fatalf("期望归并为 1 条，实际 %d", len(got))
+		}
+		if got[0].ArticleID != "1" {
+			t.Errorf("article_id = %q, want 1", got[0].ArticleID)
+		}
+		if got[0].Score != 0.71 || got[0].VecScore != 0.71 {
+			t.Errorf("分数应取最大 0.71，实际 score=%v vec=%v", got[0].Score, got[0].VecScore)
+		}
+		if got[0].ContentRisk != contentRiskHigh {
+			t.Errorf("任一切片 high 时整体应为 high，实际 %q", got[0].ContentRisk)
+		}
+		for _, part := range []string{"切口护理", "疼痛管理", "饮食营养"} {
+			if !strings.Contains(got[0].Content, part) {
+				t.Errorf("归并内容缺少 %q：%q", part, got[0].Content)
+			}
+		}
+	})
+
+	t.Run("多篇文章交错_按首次出现排序且不合并", func(t *testing.T) {
+		chunks := []rag.Chunk{
+			{ChunkID: "a1c1", ArticleID: "A", Content: "A1"},
+			{ChunkID: "b1c1", ArticleID: "B", Content: "B1"},
+			{ChunkID: "a1c2", ArticleID: "A", Content: "A2"},
+		}
+		got := groupChunksByArticle(chunks)
+		if len(got) != 2 {
+			t.Fatalf("期望 2 篇文章，实际 %d", len(got))
+		}
+		if got[0].ArticleID != "A" || got[1].ArticleID != "B" {
+			t.Errorf("应按首次出现排序 [A B]，实际 [%s %s]", got[0].ArticleID, got[1].ArticleID)
+		}
+		if !strings.Contains(got[0].Content, "A1") || !strings.Contains(got[0].Content, "A2") {
+			t.Errorf("文章 A 的切片未合并：%q", got[0].Content)
+		}
+	})
+
+	t.Run("空内容过滤_无 article_id 独立保留", func(t *testing.T) {
+		chunks := []rag.Chunk{
+			{ChunkID: "x", ArticleID: "A", Content: "  "},        // 纯空白 → 过滤
+			{ChunkID: "y", ArticleID: "", Content: "无归属内容"}, // 无 article_id → 独立保留
+			{ChunkID: "z", ArticleID: "A", Content: "有效内容"},
+		}
+		got := groupChunksByArticle(chunks)
+		if len(got) != 2 {
+			t.Fatalf("期望 2 条，实际 %d", len(got))
+		}
+		if got[0].ChunkID != "y" || got[1].ArticleID != "A" {
+			t.Errorf("顺序/内容不符: %+v", got)
 		}
 	})
 }

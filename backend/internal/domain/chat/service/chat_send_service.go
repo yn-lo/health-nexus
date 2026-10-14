@@ -1346,6 +1346,11 @@ func (s *ChatSendService) prepareRAGContext(
 		return "", nil, nil, s.finalizeRejection(ctx, sess, st, out, s.safetyIn.SystemErrorMessage())
 	}
 
+	// 引用编号以"文章"为单位：归并同篇文章的命中切片。
+	// 生成侧 [资料N]、审核侧证据、落库 references、SSE references 事件均基于该归并结果，
+	// 与前端"参考来源"列表（按 article_id 去重）语义一致，避免"列表 1 条、正文却引用 [资料3]"。
+	chunks = groupChunksByArticle(chunks)
+
 	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）。
 	// 0 命中分两种话术，用审查的 out_of_domain 分流：
 	//   - 域外问题 → 说清能力边界并引导回业务范围（"知识库暂无内容"会让患者以为资料缺失）；
@@ -1766,7 +1771,7 @@ func toLLMMessages(in []*entity.Message) []llm.Message {
 	return out
 }
 
-// chunkContents 提取切片内容用于审核证据，过滤空/纯空白内容（编号由审核侧按序添加）。
+// chunkContents 提取（已按文章归并的）资料内容用于审核证据，过滤空/纯空白内容（编号由审核侧按序添加）。
 func chunkContents(chunks []rag.Chunk) []string {
 	out := make([]string, 0, len(chunks))
 	for _, c := range chunks {
@@ -1778,9 +1783,48 @@ func chunkContents(chunks []rag.Chunk) []string {
 	return out
 }
 
-// chunkContentsForLLM 构造送入生成模型的参考资料：每条切片加稳定编号 [资料N] 与文章标题，
-// 使模型可在答案中用 [资料N] 内联引用，且编号与审核侧证据、references 顺序保持一致（可溯源）。
-// 过滤规则与 chunkContents 完全一致，保证两侧"第 N 条"指向同一资料。
+// groupChunksByArticle 按 article_id 归并命中切片，使引用编号以"文章"为单位。
+// 目的：与前端"参考来源"列表（按 article_id 去重）语义一致——同一篇文章的多个命中切片
+// 合并为一条，编号 = 文章首次出现顺序，避免"列表 1 条、正文却引用 [资料3]"的错位。
+// 归并规则：内容按命中顺序拼接（纯空白内容跳过）；Score/VecScore 取最大；
+// ContentRisk 任一为 high 则整体为 high（高风险判定不得被归并稀释）。
+// 无 article_id 的切片无法确定同源，各自独立保留，保证内容不丢。
+func groupChunksByArticle(chunks []rag.Chunk) []rag.Chunk {
+	out := make([]rag.Chunk, 0, len(chunks))
+	index := make(map[string]int, len(chunks))
+	for _, c := range chunks {
+		if strings.TrimSpace(c.Content) == "" {
+			continue
+		}
+		key := strings.TrimSpace(c.ArticleID)
+		if key == "" {
+			out = append(out, c)
+			continue
+		}
+		i, ok := index[key]
+		if !ok {
+			index[key] = len(out)
+			out = append(out, c)
+			continue
+		}
+		merged := &out[i]
+		merged.Content = merged.Content + "\n" + c.Content
+		if c.Score > merged.Score {
+			merged.Score = c.Score
+		}
+		if c.VecScore > merged.VecScore {
+			merged.VecScore = c.VecScore
+		}
+		if c.ContentRisk == contentRiskHigh {
+			merged.ContentRisk = contentRiskHigh
+		}
+	}
+	return out
+}
+
+// chunkContentsForLLM 构造送入生成模型的参考资料：每条（已按文章归并）资料加稳定编号 [资料N]
+// 与文章标题，使模型可在答案中用 [资料N] 内联引用，且编号与审核侧证据、references 顺序、
+// 前端参考来源列表保持一致（可溯源）。过滤规则与 chunkContents 完全一致，保证两侧"第 N 条"指向同一资料。
 func chunkContentsForLLM(chunks []rag.Chunk) []string {
 	out := make([]string, 0, len(chunks))
 	idx := 0
