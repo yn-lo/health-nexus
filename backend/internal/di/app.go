@@ -168,7 +168,9 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 	wikiRouter := buildWikiRouter(infra, cfg, deptRepo, userRepo, chunkRepo)
 
 	// ========== chat 域 ==========
-	chatRouter, err := buildChatRouter(ctx, infra, cfg.LLM, cfg.Chat.DefaultDeptID, aesKey, deptRepo, configSvc, chunkRepo)
+	chatRouter, err := buildChatRouter(
+		ctx, infra, cfg.LLM, cfg.Chat.DefaultDeptID, aesKey, deptRepo, configSvc, chunkRepo,
+	)
 	if err != nil {
 		return nil, err
 	}

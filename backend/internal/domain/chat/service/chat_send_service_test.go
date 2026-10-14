@@ -496,7 +496,7 @@ func TestGroupChunksByArticle(t *testing.T) {
 
 	t.Run("空内容过滤_无 article_id 独立保留", func(t *testing.T) {
 		chunks := []rag.Chunk{
-			{ChunkID: "x", ArticleID: "A", Content: "  "},        // 纯空白 → 过滤
+			{ChunkID: "x", ArticleID: "A", Content: "  "},   // 纯空白 → 过滤
 			{ChunkID: "y", ArticleID: "", Content: "无归属内容"}, // 无 article_id → 独立保留
 			{ChunkID: "z", ArticleID: "A", Content: "有效内容"},
 		}
