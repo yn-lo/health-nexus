@@ -17,7 +17,7 @@ export const ACCOUNTS = {
   doctor_wang: { username: 'doctor_wang', password: 'password123', portal: 'STAFF' as const },
   nurse_liu: { username: 'nurse_liu', password: 'password123', portal: 'STAFF' as const },
   dept_admin: { username: 'dept_admin', password: 'password123', portal: 'STAFF' as const },
-  admin: { username: 'admin', password: 'password123', portal: 'STAFF' as const },
+  admin: { username: 'admin', password: 'Pass1234', portal: 'STAFF' as const },
 } as const
 
 export type AccountKey = keyof typeof ACCOUNTS

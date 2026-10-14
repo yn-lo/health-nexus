@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Pencil, Trash2, Building2, ChevronDown } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage, DsSwitchRow } from '@/shared/components'
+import { ConfigCrudPage, DsSwitchRow, ConfigFormField } from '@/shared/components'
 import { baseApi, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { DepartmentTreeNode, DepartmentCreateRequest, DepartmentUpdateRequest } from '@/shared'
@@ -248,10 +248,9 @@ onMounted(load)
 
   <template #form>
    <div class="flex flex-col gap-[var(--spacer-12)]">
-    <div class="flex flex-col gap-[var(--spacer-4)]">
-     <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
+    <ConfigFormField label="名称" required>
      <input v-model="form.name" class="ds-input" placeholder="如 心内科" maxlength="100">
-    </div>
+    </ConfigFormField>
 
     <!-- 父科室下拉：使用原生 select 保持与 ArticleForm 一致风格 -->
     <div class="flex flex-col gap-[var(--spacer-4)]">

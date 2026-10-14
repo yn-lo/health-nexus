@@ -39,8 +39,10 @@ func NewStreamHandler(chat *service.ChatSendService) *StreamHandler {
 // "request_id": 可选（UUID，幂等标识，重试须复用同一值）}
 // 使用 POST + JSON body 而非 GET query：2000 字中文消息 URL 编码后约 18KB，
 // 超出 Nginx/CDN 默认请求行限制（414），且患者提问（PHI）会残留在 access log。
-// SSE 事件：conversation, token, references, answer_replaced, notice, crisis, result, error, done
+// SSE 事件：conversation, stage, token, references, answer_replaced, notice, crisis, result, error, done
 //   - conversation：首事件，携带会话 ID（新建/已有），前端据此更新 URL 与后续请求。
+//   - stage：阶段进度 {"stage":"understanding|retrieving|composing|reviewing"}，仅用于展示"正在做什么"，
+//     不进入答案正文；未知阶段由前端忽略。
 //   - answer_replaced：{"mode":"replace"|"append","text":...} 正文修正（输出审查 / 拒答话术），
 //     修正后的正文即持久化内容。
 //   - notice：{"kind":"emergency"|"timeout","text":...} 面向用户的独立提示，不进入答案正文。

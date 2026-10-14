@@ -36,7 +36,7 @@ var seedSQL string
 //go:embed seed.dev.sql
 var seedDevSQL string
 
-// adminPasswordPlaceholder seed.sql 中超管密码哈希的占位符，
+// adminPasswordPlaceholder seed.sql / seed.dev.sql 中超管密码哈希的占位符，
 // 由 ApplySchema 用运行时计算的 argon2id 哈希替换（明文密码经 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 注入，不入库文件）。
 const adminPasswordPlaceholder = "{{ADMIN_PASSWORD_HASH}}"
 
@@ -101,8 +101,8 @@ func ApplySchema(ctx context.Context, dsn, env, adminPassword string) error {
 }
 
 // buildSeedFiles 组装按顺序应用的文件列表。
-// adminPassword 非空时用 argon2id 现算哈希替换 seed.sql 占位符；
-// 为空时改写占位符为 NULL 语义（此处直接替换为空 hash，配合 seed.sql 的 WHERE 守卫跳过插入）。
+// adminPassword 非空时用 argon2id 现算哈希替换 seed.sql / seed.dev.sql 中的占位符；
+// 为空时改写占位符为空串（配合 seed.sql 的 WHERE 守卫跳过插入）。
 // 仅 env=development 追加 seed.dev.sql 测试数据。
 func buildSeedFiles(env, adminPassword string) ([]seedFile, error) {
 	seedContent, err := renderSeed(seedSQL, adminPassword)
@@ -114,12 +114,16 @@ func buildSeedFiles(env, adminPassword string) ([]seedFile, error) {
 		{name: "seed.sql", sql: seedContent},
 	}
 	if env == config.EnvDevelopment {
-		files = append(files, seedFile{name: "seed.dev.sql", sql: seedDevSQL})
+		devContent, err := renderSeed(seedDevSQL, adminPassword)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, seedFile{name: "seed.dev.sql", sql: devContent})
 	}
 	return files, nil
 }
 
-// renderSeed 将 seed.sql 中的超管密码占位符替换为 argon2id 哈希。
+// renderSeed 将 seed.sql / seed.dev.sql 中的超管密码占位符替换为 argon2id 哈希。
 // adminPassword 为空时替换为空串，seed.sql 的 WHERE 守卫据此跳过写入（生产不内置账号）。
 func renderSeed(sqlText, adminPassword string) (string, error) {
 	if adminPassword == "" {

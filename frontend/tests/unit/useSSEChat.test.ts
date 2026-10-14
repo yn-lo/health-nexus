@@ -142,6 +142,41 @@ describe('useSSEChat', () => {
     expect(body2.conversation_id).toBe('server-id')
   })
 
+  // ── stage 阶段进度 ────────────────────────────────────────────
+
+  it('stage 事件 → 更新阶段，且不进入答案正文', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      makeOkResponse(makeSSEStream([
+        'event: stage\ndata: {"stage":"understanding"}\n\n',
+        'event: stage\ndata: {"stage":"retrieving"}\n\n',
+        'event: token\ndata: 回答\n\n',
+      ])),
+    )
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { stage, currentContent, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    expect(stage.value).toBe('retrieving')
+    expect(currentContent.value).toBe('回答')
+  })
+
+  it('新一轮发送重置 stage', async () => {
+    let call = 0
+    const fetchSpy = vi.fn().mockImplementation(() => {
+      call++
+      const frame = call === 1 ? 'event: stage\ndata: {"stage":"composing"}\n\n' : ''
+      return Promise.resolve(makeOkResponse(makeSSEStream([frame])))
+    })
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { stage, sendQuestion } = useSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('第一问')
+    expect(stage.value).toBe('composing')
+    await sendQuestion('第二问')
+    expect(stage.value).toBe('')
+  })
+
   // ── answer_replaced（正文修正）/ notice（独立提示）/ result（权威结果） ──
 
   // ── ping 心跳（P2：生成 + 审核期间保持连接存活） ──

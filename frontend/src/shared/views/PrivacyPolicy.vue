@@ -1,22 +1,14 @@
-﻿<script setup lang="ts">
-import { useRouter } from 'vue-router'
+<script setup lang="ts">
 import { AppHeader } from '@/shared/components'
+import { usePageBack } from '@/shared/composables/usePageBack'
 
-const router = useRouter()
-
-function goBack() {
- if (window.history.length > 1) {
- router.back()
- } else {
- router.push('/')
- }
-}
+const { goBack } = usePageBack()
 </script>
 
 <template>
  <div class="privacy-page">
  <AppHeader title="隐私政策" @back="goBack" />
- <div class="privacy-body px-[var(--spacer-20)] py-[var(--spacer-16)]">
+ <div class="privacy-body ds-legal-doc px-[var(--spacer-20)] py-[var(--spacer-16)]">
  <p class="text-[var(--body-sm-font-size)] text-text-tertiary mb-[var(--spacer-16)]">
  更新日期：2026 年 7 月 30 日&emsp;生效日期：2026 年 7 月 30 日
  </p>
@@ -156,60 +148,5 @@ function goBack() {
  line-height: var(--body-md-line-height);
  color: var(--text-secondary);
  margin-bottom: var(--spacer-20);
-}
-
-.privacy-section {
- margin-bottom: var(--spacer-20);
-}
-
-.privacy-section h2 {
- font-family: var(--font-family-heading);
- font-size: var(--heading-sm-font-size);
- line-height: var(--heading-sm-line-height);
- font-weight: 700;
- color: var(--text-default);
- margin-bottom: var(--spacer-8);
-}
-
-.privacy-section h3 {
- font-size: var(--body-base-font-size);
- line-height: var(--body-base-line-height);
- font-weight: 600;
- color: var(--text-default);
- margin-bottom: var(--spacer-4);
- margin-top: var(--spacer-12);
-}
-
-.privacy-section p {
- font-size: var(--body-md-font-size);
- line-height: var(--body-md-line-height);
- color: var(--text-secondary);
- margin-bottom: var(--spacer-8);
-}
-
-.privacy-section ol,
-.privacy-section ul {
- padding-left: var(--spacer-16);
- margin-bottom: var(--spacer-8);
-}
-
-.privacy-section ol li,
-.privacy-section ul li {
- font-size: var(--body-md-font-size);
- line-height: var(--body-md-line-height);
- color: var(--text-secondary);
- margin-bottom: var(--spacer-4);
-}
-
-.privacy-section ul {
- list-style: disc;
-}
-
-.privacy-section ol {
- list-style: decimal;
-}
-
-.privacy-section strong {
- color: var(--text-default);
 }
 </style>

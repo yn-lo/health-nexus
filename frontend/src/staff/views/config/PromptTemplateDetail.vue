@@ -12,7 +12,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { FileText, Pencil, Trash2, CheckCircle2, Building2, History, Clock, ChevronDown, TriangleAlert } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
-import { AppHeader } from '@/shared/components'
+import { AppHeader, LoadingState } from '@/shared/components'
 import { configApi, errmsg, useDepartmentOptions, DEPARTMENT_GLOBAL, fmtDateTime } from '@/shared'
 import type { PromptTemplate, PromptTemplateCreateRequest } from '@/shared'
 
@@ -171,12 +171,7 @@ onMounted(() => {
  <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
  <AppHeader :title="isCreate ? '新建模板' : '模板详情'" @back="router.back" />
 
- <div v-if="loading" class="flex items-center justify-center py-20">
- <div class="ds-loading">
- <span class="ds-loading__spinner" />
- <span class="ds-loading__text">加载中</span>
- </div>
- </div>
+ <LoadingState v-if="loading" />
 
  <template v-else-if="isCreate || template">
  <section v-if="!isCreate" class="px-[var(--spacer-16)] pt-[var(--spacer-16)]">

@@ -10,7 +10,7 @@
  * 保留功能：科室选择、历史抽屉、推荐问题、SSE 触发
  */
 import { ref, type Component } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import {
  Activity,
  ChevronRight,
@@ -20,29 +20,23 @@ import {
  Sparkles,
 } from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
+import { useChatMode } from '@/chat/composables/useChatMode'
 import { DisclaimerFooter } from '@/shared/components'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
+import ChatModeSwitcher from '@/chat/components/ChatModeSwitcher.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
 import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 
 const router = useRouter()
-const route = useRoute()
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0 })
 
 const showHistory = ref(false)
 const showDeptPicker = ref(false)
 
 /** 视图模式：聊天 / 知识库 — 同步到 URL query，跨导航（如文章详情返回）可恢复 */
-const activeMode = ref<'chat' | 'knowledge'>(route.query.mode === 'knowledge' ? 'knowledge' : 'chat')
-
-/** 切换模式时同步到 URL（replace 避免堆历史） */
-function setMode(mode: 'chat' | 'knowledge') {
- if (activeMode.value === mode) return
- activeMode.value = mode
- router.replace({ query: { ...route.query, mode } })
-}
+const { activeMode, setMode } = useChatMode()
 
 interface QuickAction {
  label: string
@@ -96,24 +90,7 @@ function onPromptClick(item: QuickAction) {
  <!-- 顶部栏 -->
  <ChatHeader variant="frosted" @open-history="openHistory">
  <template #center>
- <div class="ds-fab-segment ds-fab-segment--neutral">
- <button
- type="button"
- class="ds-fab-segment__btn"
- :class="{ 'ds-fab-segment__btn--active': activeMode === 'chat' }"
- @click="setMode('chat')"
- >
- 聊天
- </button>
- <button
- type="button"
- class="ds-fab-segment__btn"
- :class="{ 'ds-fab-segment__btn--active': activeMode === 'knowledge' }"
- @click="setMode('knowledge')"
- >
- 知识库
- </button>
- </div>
+ <ChatModeSwitcher :active-mode="activeMode" @update:mode="setMode" />
  </template>
  </ChatHeader>
 
@@ -272,16 +249,5 @@ function onPromptClick(item: QuickAction) {
 /* ── 推荐卡片：更显著的按压反馈 ───────────────────────────── */
 .ai-context-card {
  box-shadow: var(--shadow-xs);
-}
-
-/* ── A11y：减弱动效偏好 ─────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
- .ai-orb-pulse-outer,
- .ai-orb-pulse-inner {
- animation: none;
- }
- .ai-context-card:hover {
- transform: none;
- }
 }
 </style>

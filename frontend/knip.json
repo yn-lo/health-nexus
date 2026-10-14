@@ -1,9 +1,9 @@
 {
   "entry": [
-    "src/chat/main.ts",
-    "src/staff/main.ts",
     "scripts/**/*.mjs",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    "src/shared/index.ts",
+    "src/shared/composables/index.ts"
   ],
   "project": [
     "src/**/*.ts",

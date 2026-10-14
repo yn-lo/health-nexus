@@ -8,7 +8,7 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessageCircle, Info, KeyRound, Pencil } from '@lucide/vue'
 import { useAuthStore } from '@/stores/auth'
-import { ProfileHeader, MenuList, MenuRow } from '@/shared/components'
+import { ProfileHeader, MenuList, MenuRow, ProfileSummaryCard } from '@/shared/components'
 import { useProfileSummary } from '@/shared'
 import type { MenuItem } from '@/shared'
 import { fmtUserId } from '@/shared'
@@ -52,21 +52,7 @@ async function handleLogout() {
   <ProfileHeader :name="userName" :avatar-text="firstChar" :meta="metaLines" />
 
   <!-- 资料摘要 -->
-  <div
-   v-if="profileSummary.length"
-   class="mx-[var(--spacer-16)] mb-[var(--spacer-16)] rounded-[var(--radius-12)] bg-[var(--bg-base-default)] px-[var(--spacer-16)] py-[var(--spacer-12)] border border-[var(--border-neutral-l1)]"
-  >
-   <div class="flex flex-col gap-[var(--spacer-4)]">
-    <div
-     v-for="line in profileSummary"
-     :key="line.text"
-     class="flex items-center gap-[var(--spacer-8)] text-body-sm text-text-secondary"
-    >
-     <component :is="line.icon" class="h-4 w-4 shrink-0 text-icon-tertiary" />
-     <span>{{ line.text }}</span>
-    </div>
-   </div>
-  </div>
+  <ProfileSummaryCard :lines="profileSummary" />
 
   <!-- 菜单列表 -->
   <section class="px-[var(--spacer-16)] pb-[var(--spacer-16)]">

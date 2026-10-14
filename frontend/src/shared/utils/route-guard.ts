@@ -73,65 +73,63 @@ export function staffRouteGuard(
 }
 
 /**
- * 管理员路由守卫（科室级配置：账号管理 / 科室管理 / 提示词模板）
- * SUPER_ADMIN / DEPT_ADMIN 均可访问；非管理员医护回退到工作台
+ * 管理员/超管守卫公共前缀：未登录或非医护角色统一回跳登录页。
+ * 返回完成鉴权后的角色；返回 null 表示已处理（调用方应中断）。
  */
-export function adminRouteGuard(
+function guardStaffAccess(
   to: RouteLocationNormalized,
-  _from: RouteLocationNormalized,
-  next: NavigationGuardNext,
-): void {
+): UserRole | null {
   const userRole = getUserRole()
 
   // 未登录，跳转到统一登录页（跨 MPA）
   if (!userRole) {
     redirectToLogin(to)
-    return
+    return null
   }
 
   // 非医护角色，跳转到登录页（跨 MPA）
   if (!hasRole(userRole, STAFF_ROLES)) {
     redirectToLogin(to)
-    return
+    return null
   }
 
-  // 非管理员医护，回退到工作台
-  if (!hasRole(userRole, ADMIN_ROLES)) {
-    next({ name: 'staff-dashboard' })
-    return
-  }
-
-  next()
+  return userRole
 }
+
+/**
+ * 创建「医护配置页」角色守卫：通过 guardStaffAccess 前置鉴权后，
+ * 非目标角色回退到工作台。admin（科室级）/超级管理员（全局）共用同一守卫体。
+ */
+function createRoleGuard(isAllowed: (role: UserRole) => boolean) {
+  return (
+    to: RouteLocationNormalized,
+    _from: RouteLocationNormalized,
+    next: NavigationGuardNext,
+  ): void => {
+    const userRole = guardStaffAccess(to)
+    if (!userRole) return
+
+    // 非目标角色医护，回退到工作台
+    if (!isAllowed(userRole)) {
+      next({ name: 'staff-dashboard' })
+      return
+    }
+
+    next()
+  }
+}
+
+/**
+ * 管理员路由守卫（科室级配置：账号管理 / 科室管理 / 提示词模板）
+ * SUPER_ADMIN / DEPT_ADMIN 均可访问；非管理员医护回退到工作台
+ */
+export const adminRouteGuard = createRoleGuard((role) => hasRole(role, ADMIN_ROLES))
 
 /**
  * 超级管理员路由守卫（全局系统配置：AI 提供商 / RAG / 安全词库 / 安全规则 / 安全话术 / 审计日志）
  * 仅 SUPER_ADMIN 可访问；DEPT_ADMIN 回退到工作台
  */
-export function superAdminRouteGuard(
-  to: RouteLocationNormalized,
-  _from: RouteLocationNormalized,
-  next: NavigationGuardNext,
-): void {
-  const userRole = getUserRole()
-
-  if (!userRole) {
-    redirectToLogin(to)
-    return
-  }
-
-  if (!hasRole(userRole, STAFF_ROLES)) {
-    redirectToLogin(to)
-    return
-  }
-
-  if (userRole !== SUPER_ADMIN_ROLE) {
-    next({ name: 'staff-dashboard' })
-    return
-  }
-
-  next()
-}
+export const superAdminRouteGuard = createRoleGuard((role) => role === SUPER_ADMIN_ROLE)
 
 /**
  * 患者端路由守卫

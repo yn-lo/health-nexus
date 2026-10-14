@@ -47,6 +47,17 @@ const (
 	// EventPing SSE 心跳：长时间无业务数据（高风险答案先生成、后审核）时保持连接可观测，
 	// 前端据此判定"连接存活"，不进入答案正文。
 	EventPing = "ping"
+	// EventStage 阶段进度：告知前端当前处于哪个处理阶段（理解/检索/组织/核对），
+	// 仅用于展示状态文案，不影响正文；未知阶段由前端忽略。
+	EventStage = "stage"
+)
+
+// stage 事件的阶段取值（粗粒度、中性文案，前端映射为展示文字）。
+const (
+	StageUnderstanding = "understanding" // 理解问题（统一理解与审查）
+	StageRetrieving    = "retrieving"    // 检索知识
+	StageComposing     = "composing"     // 组织回答（流式生成前）
+	StageReviewing     = "reviewing"     // 核对内容（生成后语义审核）
 )
 
 // notice 事件的 kind（前端据此选择展示样式）。
@@ -71,6 +82,19 @@ type noticePayload struct {
 type answerPayload struct {
 	Mode string `json:"mode"`
 	Text string `json:"text"`
+}
+
+// stagePayload 阶段进度载荷（EventStage）。
+type stagePayload struct {
+	Stage string `json:"stage"`
+}
+
+// writeStage 尽力下发阶段进度事件；写失败（多为客户端已断开）不中止主流程——
+// 阶段仅用于展示，不应因进度推送失败影响问答本身。
+func (s *ChatSendService) writeStage(ctx context.Context, out SSEWriter, stage string) {
+	if err := out.Write(EventStage, stagePayload{Stage: stage}); err != nil {
+		slog.WarnContext(ctx, "chat: write stage event failed", "stage", stage, "err", err)
+	}
 }
 
 // turnResultPayload 本轮权威结果载荷。
@@ -237,6 +261,8 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 
 	// (7) 统一理解与审查（每轮执行）：意图 + 多分类风险 + 是否缺关键信息 + 检索改写。
 	// 先一次性读取历史快照（供审查 / 检索 / 生成三阶段复用），再据此审查。
+	// 下发阶段进度：理解问题（通常是首 token 前最长的一段等待）。
+	s.writeStage(ctx, out, StageUnderstanding)
 	history, assessment, aerr := s.loadSnapshotAndAssess(ctx, in, sess)
 	if aerr != nil {
 		// 审查不可用（历史读取失败 / 超时 / 解析失败 / 字段非法）：按"无法判断"降级，
@@ -1091,6 +1117,7 @@ func (s *ChatSendService) stageRAG(
 	// 阶段 2.1~2.4：历史裁剪 + 检索（检索失败/空结果在内部降级为拒答）。
 	// 复用 Stream 一次性读取的历史快照（先于本轮用户消息落库，天然不含当前轮，无需再排除）。
 	// 检索用统一审查给出的独立问题（assessment.StandaloneQuery）；生成用患者原话（originalQuery）。
+	s.writeStage(ctx, out, StageRetrieving)
 	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, st, assessment, snapshot)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
@@ -1104,6 +1131,9 @@ func (s *ChatSendService) stageRAG(
 	if err := out.Write(EventReferences, chunks); err != nil {
 		return err
 	}
+
+	// 下发阶段进度：组织回答（检索完成，进入流式生成）。
+	s.writeStage(ctx, out, StageComposing)
 
 	// 阶段 2.7：流式生成。st 承载可变状态，defer 委托 cleanupRAGStream 处理中断路径。
 	// streamCompleted 区分两种中断：
@@ -1412,6 +1442,8 @@ func (s *ChatSendService) finalizeRAGOutput(
 	// 阶段 2.8a：高风险内容的生成后语义审核（是否越过宣教边界 / 关键结论是否有资料支持）。
 	// deferred 内容此前未下发，审核不通过即可整体替换，不会出现"已展示再修正"。
 	if st.deferred {
+		// 下发阶段进度：核对内容（完整生成后语义审核，可能持续数秒）。
+		s.writeStage(ctx, out, StageReviewing)
 		review, rerr := s.reviewAnswer(ctx, question, content, st.chunks)
 		if rerr != nil {
 			// 无法确认安全：不展示未经审核的答案（审查不可用 ≠ 安全）。

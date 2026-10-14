@@ -19,10 +19,12 @@ import {
 } from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
+import { useChatMode } from '@/chat/composables/useChatMode'
 import { useChatStore, loadAnonMessages, saveAnonMessages, upsertAnonSession, type AnonSessionMeta } from '@/stores/chat'
 import { DisclaimerFooter } from '@/shared/components'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
+import ChatModeSwitcher from '@/chat/components/ChatModeSwitcher.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
@@ -42,9 +44,39 @@ const { showDialog } = useDsDialog()
 
 const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
 
-/** 渲染 markdown 为 HTML（经白名单消毒，防 XSS） */
-function renderMd(text: string): string {
-  return sanitizeHtml(md.render(text))
+/** 引用标记 `[资料N]`：N 对应本轮 references 中第 N 条切片所属的文章 */
+const CITE_RE = /\[资料\s*(\d+)\]/g
+/** 文章 ID 属性白名单（仅字母/数字/_/-），避免拼接进 HTML 属性时被注入 */
+const SAFE_ARTICLE_ID = /^[A-Za-z0-9_-]+$/
+
+/**
+ * 渲染 markdown 为 HTML（经白名单消毒，防 XSS），并把 `[资料N]` 美化为可点击角标。
+ * 角标在消毒**之后**注入：消毒器会剥掉 class，故样式化只能发生在此之后；
+ * 注入内容仅数字编号与经白名单校验的文章 ID，无注入面。
+ */
+function renderMd(text: string, refs: Reference[] = []): string {
+  const html = sanitizeHtml(md.render(text))
+  if (!html.includes('[资料')) return html
+  return html.replace(CITE_RE, (_m, n: string) => {
+    const raw = refs[Number(n) - 1]?.article_id
+    const article = raw !== undefined ? String(raw) : ''
+    if (article && SAFE_ARTICLE_ID.test(article)) {
+      return `<sup class="cite-chip" data-cite-article="${article}" role="button">${n}</sup>`
+    }
+    return `<sup class="cite-chip cite-chip--plain">${n}</sup>`
+  })
+}
+
+/** 点击引用角标：滚动到同一消息内对应的参考来源卡片并高亮一闪。 */
+function onCiteClick(e: MouseEvent) {
+  const chip = (e.target as HTMLElement | null)?.closest('[data-cite-article]') as HTMLElement | null
+  const articleId = chip?.dataset.citeArticle
+  if (!chip || !articleId) return
+  const card = chip.closest('.chat-row')?.querySelector(`[data-article-id="${articleId}"]`) as HTMLElement | null
+  if (!card) return
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  card.classList.add('ref-card--flash')
+  window.setTimeout(() => card.classList.remove('ref-card--flash'), 1200)
 }
 
 /** 消息时间：今天显示 HH:mm，否则显示 MM-DD HH:mm */
@@ -77,14 +109,7 @@ const feedbackMap = ref<Record<string, string>>({})
 /** 本轮用户消息的本地乐观 ID：result 事件到达后替换为服务端权威 ID（反馈等操作据此定位真实消息） */
 let pendingUserLocalId = ''
 
-const activeMode = ref<'chat' | 'knowledge'>(route.query.mode === 'knowledge' ? 'knowledge' : 'chat')
-
-/** 切换模式时同步到 URL（replace 避免堆历史，返回时可恢复模式） */
-function setMode(mode: 'chat' | 'knowledge') {
-  if (activeMode.value === mode) return
-  activeMode.value = mode
-  router.replace({ query: { ...route.query, mode } })
-}
+const { activeMode, setMode } = useChatMode()
 
 const initialDepartmentId = Number(route.query.department ?? 0)
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId })
@@ -92,12 +117,21 @@ const { departments, selectedDepartmentId, activeDepartment, selectDepartment } 
 // SSE: sseOptions 为可变对象，route 变化时更新 conversationId
 const sseOptions = { conversationId: (route.params.id as string) ?? '', selectedDeptId: selectedDepartmentId.value }
 const {
-  isStreaming, currentContent, references, notices, crisis, error, result, aborted,
+  isStreaming, currentContent, references, notices, crisis, error, result, stage, aborted,
   conversationId: sseConversationId, sendQuestion, abort, dismissNotice,
 } = useSSEChat(sseOptions)
 
 const conversationId = computed(() => (route.params.id as string) ?? '')
 const isThinking = computed(() => isStreaming.value && !currentContent.value)
+
+/** 后端 stage 事件 → 思考态状态文案；未知/尚未到达任一阶段时回退为"正在思考"。 */
+const STAGE_LABELS: Record<string, string> = {
+  understanding: '正在理解问题',
+  retrieving: '正在检索知识',
+  composing: '正在组织回答',
+  reviewing: '正在核对内容',
+}
+const thinkingLabel = computed(() => STAGE_LABELS[stage.value] ?? '正在思考')
 // 匿名用户（无 access token）：走 /api/public/chat/stream，上下文存服务端 Redis 12h，
 // 前端无公开消息拉取/反馈端点——消息本地回显（localStorage），隐藏反馈入口，避免 401 与无效反馈。
 const isAnon = !getAccessToken()
@@ -442,35 +476,18 @@ onUnmounted(() => {
     <!-- 顶部栏 - 磨玻璃半透明（AppHeader frosted 变体） -->
     <ChatHeader variant="frosted" @open-history="openHistory">
       <template #center>
-        <div class="ds-fab-segment ds-fab-segment--neutral">
-          <button
-            type="button"
-            class="ds-fab-segment__btn"
-            :class="{ 'ds-fab-segment__btn--active': activeMode === 'chat' }"
-            @click="setMode('chat')"
-          >
-            聊天
-          </button>
-          <button
-            type="button"
-            class="ds-fab-segment__btn"
-            :class="{ 'ds-fab-segment__btn--active': activeMode === 'knowledge' }"
-            @click="setMode('knowledge')"
-          >
-            知识库
-          </button>
-        </div>
+        <ChatModeSwitcher :active-mode="activeMode" @update:mode="setMode" />
       </template>
     </ChatHeader>
 
     <!-- 消息列表 - AI-Native：分组留白 + 15px 阅读字号 -->
-    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }">
+    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }" @click="onCiteClick">
       <div class="flex flex-col">
         <!-- 向上分页：仅在还有更早记录时展示（匿名无公开拉取端点，不展示） -->
         <div v-if="!isAnon && chatStore.hasMoreMessages" class="load-earlier flex justify-center">
           <button
             type="button"
-            class="load-earlier__btn"
+            class="load-earlier__btn ds-ghost-pill"
             :disabled="chatStore.loading"
             @click="loadEarlier"
           >
@@ -509,7 +526,7 @@ onUnmounted(() => {
                 <span v-if="msg.result_code === 'PARTIAL'" class="chat-incomplete">回答不完整</span>
               </div>
               <div class="ds-bubble ds-bubble--ai">
-                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content)"></div>
+                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content, msg.references)"></div>
               </div>
 
               <!-- 引用来源 -->
@@ -519,6 +536,7 @@ onUnmounted(() => {
                   <div
                     v-for="(ref, refIdx) in dedupeRefs(msg.references)"
                     :key="ref.article_id"
+                    :data-article-id="String(ref.article_id)"
                     class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
                     @click="goToArticle(ref.article_id)"
                   >
@@ -570,14 +588,13 @@ onUnmounted(() => {
           <div class="flex-1 min-w-0">
             <div class="chat-assistant-name">
               <span class="font-medium text-text">健康助手</span>
-              <span class="chat-time">正在思考</span>
+              <span class="chat-time">{{ thinkingLabel }}</span>
             </div>
             <div class="ds-bubble ds-bubble--ai">
               <div class="flex items-center gap-[var(--spacer-6)]">
                 <span class="thinking-dot" />
                 <span class="thinking-dot" />
                 <span class="thinking-dot" />
-                <span class="ml-[var(--spacer-4)] text-body-xs text-text-tertiary">正在思考...</span>
               </div>
             </div>
           </div>
@@ -594,7 +611,7 @@ onUnmounted(() => {
               <span class="chat-time">正在生成</span>
             </div>
             <div class="ds-bubble ds-bubble--ai">
-              <div class="m-0 break-words markdown-content" v-html="renderMd(currentContent) + '<span class=\'streaming-cursor\'></span>'"></div>
+              <div class="m-0 break-words markdown-content" v-html="renderMd(currentContent, references) + '<span class=\'streaming-cursor\'></span>'"></div>
             </div>
             <!-- 流式中的引用来源 -->
             <div v-if="references.length" class="mt-[var(--spacer-12)]">
@@ -603,6 +620,7 @@ onUnmounted(() => {
                 <div
                   v-for="(ref, refIdx) in dedupeRefs(references)"
                   :key="ref.article_id"
+                  :data-article-id="String(ref.article_id)"
                   class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
                   @click="goToArticle(ref.article_id)"
                 >
@@ -801,6 +819,10 @@ onUnmounted(() => {
 .feedback-btn {
   width: 36px;
   height: 36px;
+}
+/* 反馈按钮 / 三态胶囊共用的圆角与过渡 */
+.feedback-pill,
+.feedback-btn {
   border-radius: var(--radius-full);
   transition: transform var(--micro-duration) var(--micro-ease),
               background-color var(--micro-duration) var(--micro-ease),
@@ -817,10 +839,6 @@ onUnmounted(() => {
 .feedback-pill {
   height: 28px;
   padding: 0 var(--spacer-10);
-  border-radius: var(--radius-full);
-  transition: transform var(--micro-duration) var(--micro-ease),
-              background-color var(--micro-duration) var(--micro-ease),
-              color var(--micro-duration) var(--micro-ease);
 }
 .feedback-pill:hover {
   background: var(--bg-overlay-l1);
@@ -842,6 +860,47 @@ onUnmounted(() => {
   color: var(--text-brand);
   font-size: var(--body-xs-font-size);
   font-weight: 600;
+}
+
+/* ── 引用角标 `[资料N]`：正文内可点击小徽章 ─────────────── */
+.markdown-content :deep(.cite-chip) {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 3px;
+  margin: 0 1px;
+  border-radius: var(--radius-8);
+  background: var(--bg-brand-light);
+  color: var(--text-brand);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  vertical-align: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform var(--micro-duration) var(--micro-ease);
+}
+.markdown-content :deep(.cite-chip:active) {
+  transform: scale(0.92);
+}
+/* 编号越界、无法定位来源时降级为纯展示角标 */
+.markdown-content :deep(.cite-chip--plain) {
+  cursor: default;
+  opacity: 0.75;
+}
+
+/* ── 点击引用角标后，来源卡片高亮一闪 ───────────────────── */
+.ref-card--flash {
+  animation: ref-flash 1.2s var(--micro-ease);
+}
+@keyframes ref-flash {
+  0%,
+  55% {
+    background-color: var(--bg-brand-light);
+  }
+  100% {
+    background-color: var(--bg-overlay-l1);
+  }
 }
 
 /* ── 胶囊输入栏 focus 光晕 ─────────────────────────────── */
@@ -868,12 +927,6 @@ onUnmounted(() => {
   padding-bottom: var(--spacer-12);
 }
 .load-earlier__btn {
-  padding: var(--spacer-6) var(--spacer-16);
-  border: 1px solid var(--border-neutral-l1);
-  border-radius: var(--radius-full);
-  background: var(--bg-overlay-l1);
-  color: var(--text-secondary);
-  font-size: var(--body-xs-font-size);
   transition: transform var(--micro-duration) var(--micro-ease);
 }
 .load-earlier__btn:active {
@@ -945,7 +998,8 @@ onUnmounted(() => {
   .thinking-dot,
   .streaming-cursor,
   .ai-message,
-  .chat-row {
+  .chat-row,
+  .ref-card--flash {
     animation: none;
   }
   .feedback-btn {

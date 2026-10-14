@@ -1,5 +1,6 @@
-# 运行环境：development 时加载 seed.dev.sql（E2E 测试账号/科室，密码统一 password123），
-# 其他取值（如 production）数据库保持干净。生产必须用 HEALTH_NEXUS_ENV=production 覆盖。
+# 运行环境：development 时加载 seed.dev.sql（E2E 测试账号/科室，密码统一 password123；
+# admin 例外，密码同 seed.admin_password）。其他取值（如 production）数据库保持干净。
+# 生产必须用 HEALTH_NEXUS_ENV=production 覆盖。
 env: development
 
 server:

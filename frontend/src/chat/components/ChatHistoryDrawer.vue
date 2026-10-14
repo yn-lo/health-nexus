@@ -177,7 +177,7 @@ async function loadMore() {
         </DsSwipeCell>
         <!-- 会话列表分页：还有更早会话时提供加载入口 -->
         <li v-if="hasMoreConversations" class="history-drawer__more">
-          <button type="button" class="history-drawer__more-btn" :disabled="chatStore.loading" @click="loadMore">
+          <button type="button" class="history-drawer__more-btn ds-ghost-pill" :disabled="chatStore.loading" @click="loadMore">
             {{ chatStore.loading ? '加载中…' : '加载更多' }}
           </button>
         </li>
@@ -215,6 +215,10 @@ async function loadMore() {
   background: var(--bg-overlay-l1);
   border: none;
   border-radius: var(--radius-full);
+}
+/* 折叠关闭 / 新对话按钮共用的指针与按压过渡 */
+.history-drawer__fold,
+.history-drawer__new {
   cursor: pointer;
   transition: transform var(--micro-duration) var(--micro-ease),
               background-color var(--micro-duration) var(--micro-ease);
@@ -285,9 +289,6 @@ async function loadMore() {
   background: var(--bg-brand-light);
   border: none;
   border-radius: var(--radius-12);
-  cursor: pointer;
-  transition: transform var(--micro-duration) var(--micro-ease),
-              background-color var(--micro-duration) var(--micro-ease);
 }
 .history-drawer__new:active {
   transform: scale(var(--press-scale));
@@ -351,14 +352,6 @@ async function loadMore() {
   justify-content: center;
   padding: var(--spacer-12) 0;
   border-bottom: none;
-}
-.history-drawer__more-btn {
-  padding: var(--spacer-6) var(--spacer-16);
-  border: 1px solid var(--border-neutral-l1);
-  border-radius: var(--radius-full);
-  background: var(--bg-overlay-l1);
-  color: var(--text-secondary);
-  font-size: var(--body-xs-font-size);
 }
 .history-drawer__more-btn:disabled {
   opacity: 0.6;

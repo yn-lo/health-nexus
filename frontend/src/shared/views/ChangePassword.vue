@@ -10,9 +10,8 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { CircleAlert } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, AppHeader, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
+import { PageShell, AppHeader, PasswordStrength, DsPasswordField, DsSubmitButton, DsErrorAlert } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -139,14 +138,7 @@ async function handleChange() {
      </div>
 
      <!-- 错误提示 -->
-     <div
-      v-if="errorMsg"
-      class="ds-alert ds-alert--error"
-      role="alert"
-     >
-      <CircleAlert class="icon" />
-      <span>{{ errorMsg }}</span>
-     </div>
+     <DsErrorAlert v-if="errorMsg" :message="errorMsg" />
 
      <DsSubmitButton :loading="loading" text="确认修改" class="auth-submit-btn" />
     </form>

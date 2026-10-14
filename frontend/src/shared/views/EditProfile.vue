@@ -7,9 +7,9 @@
  */
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Phone, Calendar, User, Heart, PhoneCall, CircleAlert, ChevronDown } from '@lucide/vue'
+import { Phone, Calendar, User, Heart, PhoneCall, ChevronDown } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
-import { PageShell, AppHeader } from '@/shared/components'
+import { PageShell, AppHeader, DsErrorAlert } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
 import { errmsg } from '@/shared/api/client'
 
@@ -166,10 +166,7 @@ async function handleSubmit() {
           </div>
 
           <!-- 错误提示 -->
-          <div v-if="errorMsg" class="ds-alert ds-alert--error" role="alert">
-            <CircleAlert class="icon" />
-            <span>{{ errorMsg }}</span>
-          </div>
+          <DsErrorAlert v-if="errorMsg" :message="errorMsg" />
 
           <button
             type="submit"

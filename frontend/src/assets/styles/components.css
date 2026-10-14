@@ -3,6 +3,16 @@
  * ds-pill 胶囊选择器 + 未来共享组件样式
  * ──────────────────────────────────────────────────────────── */
 
+/* ── ds-app-shell 应用外壳（MPA 布局根容器） ────────────── */
+.ds-app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--bg-base-default);
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  position: relative;
+}
+
 /* ── ds-pill 胶囊选择器 ──────────────────────────────────── */
 .ds-pill-group {
   display: flex;
@@ -57,6 +67,16 @@
   height: var(--ds-control-height-md);
   padding: 0 var(--spacer-16);
   font-size: var(--body-base-font-size);
+}
+
+/* ── ds-ghost-pill 幽灵胶囊按钮（加载更多 / 加载更早） ────── */
+.ds-ghost-pill {
+  padding: var(--spacer-6) var(--spacer-16);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-full);
+  background: var(--bg-overlay-l1);
+  color: var(--text-secondary);
+  font-size: var(--body-xs-font-size);
 }
 
 /* ── ds-menu-list 菜单卡片容器 ───────────────────────────── */
@@ -594,7 +614,11 @@
    复用 FAB 视觉语言（阴影 + 品牌色 + radius-full），用于互斥选项切换
    ═══════════════════════════════════════════════════════════════ */
 .ds-fab-segment {
-  display: inline-flex;
+  /* 等宽分段：grid 等分列让各选项宽度一致。
+     inline-flex 下容器为收缩尺寸，flex:1 无法等分，按钮会退回各自文字宽度 */
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   align-items: center;
   gap: var(--spacer-4);
   padding: var(--spacer-4);
@@ -605,7 +629,7 @@
 }
 
 .ds-fab-segment--full {
-  display: flex;
+  display: grid;
   width: 100%;
 }
 
@@ -736,6 +760,65 @@
   width: var(--icon-size-16);
   height: var(--icon-size-16);
   flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ds-legal-doc — 法律文档排版（隐私政策 / 用户协议共用）
+   加在正文容器上，作用域限定在 <section> 内，统一标题/正文/列表排版
+   ═══════════════════════════════════════════════════════════════ */
+.ds-legal-doc section {
+  margin-bottom: var(--spacer-20);
+}
+
+.ds-legal-doc section h2 {
+  font-family: var(--font-family-heading);
+  font-size: var(--heading-sm-font-size);
+  line-height: var(--heading-sm-line-height);
+  font-weight: 700;
+  color: var(--text-default);
+  margin-bottom: var(--spacer-8);
+}
+
+.ds-legal-doc section h3 {
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  font-weight: 600;
+  color: var(--text-default);
+  margin-bottom: var(--spacer-4);
+  margin-top: var(--spacer-12);
+}
+
+.ds-legal-doc section p {
+  font-size: var(--body-md-font-size);
+  line-height: var(--body-md-line-height);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacer-8);
+}
+
+.ds-legal-doc section ol,
+.ds-legal-doc section ul {
+  padding-left: var(--spacer-16);
+  margin-bottom: var(--spacer-8);
+}
+
+.ds-legal-doc section ol li,
+.ds-legal-doc section ul li {
+  font-size: var(--body-md-font-size);
+  line-height: var(--body-md-line-height);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacer-4);
+}
+
+.ds-legal-doc section ul {
+  list-style: disc;
+}
+
+.ds-legal-doc section ol {
+  list-style: decimal;
+}
+
+.ds-legal-doc section strong {
+  color: var(--text-default);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1728,6 +1811,10 @@
   }
   .ai-context-card:hover {
     transform: none;
+  }
+  .ai-orb-pulse-outer,
+  .ai-orb-pulse-inner {
+    animation: none;
   }
 }
 

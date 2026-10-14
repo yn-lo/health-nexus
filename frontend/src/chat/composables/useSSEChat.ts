@@ -54,6 +54,8 @@ export function useSSEChat(options: UseSSEChatOptions) {
   const error = ref<string | null>(null)
   /** 本轮权威结果（result 事件）：真实消息 ID / 最终 result_code / 最终引用 */
   const result = ref<TurnResult | null>(null)
+  /** 当前处理阶段（stage 事件）— 仅用于展示状态文案；空串表示尚未收到 */
+  const stage = ref('')
   /** 用户主动中止标记 — 用于上层区分"完整回答"与"被截断" */
   const aborted = ref(false)
   const controller = shallowRef<AbortController | null>(null)
@@ -69,6 +71,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
     notices.value = []
     crisis.value = null
     result.value = null
+    stage.value = ''
     error.value = null
     aborted.value = false
     retryCount = MAX_RETRIES
@@ -184,6 +187,8 @@ export function useSSEChat(options: UseSSEChatOptions) {
             if (eventName === 'token') evt = { type: 'token', data: raw }
             else if (eventName === 'conversation') {
               try { evt = { type: 'conversation', data: JSON.parse(raw) as { conversation_id: string } } } catch { /* ignore */ }
+            } else if (eventName === 'stage') {
+              try { evt = { type: 'stage', data: JSON.parse(raw) as { stage: string } } } catch { /* ignore */ }
             } else if (eventName === 'answer_replaced') {
               try { evt = { type: 'answer_replaced', data: JSON.parse(raw) as { mode: 'replace' | 'append'; text: string } } } catch { /* ignore */ }
             } else if (eventName === 'notice') {
@@ -209,6 +214,10 @@ export function useSSEChat(options: UseSSEChatOptions) {
             switch (e.type) {
               case 'conversation':
                 conversationId.value = e.data.conversation_id
+                break
+              case 'stage':
+                // 阶段进度：仅用于状态文案，不改动正文
+                stage.value = e.data.stage
                 break
               case 'token':
                 currentContent.value += e.data
@@ -340,6 +349,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
     crisis,
     error,
     result,
+    stage,
     aborted,
     conversationId,
     sendQuestion,

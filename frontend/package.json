@@ -24,33 +24,33 @@
     "@tiptap/extension-text-align": "3.31.3",
     "@tiptap/starter-kit": "3.31.3",
     "@tiptap/vue-3": "3.31.3",
-    "markdown-it": "latest",
+    "markdown-it": "^15.0.2",
     "ofetch": "latest",
     "pinia": "^2",
-    "vue": "^3.5",
+    "vue": "^3.5.44",
     "vue-router": "^4"
   },
   "devDependencies": {
     "@eslint/js": "latest",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4",
-    "@types/markdown-it": "latest",
     "@vitejs/plugin-vue": "latest",
     "eslint": "latest",
     "eslint-plugin-vue": "latest",
     "happy-dom": "^20.10.6",
-    "jscpd": "^4.0.5",
-    "knip": "^5",
+    "jscpd": "^5.4.1",
+    "knip": "^6.41.0",
     "tailwindcss": "^4",
     "typescript": "latest",
     "typescript-eslint": "latest",
     "vite": "^6",
-    "vitest": "^4.1.9",
+    "vitest": "^4.1.11",
     "vue-eslint-parser": "latest",
     "vue-tsc": "latest"
   },
   "overrides": {
     "nanoid": "^3.3.18",
-    "smol-toml": "^1.7.1"
+    "smol-toml": "^1.7.1",
+    "postcss-selector-parser": "^7.1.6"
   }
 }

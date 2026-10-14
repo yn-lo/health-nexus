@@ -9,7 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ShieldBan, Pencil, Trash2 } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables'
-import { ConfigCrudPage, DsSwitchRow } from '@/shared/components'
+import { ConfigCrudPage, DsSwitchRow, ConfigFormField, CategoryFilterSelect } from '@/shared/components'
 import { configApi, usePagedList, useCrudEditor } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import type { SafetyRule, SafetyRuleCategory, SafetyRuleAction, SafetyRuleCreateRequest } from '@/shared'
@@ -18,13 +18,13 @@ const router = useRouter()
 const { showFailToast } = useDsToast()
 
 const search = ref('')
-const filterCategory = ref<SafetyRuleCategory | 'all'>('all')
+const filterCategory = ref('all')
 
 const { items: rules, loading, load, onFilterChange } = usePagedList<SafetyRule>({
  pageSize: 50,
  fetcher: (params) => configApi.listSafetyRules({
   ...params,
-  ...(filterCategory.value !== 'all' ? { category: filterCategory.value } : {}),
+  ...(filterCategory.value !== 'all' ? { category: filterCategory.value as SafetyRuleCategory } : {}),
  }),
 })
 
@@ -137,12 +137,7 @@ onMounted(load)
   </template>
 
   <template #toolbar>
-   <div class="mt-[var(--spacer-12)]">
-    <select v-model="filterCategory" class="ds-input" @change="onFilterChange">
-     <option value="all">全部分类</option>
-     <option v-for="opt in categoryOptions.slice(1)" :key="opt.value" :value="opt.value">{{ opt.label }}（{{ categoryCounts[opt.value] }}）</option>
-    </select>
-   </div>
+   <CategoryFilterSelect v-model="filterCategory" :options="categoryOptions" :counts="categoryCounts" @change="onFilterChange" />
   </template>
 
   <template #default>
@@ -191,10 +186,9 @@ onMounted(load)
 
   <template #form>
    <div class="flex flex-col gap-[var(--spacer-12)]">
-    <div class="flex flex-col gap-[var(--spacer-4)]">
-     <span class="text-body-sm text-text-secondary">名称<span class="text-[var(--status-error-default)]">*</span></span>
+    <ConfigFormField label="名称" required>
      <input v-model="form.name" class="ds-input" placeholder="如 诊断越权检测">
-    </div>
+    </ConfigFormField>
     <div>
      <span class="mb-[var(--spacer-4)] block text-body-sm text-text-secondary">类别</span>
      <div class="flex gap-[var(--spacer-24)] border-b border-[var(--border-neutral-l1)]">

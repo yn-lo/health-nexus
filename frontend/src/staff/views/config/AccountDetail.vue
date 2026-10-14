@@ -7,7 +7,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { UserCog, Shield, Building2, Lock, Unlock, RotateCcw, Trash2, Eye, EyeOff, Pencil, RotateCcwSquare } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
-import { AppHeader, PasswordStrength, DsPopup } from '@/shared/components'
+import { AppHeader, PasswordStrength, DsPopup, LoadingState } from '@/shared/components'
 import { authApi, errmsg, getUserStored, fmtDateTime, useDepartmentOptions } from '@/shared'
 import { ROLE_LABEL, SUPER_ADMIN_ROLE, STAFF_ROLES, PATIENT_ROLES, DEFAULT_STAFF_ROLE, type UserRole } from '@/shared/constants/roles'
 import type { StaffAccount } from '@/shared'
@@ -210,12 +210,7 @@ onMounted(() => {
   <main class="mx-auto min-h-screen min-h-dvh max-w-[480px] bg-[var(--bg-base-default)] pb-24">
     <AppHeader title="账号详情" @back="router.back" />
 
-    <div v-if="loading" class="flex items-center justify-center py-20">
-      <div class="ds-loading">
-        <span class="ds-loading__spinner" />
-        <span class="ds-loading__text">加载中</span>
-      </div>
-    </div>
+    <LoadingState v-if="loading" />
 
     <template v-else-if="account">
       <section class="px-[var(--spacer-16)] pt-[var(--spacer-16)]">

@@ -14,19 +14,9 @@ const inChatPortal = computed(() => route.path === '/chat' || route.path.startsW
 </script>
 
 <template>
-  <div class="chat-layout">
+  <div class="ds-app-shell">
     <router-view />
     <ConsentNotice v-if="inChatPortal" v-model:show="showConsent" gate />
   </div>
 </template>
 
-<style scoped ponytail:allow-scoped-css 布局容器样式，与 BottomNavLayout 对齐>
-.chat-layout {
-  min-height: 100vh;
-  min-height: 100dvh;
-  background-color: var(--bg-base-default);
-  max-width: var(--layout-max-width);
-  margin: 0 auto;
-  position: relative;
-}
-</style>

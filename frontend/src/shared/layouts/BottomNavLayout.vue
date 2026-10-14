@@ -58,7 +58,7 @@ function onTabChange(key: string) {
 </script>
 
 <template>
-  <div class="bottom-nav-layout" :class="{ 'bottom-nav-layout--with-tabbar': showTabBar }">
+  <div class="ds-app-shell" :class="{ 'bottom-nav-layout--with-tabbar': showTabBar }">
     <router-view />
     <DsTabBar
       v-if="showTabBar"
@@ -70,14 +70,6 @@ function onTabChange(key: string) {
 </template>
 
 <style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-.bottom-nav-layout {
-  min-height: 100vh;
-  min-height: 100dvh;
-  background-color: var(--bg-base-default);
-  max-width: var(--layout-max-width);
-  margin: 0 auto;
-  position: relative;
-}
 .bottom-nav-layout--with-tabbar {
   /* 留出底部 tabbar 高度 + iOS 安全区 */
   padding-bottom: calc(var(--layout-tabbar-height) + env(safe-area-inset-bottom, 0px));

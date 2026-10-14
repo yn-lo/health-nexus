@@ -87,7 +87,7 @@ defineExpose({ setText, inputText })
  />
 
  <!-- 工具行：科室选择（左）/ 发送或停止（右） -->
- <div class="flex items-center justify-between gap-[var(--spacer-8)] mt-[var(--spacer-10)]">
+ <div class="flex items-end justify-between gap-[var(--spacer-8)] mt-[var(--spacer-10)]">
  <button
  class="inline-flex items-center gap-[var(--spacer-4)] h-[26px] px-[var(--spacer-10)] rounded-[var(--radius-full)] bg-[var(--bg-brand-light)] text-text-brand text-body-xs-strong font-medium whitespace-nowrap transition-colors"
  :style="{ transitionDuration: 'var(--micro-duration)' }"

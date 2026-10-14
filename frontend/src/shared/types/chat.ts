@@ -79,6 +79,8 @@ export interface TurnResult {
 /** SSE 流式事件 — 对齐后端 sseWriter.Write 的事件名（chat/service/chat_send_service.go） */
 export type SSEEvent =
   | { type: 'conversation'; data: { conversation_id: string } }
+  /** 阶段进度：understanding/retrieving/composing/reviewing，仅用于展示"正在做什么" */
+  | { type: 'stage'; data: { stage: string } }
   | { type: 'token'; data: string }
   | { type: 'references'; data: Reference[] }
   /** 正文修正：replace 覆盖已累积正文；append 追加到正文末尾（修正后即持久化内容） */

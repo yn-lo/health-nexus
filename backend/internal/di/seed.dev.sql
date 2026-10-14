@@ -9,7 +9,8 @@
 --   医护账号必须绑定主科室（is_primary=true），否则危机事件/反馈统计等
 --   按科室隔离的接口会因 DeptID=0 返回 403（见 chat/service 的科室越权守卫）。
 --
--- 凭据：所有测试账号密码统一为 password123（argon2id 哈希，仅用于开发环境）。
+-- 凭据：普通测试账号密码统一为 password123；admin 与 seed.sql 同源，
+--   密码来自 HEALTH_NEXUS_SEED_ADMIN_PASSWORD（argon2id 哈希，仅用于开发环境）。
 --   生产环境切勿加载本文件。
 --
 -- 幂等：全部语句用 ON CONFLICT / WHERE NOT EXISTS 守卫，可安全反复重放。
@@ -27,13 +28,15 @@ SELECT '心血管内科', TRUE, TRUE, '演示科室：E2E 测试账号归属'
 WHERE NOT EXISTS (SELECT 1 FROM departments WHERE name = '心血管内科');
 
 -- ----------------------------------------------------------------------------
--- 测试账号（密码统一 password123）
--- admin 单独用 DO UPDATE：seed.sql 先用 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 建了 admin
---   （ON CONFLICT DO NOTHING，不覆盖），但 E2E 期望开发环境统一用 password123，
---   故此处显式改写其密码哈希（仅 development 生效，生产不加载本文件）。
+-- 测试账号（password123）；admin 例外：密码由 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 注入，
+--   与 seed.sql / 生产同一来源，避免开发环境出现第二套管理员密码。
+-- admin 用占位符 + DO UPDATE：seed.sql 先以该密码创建 admin（ON CONFLICT DO NOTHING，
+--   不覆盖既有行），此处再显式刷新，使历史开发库中的 admin 也统一到该密码。
+--   WHERE 守卫保证未配置密码时不写入空哈希（仅 development 生效，生产不加载本文件）。
 -- ----------------------------------------------------------------------------
-INSERT INTO users (username, role, password_hash) VALUES
-    ('admin',       'SUPER_ADMIN', 'argon2id$v=19$m=65536,t=3,p=2$kN/oUNYeJzUbqo018HHiQA==$p2gCDZa+vNTtsYYlSkoIbyQaA1Qu2rqEJfXLEbvLd8Y=')
+INSERT INTO users (username, role, password_hash)
+SELECT 'admin', 'SUPER_ADMIN', '{{ADMIN_PASSWORD_HASH}}'
+WHERE '{{ADMIN_PASSWORD_HASH}}' <> ''
 ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 INSERT INTO users (username, role, password_hash) VALUES
