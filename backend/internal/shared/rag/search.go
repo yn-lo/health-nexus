@@ -16,8 +16,10 @@ type Department struct {
 // DepartmentResolver 跨域：base 域实现。
 // 解析患者可访问的科室，用于会话锁定（REQ-CHAT-019）。
 type DepartmentResolver interface {
-	// ResolveForPatient 校验患者可访问 selectedDeptID（nil 表示用患者主科室），
-	// 返回锁定的 Department。
+	// ResolveForPatient 校验患者可访问 selectedDeptID 并返回其对应的 Department：
+	// nil 或 0 表示"全部科室"（不限检索范围，返回零值 Department）；>0 为具体科室，
+	// 须在患者可见列表（所属科室 ∪ 公共科室）内，否则返回 403。
+	// 返回的 Department 仅用于校验/语境提示，检索范围由调用方按零值判定为全库。
 	ResolveForPatient(ctx context.Context, patientID int64, selectedDeptID *int64) (Department, error)
 	// ResolveForAnonymous 校验匿名用户可选 selectedDeptID：仅允许公共且启用的科室；
 	// nil 或 0 表示"全部科室"（不限定）；具体 id 不在公共科室列表中返回 403。

@@ -19,7 +19,6 @@ import (
 type DepartmentRepo interface {
 	ListVisible(ctx context.Context, userID, deptID int64, active bool) ([]*entity.Department, error)
 	ListPublic(ctx context.Context) ([]*entity.Department, error)
-	GetPrimaryForUser(ctx context.Context, userID int64) (*entity.Department, error)
 	GetByID(ctx context.Context, id int64) (*entity.Department, error)
 	ListAll(ctx context.Context) ([]*entity.Department, error)
 	ListSubtree(ctx context.Context, rootID int64) ([]*entity.Department, error)

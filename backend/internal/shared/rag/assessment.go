@@ -239,6 +239,13 @@ func ClarificationPrompt() string { return defaultClarificationPrompt }
 // ClarificationFallback 需澄清但模型未给出具体问题时的兜底话术。
 func ClarificationFallback() string { return defaultClarificationFallback }
 
+// IsClarificationReply 判断一条助手回复是否为澄清追问话术（固定前缀 + 具体问题，或兜底话术）。
+// 供会话层的一次性澄清守卫使用：上一轮已是澄清时，本轮不得再次澄清（防"追问→回答→再追问"死循环）。
+func IsClarificationReply(text string) bool {
+	t := strings.TrimSpace(text)
+	return strings.HasPrefix(t, defaultClarificationPrompt) || t == defaultClarificationFallback
+}
+
 // OutOfDomainMessage 域外问题（与健康宣教完全无关）的固定边界话术。
 func OutOfDomainMessage() string { return defaultOutOfDomain }
 

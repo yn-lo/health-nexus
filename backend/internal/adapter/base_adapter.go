@@ -24,28 +24,14 @@ func NewBaseDepartmentResolver(repo *baserepo.DepartmentRepo) *BaseDepartmentRes
 
 // ResolveForPatient 解析患者可访问的科室范围。
 // selectedDeptID 语义：
-//   - nil：未指定，取患者主科室（未绑定主科室或主科室已禁用时 fallback 到 ListVisible 字母序首个可见科室）；
-//   - 0：显式选择"全部科室"，选择本身合法，返回主科室（或首个可见科室）仅作元数据归属，
-//     检索范围由 deptIDPtr 控制（0 → nil 不限科室），此处不校验 id=0（数据库中不存在该科室）；
+//   - nil 或 0：未指定 / 显式选择"全部科室"，两者语义一致——返回零值 Department（不限定科室）；
+//     仍校验患者至少有一个可见科室（账号配置异常时不放过），但不落回主科室或首个可见科室。
 //   - >0：具体科室，校验其在患者可见列表（所属科室 ∪ 公共科室）中，否则返回 403。
 //
-// ponytail: selectedDeptID == nil 时优先取患者主科室（user_departments.is_primary），折中。
+// 检索范围由调用方按零值判定为全库（见 chat 域 deptIDPtr：0/nil → 不限科室）。
 func (r *BaseDepartmentResolver) ResolveForPatient(
 	ctx context.Context, patientID int64, selectedDeptID *int64,
 ) (rag.Department, error) {
-	// "全部科室"(0) 等价于未指定：取主科室作元数据归属，不校验 0 本身。
-	if selectedDeptID != nil && *selectedDeptID == 0 {
-		selectedDeptID = nil
-	}
-	if selectedDeptID == nil {
-		primary, err := r.repo.GetPrimaryForUser(ctx, patientID)
-		if err != nil {
-			return rag.Department{}, err
-		}
-		if primary != nil {
-			return rag.Department{ID: primary.ID, Name: primary.Name}, nil
-		}
-	}
 	depts, err := r.repo.ListVisible(ctx, patientID, 0, true)
 	if err != nil {
 		return rag.Department{}, err
@@ -53,9 +39,8 @@ func (r *BaseDepartmentResolver) ResolveForPatient(
 	if len(depts) == 0 {
 		return rag.Department{}, apperrors.Forbidden("CHAT_NO_ACCESSIBLE_DEPARTMENT", "患者无可访问科室")
 	}
-	if selectedDeptID == nil {
-		d := depts[0]
-		return rag.Department{ID: d.ID, Name: d.Name}, nil
+	if selectedDeptID == nil || *selectedDeptID == 0 {
+		return rag.Department{}, nil // 全部科室：不限定检索范围
 	}
 	for _, d := range depts {
 		if d.ID == *selectedDeptID {

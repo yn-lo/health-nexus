@@ -19,6 +19,13 @@ func TestDefaultSystemPrompt_Constraints(t *testing.T) {
 			t.Errorf("DefaultSystemPrompt 应包含 \"无关\" 约束（无关资料不得作答），实际: %s", DefaultSystemPrompt)
 		}
 	})
+
+	t.Run("包含参考资料编号引用约束", func(t *testing.T) {
+		// 规则 8：结论须用 [资料N] 标注来源，保证答案可溯源
+		if !contains(DefaultSystemPrompt, "[资料") {
+			t.Errorf("DefaultSystemPrompt 应包含 \"[资料\" 引用标记约束（答案可溯源），实际: %s", DefaultSystemPrompt)
+		}
+	})
 }
 
 // contains 判断 s 是否包含 substr，避免引入 strings 包依赖。

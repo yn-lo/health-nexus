@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"health-nexus/internal/domain/wiki/repository"
 	"health-nexus/internal/platform/llm"
@@ -156,6 +157,10 @@ func (s *SearchService) applyFiltersAndRerank(
 		return hits[i].Score > hits[j].Score
 	})
 
+	// 步骤 3.5：去重。相同 content_hash（或正文一致）视为重复，保留分数最高（已排首位）的一条，
+	// 避免重复切片占用上下文并放大其权重。
+	hits = dedupHits(hits)
+
 	// 步骤 4：可选 Rerank。先对全部候选重排，再由重排结果截取最终 topK。
 	if cfg.RerankEnabled && s.rerank != nil && len(hits) > 1 {
 		hits = s.applyRerank(ctx, query, hits, topK, cfg.RerankThreshold)
@@ -278,6 +283,29 @@ func filterBySimilarity(hits []repository.ChunkSearchHit, threshold float64) []r
 		if h.Score >= threshold {
 			out = append(out, h)
 		}
+	}
+	return out
+}
+
+// dedupHits 去除重复切片：以 content_hash 为键（为空时退化为去空白后的正文），
+// 保留首次出现（调用方已按相似度降序排序，故保留的是分数最高的一条）。
+func dedupHits(hits []repository.ChunkSearchHit) []repository.ChunkSearchHit {
+	seen := make(map[string]struct{}, len(hits))
+	out := make([]repository.ChunkSearchHit, 0, len(hits))
+	for _, h := range hits {
+		key := h.ContentHash
+		if key == "" {
+			key = strings.TrimSpace(h.Content)
+		}
+		if key == "" {
+			out = append(out, h)
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, h)
 	}
 	return out
 }

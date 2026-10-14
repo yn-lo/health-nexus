@@ -94,6 +94,7 @@ func TestCompleteJSON_SanitizesUserContent(t *testing.T) {
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"messages"`
+		Temperature *float32 `json:"temperature"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
@@ -126,5 +127,9 @@ func TestCompleteJSON_SanitizesUserContent(t *testing.T) {
 	}
 	if gotBody.Messages[1].Content != "我的电话[手机号]" {
 		t.Errorf("user 消息未脱敏: %q", gotBody.Messages[1].Content)
+	}
+	// 判定/审查路径应锁定低温，保证结构化输出与风险判定的确定性。
+	if gotBody.Temperature == nil || *gotBody.Temperature != 0.1 {
+		t.Errorf("CompleteJSON 应锁定 temperature=0.1，实际: %v", gotBody.Temperature)
 	}
 }

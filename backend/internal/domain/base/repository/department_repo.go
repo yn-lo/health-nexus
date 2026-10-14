@@ -106,33 +106,6 @@ func (r *DepartmentRepo) ListVisible(
 	return result, nil
 }
 
-const getPrimaryForUserQuery = `
-SELECT d.id, d.name, d.parent_id, d.is_public, d.is_active, d.created_at, d.updated_at
-FROM departments d
-JOIN user_departments ud ON ud.department_id = d.id
-WHERE ud.user_id = $1 AND ud.is_primary = TRUE AND d.is_active = TRUE
-LIMIT 1
-`
-
-// GetPrimaryForUser 返回患者主科室（user_departments.is_primary = TRUE 且科室启用）。
-// ponytail: LIMIT 1 兜底——历史上 schema 未对 (user_id, is_primary=true) 加部分唯一索引，折中；
-// 若数据异常出现多个主科室，取其一；schema.sql 已加 partial unique index，
-// LIMIT 1 作为防御性编程保留，升级路径：完全信任索引后可去掉。
-// 未绑定主科室或主科室已禁用时返回 (nil, nil)。
-func (r *DepartmentRepo) GetPrimaryForUser(ctx context.Context, userID int64) (*entity.Department, error) {
-	d := &entity.Department{}
-	err := r.pool.QueryRow(ctx, getPrimaryForUserQuery, userID).Scan(
-		&d.ID, &d.Name, &d.ParentID, &d.IsPublic, &d.IsActive, &d.CreatedAt, &d.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get primary department for user: %w", err)
-	}
-	return d, nil
-}
-
 const getByIDQuery = `
 SELECT d.id, d.name, d.parent_id, d.is_public, d.is_active, d.description, d.created_at, d.updated_at
 FROM departments d

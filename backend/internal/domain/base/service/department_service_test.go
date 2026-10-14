@@ -141,12 +141,9 @@ func (m *mockDeptRepo) Delete(_ context.Context, id int64) error {
 	return m.deleteErr
 }
 
-// 跳过未实现的 ListVisible/GetPrimaryForUser（旧接口）— 它们不在本测试范围。
+// 跳过未实现的 ListVisible（旧接口）— 不在本测试范围。
 // 测试中只构造 DepartmentService 的 CRUD 路径，ListVisible 用旧测试覆盖或忽略。
 func (m *mockDeptRepo) ListVisible(_ context.Context, _, _ int64, _ bool) ([]*entity.Department, error) {
-	return nil, nil
-}
-func (m *mockDeptRepo) GetPrimaryForUser(_ context.Context, _ int64) (*entity.Department, error) {
 	return nil, nil
 }
 

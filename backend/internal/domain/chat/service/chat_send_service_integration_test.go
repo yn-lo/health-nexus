@@ -1590,6 +1590,50 @@ func TestStream_ModelProvidedTextMustPassOutputFilter(t *testing.T) {
 	})
 }
 
+// TestStream_ClarificationLoopGuard 上一轮助手已是澄清追问时，本轮不得再次澄清（防"追问→回答→再追问"死循环）：
+// 即使审查仍判 context_sufficient=false，也应跳过澄清、转入检索 + 生成链路。
+func TestStream_ClarificationLoopGuard(t *testing.T) {
+	convID := uuid.New()
+	conv := &mockConversationPort{conv: &entity.Conversation{ID: convID, PatientID: 100}}
+	msg := &mockMessagePort{}
+	// 预置上一轮：用户提问 + 助手澄清追问（与真实落库一致，助手消息 result_code=REJECTED）。
+	msg.messages = append(msg.messages,
+		&entity.Message{ID: uuid.New(), ConversationID: convID, Role: constants.MessageRoleUser, Content: "术后需要注意什么"},
+		&entity.Message{
+			ID: uuid.New(), ConversationID: convID, Role: constants.MessageRoleAssistant,
+			Content: rag.ClarificationPrompt() + "请问您做的是哪种手术？", ResultCode: constants.ResultRejected,
+		},
+	)
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:                rag.IntentPatientEducation,
+		EmergencyRisk:         rag.RiskNotDetected,
+		SelfHarmRisk:          rag.RiskNotDetected,
+		ContextSufficient:     false,
+		RecommendedAction:     rag.ActionClarify,
+		ClarificationQuestion: "请问术后多久了？",
+	}}
+	knowledge := &mockKnowledgeSearcher{chunks: []rag.Chunk{
+		{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "术后护理", Content: "术后注意休息", Score: 0.9, VecScore: 0.9},
+	}}
+	streamer := &mockStreamer{ready: true, tokens: []string{"术后请遵医嘱护理。"}}
+	svc := newTestChatSendServiceWithAssessor(t, assessor, nil, streamer, knowledge, conv, msg, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	in := newStreamInput("甲状腺手术")
+	in.ConversationID = &convID
+	if err := svc.Stream(context.Background(), in, out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+
+	if got := out.answerText(); strings.Contains(got, rag.ClarificationPrompt()) ||
+		strings.Contains(got, rag.ClarificationFallback()) {
+		t.Fatalf("上一轮已澄清，本轮仍再次追问：%q", got)
+	}
+	if streamer.lastReq.UserMessage != "甲状腺手术" {
+		t.Fatalf("守卫应放行至检索+生成链路，实际未调用 LLM（lastReq=%+v）", streamer.lastReq)
+	}
+}
+
 // TestStream_HistoryLoadFailure_DegradesToAssessmentUnavailable P1：历史读取失败必须按
 // "审查不可用"降级（固定安全兜底），不能当作"没有历史"继续做风险分流——
 // 否则追问依赖的上文危机/急症语境会丢失，漏掉本应进入危机/受限的处置。

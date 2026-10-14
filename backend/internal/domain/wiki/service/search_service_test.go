@@ -151,6 +151,49 @@ func TestFilterBySimilarity(t *testing.T) {
 }
 
 // ============================================================================
+// dedupHits：重复切片去重
+// ============================================================================
+
+func TestDedupHits(t *testing.T) {
+	t.Run("相同正文_仅保留分数最高（首次出现）", func(t *testing.T) {
+		// 调用方已按相似度降序排序，去重后应保留首位（分数最高）的一条。
+		hits := []repository.ChunkSearchHit{
+			makeHit(1, 0.9, "重复正文", "t1"),
+			makeHit(2, 0.8, "重复正文", "t2"),
+			makeHit(3, 0.7, "另一段", "t3"),
+		}
+		got := dedupHits(hits)
+		if len(got) != 2 {
+			t.Fatalf("期望去重后 2 条，实际 %d", len(got))
+		}
+		if got[0].ID != 1 {
+			t.Errorf("期望保留首次（分数最高）的 id=1，实际 %d", got[0].ID)
+		}
+	})
+
+	t.Run("相同content_hash_去重", func(t *testing.T) {
+		a := makeHit(1, 0.9, "正文A", "t1")
+		a.ContentHash = "hash-x"
+		b := makeHit(2, 0.8, "正文B", "t2") // 正文不同但 hash 相同
+		b.ContentHash = "hash-x"
+		got := dedupHits([]repository.ChunkSearchHit{a, b})
+		if len(got) != 1 {
+			t.Fatalf("期望按 content_hash 去重为 1 条，实际 %d", len(got))
+		}
+	})
+
+	t.Run("空正文_不去重", func(t *testing.T) {
+		got := dedupHits([]repository.ChunkSearchHit{
+			makeHit(1, 0.9, "", "t1"),
+			makeHit(2, 0.8, "  ", "t2"),
+		})
+		if len(got) != 2 {
+			t.Errorf("空正文不应被当作重复，期望 2 条，实际 %d", len(got))
+		}
+	})
+}
+
+// ============================================================================
 // defaultRAGSearchConfig：兜底默认配置
 // ============================================================================
 

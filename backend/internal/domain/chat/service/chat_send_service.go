@@ -249,7 +249,7 @@ func (s *ChatSendService) Stream(ctx context.Context, in StreamInput, out SSEWri
 	}
 
 	// 动作分流：所有分支都先登记本轮（结果可被重复提交回放）。
-	if handled, derr := s.dispatchByAssessment(ctx, in, sess, out, assessment, st); handled {
+	if handled, derr := s.dispatchByAssessment(ctx, in, sess, out, assessment, history, st); handled {
 		return derr
 	}
 
@@ -307,9 +307,10 @@ func (s *ChatSendService) acquireStreamLock(
 // dispatchByAssessment 按统一审查的动作分流到固定话术 / 危机流程。
 // 返回 handled=true 表示本轮已处理完毕（调用方直接返回 err）；false 表示应继续走检索 + 生成链路。
 // 所有分支都先登记本轮，使重复提交可回放权威结果。
+// history 为本轮历史快照，供澄清守卫判断上一轮是否已追问（不参与其他分流）。
 func (s *ChatSendService) dispatchByAssessment(
 	ctx context.Context, in StreamInput, sess *Session, out SSEWriter,
-	assessment rag.Assessment, st *ragStreamState,
+	assessment rag.Assessment, history []*entity.Message, st *ragStreamState,
 ) (bool, error) {
 	register := func() error { return s.registerTurn(ctx, in, sess, st.turnID) }
 	switch assessment.Action() {
@@ -341,6 +342,12 @@ func (s *ChatSendService) dispatchByAssessment(
 		return true, s.handleFixedReply(ctx, in, sess, out,
 			rag.RestrictedCareMessage(), constants.ResultRejected, st)
 	case rag.ActionClarify:
+		// 一次性澄清守卫：上一轮助手已是澄清追问、患者本轮多半就是在回答它，若模型仍判信息不足，
+		// 直接跳过澄清、转入检索（命中则作答，0 命中走"暂无相关内容"兜底），避免"追问→回答→再追问"死循环。
+		if lastAssistantWasClarification(history) {
+			slog.InfoContext(ctx, "chat: skip repeated clarification, fall through to retrieve")
+			return false, nil
+		}
 		// 关键信息不足：先澄清，不检索不生成（避免用不适用的一般性资料作答）。
 		if err := register(); err != nil {
 			return true, err
@@ -351,6 +358,18 @@ func (s *ChatSendService) dispatchByAssessment(
 		return true, s.handleFixedReply(ctx, in, sess, out, reply, constants.ResultRejected, st)
 	}
 	return false, nil
+}
+
+// lastAssistantWasClarification 判断历史中最近一条助手回复是否为澄清追问。
+// 一次性澄清守卫据此阻断重复追问；历史为空或无助手回复时返回 false（不误拦首次澄清）。
+func lastAssistantWasClarification(history []*entity.Message) bool {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role != constants.MessageRoleAssistant {
+			continue
+		}
+		return rag.IsClarificationReply(history[i].Content)
+	}
+	return false
 }
 
 // assessmentCrisisKeywords 构造危机事件的命中关键词：优先记录模型给出的原话依据，
@@ -1279,7 +1298,7 @@ func (s *ChatSendService) streamLLMTokens(
 		SystemPrompt:  systemPrompt,
 		History:       toLLMMessages(history),
 		UserMessage:   query,
-		ContextChunks: chunkContents(chunks),
+		ContextChunks: chunkContentsForLLM(chunks),
 	})
 	if streamErr != nil {
 		return apperrors.ServiceUnavailable("CHAT_LLM_UNAVAILABLE", "AI 服务暂不可用，请稍后重试")
@@ -1658,7 +1677,7 @@ func toLLMMessages(in []*entity.Message) []llm.Message {
 	return out
 }
 
-// chunkContents 提取切片内容用于 system prompt 上下文，过滤空/纯空白内容。
+// chunkContents 提取切片内容用于审核证据，过滤空/纯空白内容（编号由审核侧按序添加）。
 func chunkContents(chunks []rag.Chunk) []string {
 	out := make([]string, 0, len(chunks))
 	for _, c := range chunks {
@@ -1666,6 +1685,26 @@ func chunkContents(chunks []rag.Chunk) []string {
 			continue
 		}
 		out = append(out, c.Content)
+	}
+	return out
+}
+
+// chunkContentsForLLM 构造送入生成模型的参考资料：每条切片加稳定编号 [资料N] 与文章标题，
+// 使模型可在答案中用 [资料N] 内联引用，且编号与审核侧证据、references 顺序保持一致（可溯源）。
+// 过滤规则与 chunkContents 完全一致，保证两侧"第 N 条"指向同一资料。
+func chunkContentsForLLM(chunks []rag.Chunk) []string {
+	out := make([]string, 0, len(chunks))
+	idx := 0
+	for _, c := range chunks {
+		if strings.TrimSpace(c.Content) == "" {
+			continue
+		}
+		idx++
+		if title := strings.TrimSpace(c.ArticleTitle); title != "" {
+			out = append(out, fmt.Sprintf("[资料%d] 《%s》\n%s", idx, title, c.Content))
+			continue
+		}
+		out = append(out, fmt.Sprintf("[资料%d]\n%s", idx, c.Content))
 	}
 	return out
 }
