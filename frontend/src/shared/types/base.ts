@@ -5,6 +5,8 @@ export interface Department {
   is_public: boolean;
   parent_id: number | null;
   is_active: boolean;
+  /** 问答默认责任科室标记（后端 chat.default_dept_id / 首个公共科室）；前端据此预选 */
+  is_default?: boolean;
   created_at: string;
 }
 

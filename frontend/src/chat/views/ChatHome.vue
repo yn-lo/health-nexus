@@ -30,7 +30,7 @@ import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
 import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 
 const router = useRouter()
-const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0 })
+const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0, includeAll: false })
 
 const showHistory = ref(false)
 const showDeptPicker = ref(false)

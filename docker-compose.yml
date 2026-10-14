@@ -67,6 +67,9 @@ services:
       HEALTH_NEXUS_REDIS_PASSWORD: "${REDIS_PASSWORD}"
       HEALTH_NEXUS_JWT_SECRET: "${JWT_SECRET}"
       HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      HEALTH_NEXUS_ENV: "${HEALTH_NEXUS_ENV:-production}"
+      # 问答默认责任科室 id（公共科室）；匿名/未指定科室的会话落到此科室
+      HEALTH_NEXUS_CHAT_DEFAULT_DEPT_ID: "${CHAT_DEFAULT_DEPT_ID:-0}"
     restart: unless-stopped
 
   worker:
@@ -86,6 +89,7 @@ services:
       HEALTH_NEXUS_REDIS_PASSWORD: "${REDIS_PASSWORD}"
       HEALTH_NEXUS_JWT_SECRET: "${JWT_SECRET}"
       HEALTH_NEXUS_SECURITY_ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      HEALTH_NEXUS_ENV: "${HEALTH_NEXUS_ENV:-production}"
     restart: unless-stopped
 
 volumes:

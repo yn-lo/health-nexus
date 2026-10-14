@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<{
  /** 占位文字 */
  placeholder?: string
 }>(), {
- departmentName: '全部科室',
+ departmentName: '选择科室',
  loading: false,
  disabled: false,
  placeholder: '请输入您的健康问题...',

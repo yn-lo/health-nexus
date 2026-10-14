@@ -1,6 +1,6 @@
 /**
  * 科室选项加载与树形扁平化 — 统一供 staff 端表单/筛选使用。
- * chat 端的 useDepartments（含选择状态 + "全部科室"语义）保持独立，职责不同。
+ * chat 端的 useDepartments（含选择状态；问答场景已取消"全部科室"，浏览场景仍保留）保持独立，职责不同。
  */
 import { ref } from 'vue'
 import { listDepartmentTree } from '@/shared/api/base'

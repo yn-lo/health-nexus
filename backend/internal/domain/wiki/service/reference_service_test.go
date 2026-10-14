@@ -146,6 +146,10 @@ func TestApply_PublicDeptArticle_ShouldSucceed(t *testing.T) {
 	if dto.SourceDeptID != deptID {
 		t.Errorf("expected SourceDeptID=%d, got %d", deptID, dto.SourceDeptID)
 	}
+	// 纳入必须审批：Apply 只能产生 pending，不得直接 approved。
+	if dto.Status != constants.ReferenceStatusPending {
+		t.Errorf("expected pending reference, got %q", dto.Status)
+	}
 }
 
 func TestApply_NonPublicDeptArticle_ShouldSucceed(t *testing.T) {

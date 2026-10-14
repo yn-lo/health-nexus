@@ -47,6 +47,11 @@ func (m *mockDeptResolver) ResolveByID(_ context.Context, _ int64) (rag.Departme
 	return m.dept, m.err
 }
 
+// ResolveDefault 默认责任科室：mock 与其它方法一致返回预设 dept（零值表示无可用科室）。
+func (m *mockDeptResolver) ResolveDefault(_ context.Context) (rag.Department, error) {
+	return m.dept, m.err
+}
+
 // --- mockKnowledgeSearcher ---
 
 type mockKnowledgeSearcher struct {
@@ -1300,8 +1305,52 @@ func TestStream_AssessmentQueryUsedForRetrieval(t *testing.T) {
 	}
 }
 
+// TestStream_RewriteNoHits_FallbackToRawMessage 审查改写 0 命中时，用患者原话再检索一次兜底
+// （实测同一问题的改写每轮不同，可能偏离原话导致漏答；“有知识也答不出”）。
+func TestStream_RewriteNoHits_FallbackToRawMessage(t *testing.T) {
+	const raw = "术后康复需要注意什么"
+	knowledge := &mockKnowledgeSearcher{}
+	// 改写后的 query 命中 0 条；仅原话能命中。
+	knowledge.onSearch = func() {
+		if knowledge.lastQuery == raw {
+			knowledge.chunks = []rag.Chunk{
+				{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "胸外科术后健康宣教", Content: "术后康复", Score: 0.78, VecScore: 0.78},
+			}
+		} else {
+			knowledge.chunks = nil
+		}
+	}
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:            rag.IntentPatientEducation,
+		EmergencyRisk:     rag.RiskNotDetected,
+		SelfHarmRisk:      rag.RiskNotDetected,
+		ContextSufficient: true,
+		StandaloneQuery:   "术后康复注意事项", // 与 raw 不同，且命 0
+		RecommendedAction: rag.ActionRetrieve,
+	}}
+	streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput(raw), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	// 第一次用改写（0 命中），第二次回退原话（命中）→ 最终应作答而非"知识库暂无"。
+	if knowledge.lastQuery != raw {
+		t.Errorf("最终检索 query = %q, want 原话 %q", knowledge.lastQuery, raw)
+	}
+	if got := out.resultPayload(t).ResultCode; got != constants.ResultAnswered {
+		t.Errorf("result_code = %q, want %q", got, constants.ResultAnswered)
+	}
+	if !strings.Contains(out.tokenContent(), "回答") {
+		t.Errorf("改写 0 命中后应回退原话检索并作答，实际 token=%q", out.tokenContent())
+	}
+}
+
 // TestStream_AssessorReceivesDeptName 会话锁定科室时，统一审查必须收到科室名作为语境提示
-// （修复"术后需要注意什么"被误判为信息不足而反复追问的根因）；未锁定科室时收到空串。
+// （修复"术后需要注意什么"被误判为信息不足而反复追问的根因）；
+// 未指定科室时落到默认责任科室并把其名称传给审查（不再以空串进入审查）。
 func TestStream_AssessorReceivesDeptName(t *testing.T) {
 	newService := func(assessor *mockAssessor) *ChatSendService {
 		knowledge := &mockKnowledgeSearcher{
@@ -1330,7 +1379,9 @@ func TestStream_AssessorReceivesDeptName(t *testing.T) {
 		t.Errorf("锁定科室时审查收到科室名 = %q, want %q", locked.lastDeptName, "内科")
 	}
 
-	// 场景 2：全部科室（selected_dept_id=0）→ 审查收到空串，不得瞎编科室名。
+	// 场景 2：未指定科室（selected_dept_id=0，旧"全部科室"）→ 落到默认责任科室
+	// （mockDeptResolver.ResolveDefault 返回"内科"），审查不再收到空串——
+	// 保证无科室语境时也能正常判断常规宣教问题，而非机械追问。
 	all := &mockAssessor{assessment: rag.Assessment{
 		Intent: rag.IntentPatientEducation, EmergencyRisk: rag.RiskNotDetected,
 		SelfHarmRisk: rag.RiskNotDetected, ContextSufficient: true,
@@ -1342,8 +1393,8 @@ func TestStream_AssessorReceivesDeptName(t *testing.T) {
 	if err := newService(all).Stream(context.Background(), in2, &mockSSEWriter{}); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
-	if all.lastDeptName != "" {
-		t.Errorf("全部科室时审查收到科室名 = %q, want 空串", all.lastDeptName)
+	if all.lastDeptName != "内科" {
+		t.Errorf("未指定科室时审查收到科室名 = %q, want 默认责任科室 %q", all.lastDeptName, "内科")
 	}
 }
 

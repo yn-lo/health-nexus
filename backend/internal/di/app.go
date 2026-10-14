@@ -134,7 +134,7 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// ========== base 域 ==========
 	deptRepo := baserepo.NewDepartmentRepo(infra.Pool)
-	deptSvc := baseservice.NewDepartmentService(deptRepo, infra.TxMgr)
+	deptSvc := baseservice.NewDepartmentService(deptRepo, infra.TxMgr, cfg.Chat.DefaultDeptID)
 	deptHandler := basehandler.NewDepartmentHandler(deptSvc, infra.Auth)
 
 	notifRepo := baserepo.NewNotificationRepo(infra.Pool)
@@ -157,12 +157,18 @@ func NewApp(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
+	// 启动即加载 RAG 配置：触发"阈值过高会导致有知识也答不出"的告警（GetRAGConfig 内置），
+	// 并预热配置缓存。加载失败不阻断启动（chat 侧有默认值兜底），仅告警。
+	if _, rErr := configSvc.GetRAGConfig(ctx); rErr != nil {
+		slog.Warn("init app: load rag config failed, chat will fall back to defaults", "err", rErr)
+	}
+
 	// ========== wiki 域 ==========
 	chunkRepo := wikirepo.NewChunkRepo(infra.Pool)
 	wikiRouter := buildWikiRouter(infra, cfg, deptRepo, userRepo, chunkRepo)
 
 	// ========== chat 域 ==========
-	chatRouter, err := buildChatRouter(ctx, infra, cfg.LLM, aesKey, deptRepo, configSvc, chunkRepo)
+	chatRouter, err := buildChatRouter(ctx, infra, cfg.LLM, cfg.Chat.DefaultDeptID, aesKey, deptRepo, configSvc, chunkRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +248,7 @@ func buildChatRouter(
 	ctx context.Context,
 	infra *Infrastructure,
 	llmCfg config.LLMConfig,
+	defaultDeptID int64,
 	aesKey []byte,
 	deptRepo *baserepo.DepartmentRepo,
 	configSvc *configservice.ConfigService,
@@ -250,7 +257,7 @@ func buildChatRouter(
 	conversationRepo := chatrepo.NewConversationRepo(infra.Pool)
 	messageRepo := chatrepo.NewMessageRepo(infra.Pool)
 	crisisRepo := chatrepo.NewCrisisRepo(infra.Pool)
-	deptResolver := adapter.NewBaseDepartmentResolver(deptRepo)
+	deptResolver := adapter.NewBaseDepartmentResolver(deptRepo, defaultDeptID)
 	safetyRuleProvider := adapter.NewConfigSafetyRuleProvider(configSvc)
 	promptProvider := adapter.NewConfigSystemPromptProvider(configSvc)
 

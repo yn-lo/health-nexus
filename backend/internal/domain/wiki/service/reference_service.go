@@ -104,10 +104,11 @@ type ApplyInput struct {
 }
 
 // Apply 发起跨科室引用（契约 §5.1，REQ-WIKI-021）。
-// 公开文章（allow_reference=true）：直接创建 approved 状态引用，免审批。
+// 公开文章（allow_reference=true）表示源科室已开放引用；实际纳入仍须经科室管理员审批
+// （pending → approved），避免"源科室一开放就全校可见"绕过责任确认。
 // 非公开文章（allow_reference=false）：返回 400 错误，不可被引用。
 // 校验顺序：文章存在(404) → 已发布(400) → allow_reference(400) → 源科室存在(400) →
-// 申请人科室(403) → 源≠目标(400) → 创建。
+// 申请人科室(403) → 源≠目标(400) → 创建 pending。
 func (s *ReferenceService) Apply(ctx context.Context, in ApplyInput) (*ReferenceDTO, error) {
 	if err := validateApplyInput(in); err != nil {
 		return nil, err
@@ -138,8 +139,8 @@ func (s *ReferenceService) Apply(ctx context.Context, in ApplyInput) (*Reference
 		return nil, err
 	}
 
-	// 公开文章（allow_reference=true）：直接创建 approved 引用，免审批
-	return s.applyDirect(ctx, in, sourceDeptID)
+	// 统一走引用审批流（pending），由源科室管理员审批后目标科室才可见（deptVisibilitySQL 只认 approved）。
+	return s.applyPending(ctx, in, sourceDeptID)
 }
 
 // validateApplyInput 校验申请输入 ID 有效性。
@@ -153,35 +154,42 @@ func validateApplyInput(in ApplyInput) error {
 	return nil
 }
 
-// applyDirect 公开文章直接引用（免审批，直接创建 approved 状态）。
-// 校验：无已 approved 引用（防重复）→ 创建 approved 记录 → 审计。
-func (s *ReferenceService) applyDirect(ctx context.Context, in ApplyInput, sourceDeptID int64) (*ReferenceDTO, error) {
-	// 防重复：同 article_id + target_dept_id 不得有已 approved 的引用
-	exists, err := s.ref.HasApproved(ctx, in.ArticleID, in.TargetDeptID)
+// applyPending 创建待审批的引用申请（pending）。
+// 预检：已有 pending → 409；已有 approved → 409（防重复纳入）。
+// 并发安全由 uq_article_refs_pending 部分唯一索引兜底（撞索引由 createReference 翻译为 409）。
+func (s *ReferenceService) applyPending(ctx context.Context, in ApplyInput, sourceDeptID int64) (*ReferenceDTO, error) {
+	pending, err := s.ref.HasPending(ctx, in.ArticleID, in.TargetDeptID)
+	if err != nil {
+		return nil, fmt.Errorf("check pending reference: %w", err)
+	}
+	if pending {
+		return nil, apperrors.Conflict("WIKI_REF_PENDING_EXISTS", "已存在待审核的引用申请")
+	}
+	approved, err := s.ref.HasApproved(ctx, in.ArticleID, in.TargetDeptID)
 	if err != nil {
 		return nil, fmt.Errorf("check approved reference: %w", err)
 	}
-	if exists {
+	if approved {
 		return nil, apperrors.Conflict("WIKI_REF_ALREADY_REFERENCED", "该文章已被本科室引用")
 	}
 	ref := &entity.ArticleReference{
 		ArticleID:    in.ArticleID,
 		SourceDeptID: sourceDeptID,
 		TargetDeptID: in.TargetDeptID,
-		Status:       constants.ReferenceStatusApproved,
+		Status:       constants.ReferenceStatusPending,
 		ApplicantID:  in.Actor.UserID,
 	}
 	if err := s.createReference(ctx, ref); err != nil {
 		return nil, err
 	}
-	// D-HIGH-05: 引用授权操作审计落库（fire-and-forget，事务外）。
+	// D-HIGH-05: 引用申请操作审计落库（fire-and-forget，事务外）。
 	s.writeAudit(ctx, &entity.ArticleAuditLog{
 		ArticleID:  ref.ArticleID,
 		OperatorID: in.Actor.UserID,
 		Action:     entity.AuditActionReferenceApply,
 		FromStatus: "",
-		ToStatus:   constants.ReferenceStatusApproved,
-		Summary:    fmt.Sprintf("reference direct (public article): ref=%d target_dept=%d", ref.ID, in.TargetDeptID),
+		ToStatus:   constants.ReferenceStatusPending,
+		Summary:    fmt.Sprintf("reference apply (pending): ref=%d target_dept=%d", ref.ID, in.TargetDeptID),
 	})
 	// 事务提交后重查，确保 JOIN 字段填充（与 List 端点行为一致）。
 	created, err := s.ref.GetByID(ctx, ref.ID)

@@ -642,7 +642,12 @@ func (s *ChatSendService) sessionByID(ctx context.Context, in StreamInput, sid s
 		return nil, apperrors.NotFound("CHAT_CONVERSATION_NOT_FOUND", "会话不存在或不属于当前用户")
 	}
 	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
-	return &Session{SID: conv.ID.String(), DeptID: conv.LockedDeptID, store: store}, nil
+	return &Session{
+		SID:      conv.ID.String(),
+		DeptID:   conv.LockedDeptID,
+		DeptName: s.deptNameByID(ctx, conv.LockedDeptID),
+		store:    store,
+	}, nil
 }
 
 // donePayload SSE 流结束标记（spec §3.1：data 为字面量 [DONE]）。
@@ -705,6 +710,15 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 		return nil, err
 	}
 	effDeptID := deptIDPtr(in.SelectedDeptID, conv)
+	// 未指定/显式"全部科室"（nil）→ 落到默认责任科室，保证统一理解与审查始终有科室语境
+	// （chat.default_dept_id / 首个公共科室），避免对常规宣教问题机械追问。
+	if effDeptID == nil {
+		if d, derr := s.dept.ResolveDefault(ctx); derr != nil {
+			slog.WarnContext(ctx, "chat: resolve default dept failed, fall back to all depts", "err", derr)
+		} else if d.ID > 0 {
+			effDeptID = &d.ID
+		}
+	}
 	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
 	return &Session{
 		SID:    conv.ID.String(),
@@ -743,7 +757,11 @@ func (s *ChatSendService) resolveAnonDept(
 	if in.ConversationID != nil {
 		// 续聊：以首轮锁定的科室为准；仅在明确携带新选择时更新锁定。
 		if in.SelectedDeptID == nil {
-			return s.loadAnonDept(ctx, in.Identity.DeviceID, sid), nil
+			if id := s.loadAnonDept(ctx, in.Identity.DeviceID, sid); id != nil {
+				return id, nil
+			}
+			// 旧会话无锁定记录 → 落到默认责任科室并补写锁定。
+			return s.storeDefaultAnonDept(ctx, in, sid)
 		}
 	}
 	dept, err := s.dept.ResolveForAnonymous(ctx, in.SelectedDeptID)
@@ -751,10 +769,29 @@ func (s *ChatSendService) resolveAnonDept(
 		return nil, err
 	}
 	if dept.ID <= 0 {
+		// 显式"全部科室"（0/nil）→ 落到默认责任科室。chat 前端已取消"全部科室"，
+		// 此处为旧客户端/历史请求兜底，保证不会以"无科室语境"进入审查。
+		return s.storeDefaultAnonDept(ctx, in, sid)
+	}
+	id := dept.ID
+	s.storeAnonDept(ctx, in.Identity.DeviceID, sid, &id)
+	return &id, nil
+}
+
+// storeDefaultAnonDept 把匿名会话锁到默认责任科室（chat.default_dept_id / 首个公共启用科室）。
+// 无可用科室时清除锁定并返回 nil（保持"不限科室"的旧降级）。
+func (s *ChatSendService) storeDefaultAnonDept(
+	ctx context.Context, in StreamInput, sid string,
+) (*int64, error) {
+	d, err := s.dept.ResolveDefault(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if d.ID <= 0 {
 		s.storeAnonDept(ctx, in.Identity.DeviceID, sid, nil)
 		return nil, nil
 	}
-	id := dept.ID
+	id := d.ID
 	s.storeAnonDept(ctx, in.Identity.DeviceID, sid, &id)
 	return &id, nil
 }
@@ -1281,6 +1318,16 @@ func (s *ChatSendService) prepareRAGContext(
 	chunks, err = s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
 		Query: retrievalQuery, DeptID: sess.DeptID, TopK: 0,
 	})
+	// 改写漂移兜底：统一审查产出的改写可能与患者原话偏离导致 0 命中
+	// （实测同一问题不同轮次改写不同，有的命中、有的不命中）。
+	// 此时用患者原话再检索一次——只增加召回，相似度阈值与生成侧相关性过滤不变。
+	if err == nil && len(chunks) == 0 && retrievalQuery != in.Message {
+		slog.InfoContext(ctx, "chat: rewritten query yielded no hits, retry with raw message",
+			"rewrite_len", len(retrievalQuery), "raw_len", len(in.Message))
+		chunks, err = s.knowledge.SearchSimilarChunks(ctx, rag.SearchQuery{
+			Query: in.Message, DeptID: sess.DeptID, TopK: 0,
+		})
+	}
 	if err != nil {
 		// 检索失败降级为拒答：阶段 1 用户消息已持久化，
 		// 若直接返回 503 会留下无 assistant 回复的孤儿 user 消息，污染会话历史。

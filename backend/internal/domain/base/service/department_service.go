@@ -42,6 +42,7 @@ type DepartmentDTO struct {
 	ParentID  *int64    `json:"parent_id"` // 根科室为 null
 	IsPublic  bool      `json:"is_public"`
 	IsActive  bool      `json:"is_active"`
+	IsDefault bool      `json:"is_default"` // 问答默认责任科室（前端据此预选，见 chat.default_dept_id）
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -78,12 +79,16 @@ func ActorFromDataScope(ctx context.Context) (Actor, bool) {
 type DepartmentService struct {
 	repo DepartmentRepo
 	tx   *postgres.TxManager
+	// defaultDeptID 问答默认责任科室 id（chat.default_dept_id；<=0 时取首个公共启用科室）。
+	// 仅用于在科室列表响应中标记 is_default，供前端预选；不参与鉴权。
+	defaultDeptID int64
 }
 
 // NewDepartmentService 构造科室服务。tx 为 nil 时 CRUD 方法以非事务模式运行
 // （仅用于单元测试场景，生产环境必须注入 TxManager）。
-func NewDepartmentService(repo DepartmentRepo, tx *postgres.TxManager) *DepartmentService {
-	return &DepartmentService{repo: repo, tx: tx}
+// defaultDeptID 来自 chat.default_dept_id（0 = 未配置，取首个公共启用科室）。
+func NewDepartmentService(repo DepartmentRepo, tx *postgres.TxManager, defaultDeptID int64) *DepartmentService {
+	return &DepartmentService{repo: repo, tx: tx, defaultDeptID: defaultDeptID}
 }
 
 // runTx 在事务中执行 fn；tx 为 nil 时直接执行（单元测试场景）。
@@ -105,8 +110,9 @@ func (s *DepartmentService) ListVisible(
 		return nil, fmt.Errorf("list visible departments: %w", err)
 	}
 	dtos := make([]DepartmentDTO, 0, len(depts))
+	defaultID := s.effectiveDefaultDeptID(depts)
 	for _, d := range depts {
-		dtos = append(dtos, toDepartmentDTO(d))
+		dtos = append(dtos, toDepartmentDTO(d, defaultID))
 	}
 	return dtos, nil
 }
@@ -119,10 +125,30 @@ func (s *DepartmentService) ListPublic(ctx context.Context) ([]DepartmentDTO, er
 		return nil, fmt.Errorf("list public departments: %w", err)
 	}
 	dtos := make([]DepartmentDTO, 0, len(depts))
+	defaultID := s.effectiveDefaultDeptID(depts)
 	for _, d := range depts {
-		dtos = append(dtos, toDepartmentDTO(d))
+		dtos = append(dtos, toDepartmentDTO(d, defaultID))
 	}
 	return dtos, nil
+}
+
+// effectiveDefaultDeptID 计算默认责任科室 id：chat.default_dept_id 优先；
+// 未配置（<=0）或配置科室不在列表时，取列表中第一个 is_public 且启用的科室。
+// 口径需与 adapter.BaseDepartmentResolver.ResolveDefault 保持一致。
+func (s *DepartmentService) effectiveDefaultDeptID(depts []*entity.Department) int64 {
+	if s.defaultDeptID > 0 {
+		for _, d := range depts {
+			if d.ID == s.defaultDeptID {
+				return d.ID
+			}
+		}
+	}
+	for _, d := range depts {
+		if d.IsPublic && d.IsActive {
+			return d.ID
+		}
+	}
+	return 0
 }
 
 // ============ Staff CRUD ============
@@ -433,13 +459,14 @@ func normalizeParentID(p *int64) *int64 {
 
 // ============ DTO 转换 ============
 
-func toDepartmentDTO(d *entity.Department) DepartmentDTO {
+func toDepartmentDTO(d *entity.Department, defaultDeptID int64) DepartmentDTO {
 	return DepartmentDTO{
 		ID:        d.ID,
 		Name:      d.Name,
 		ParentID:  d.ParentID,
 		IsPublic:  d.IsPublic,
 		IsActive:  d.IsActive,
+		IsDefault: defaultDeptID > 0 && d.ID == defaultDeptID,
 		CreatedAt: d.CreatedAt,
 	}
 }

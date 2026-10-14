@@ -90,6 +90,14 @@ upload:
   # 单张图片大小上限（MB），超限返回 413
   max_size_mb: 5
 
+# 问答（chat 域）行为配置
+chat:
+  # 问答默认责任科室 id：匿名用户与未指定科室的会话落到此科室，保证
+  # "统一理解与审查"始终有科室语境，避免对常规宣教问题机械追问。
+  # 0 = 未配置，运行时自动取第一个 is_public 且启用的科室（生产即"公共科室"）；
+  # 生产如需显式指定，可用环境变量 HEALTH_NEXUS_CHAT_DEFAULT_DEPT_ID 覆盖。
+  default_dept_id: 0
+
 # 初始超管账号（seed.sql 写入 admin 时使用）。
 # admin_password 为明文，启动时由后端用 argon2id 现算哈希，明文/哈希均不落仓库。
 # 生产环境请留空本文件字段，改用环境变量 HEALTH_NEXUS_SEED_ADMIN_PASSWORD 注入一次性初始密码；

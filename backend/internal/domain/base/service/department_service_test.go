@@ -514,6 +514,35 @@ func TestListPublic_ReturnsPublicActiveDepartments(t *testing.T) {
 	}
 }
 
+// TestListPublic_MarksDefaultDept 未配置 chat.default_dept_id 时取首个公共启用科室；
+// 配置时以配置值为准标记 is_default。前端据此预选问答责任科室。
+func TestListPublic_MarksDefaultDept(t *testing.T) {
+	depts := []*entity.Department{
+		{ID: 5, Name: "公共科室", IsPublic: true, IsActive: true},
+		{ID: 1, Name: "胸外科", IsPublic: true, IsActive: true},
+	}
+
+	// defaultDeptID=0 → 首个公共启用科室（公共科室 5）
+	svc := &DepartmentService{repo: &mockDeptRepo{listPublicDepts: depts}}
+	dtos, err := svc.ListPublic(context.Background())
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
+	if !dtos[0].IsDefault || dtos[1].IsDefault {
+		t.Errorf("defaultDeptID=0 时应标记首个公共科室：%+v", dtos)
+	}
+
+	// defaultDeptID=1 → 胸外科 1
+	svc2 := &DepartmentService{repo: &mockDeptRepo{listPublicDepts: depts}, defaultDeptID: 1}
+	dtos2, err := svc2.ListPublic(context.Background())
+	if err != nil {
+		t.Fatalf("期望 nil，实际 %v", err)
+	}
+	if dtos2[0].IsDefault || !dtos2[1].IsDefault {
+		t.Errorf("defaultDeptID=1 时应标记胸外科：%+v", dtos2)
+	}
+}
+
 func TestListPublic_EmptyList(t *testing.T) {
 	repo := &mockDeptRepo{
 		listPublicDepts: []*entity.Department{},

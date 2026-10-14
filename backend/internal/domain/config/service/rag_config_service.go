@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"health-nexus/internal/domain/config/entity"
 	"health-nexus/internal/domain/config/repository"
@@ -44,6 +45,15 @@ func (s *ConfigService) GetRAGConfig(ctx context.Context) (*RAGConfigResponse, e
 		if data, mErr := json.Marshal(c); mErr == nil {
 			s.redis.Set(ctx, cacheKeyRAGConfig, data, cacheTTL)
 		}
+	}
+	// 阈值过高会把相关切片全部裁掉，导致"有知识也答不出"（bge-m3 相关命中实测约 0.68）。
+	// 配置层允许 0-1 自由调整，但超过推荐上限时给出可观测告警，避免误配置静默漏答。
+	// 仅在 cache miss 回源 DB 时告警（TTL 内不会重复刷屏）。
+	if c.SimilarityThreshold > entity.RecommendedSimilarityThresholdMax {
+		slog.WarnContext(ctx, "config: similarity_threshold may filter relevant chunks (有知识也答不出)",
+			"similarity_threshold", c.SimilarityThreshold,
+			"recommended", entity.DefaultSimilarityThreshold,
+			"recommended_max", entity.RecommendedSimilarityThresholdMax)
 	}
 	resp := toRAGConfigResponse(c)
 	return &resp, nil

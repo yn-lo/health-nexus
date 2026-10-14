@@ -29,6 +29,12 @@ type DepartmentResolver interface {
 	// （供统一理解与审查作为语境提示）。仅取名，不做可访问性校验；
 	// 未找到返回零值 Department（ID=0），不返回错误。
 	ResolveByID(ctx context.Context, deptID int64) (Department, error)
+	// ResolveDefault 返回问答默认责任科室：优先配置的 chat.default_dept_id，
+	// 未配置（<=0）时取第一个 is_public 且启用的科室。
+	// 用于匿名用户与未指定科室（0/nil，含历史无锁定科室）的会话落到具体责任科室，
+	// 避免 chat 域在无科室语境下对常规宣教问题机械追问。
+	// 无可用科室时返回零值 Department（ID=0），不返回错误。
+	ResolveDefault(ctx context.Context) (Department, error)
 }
 
 // Chunk 检索命中的知识切片。对应 wiki 域 article_chunks。

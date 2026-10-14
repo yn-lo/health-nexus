@@ -14,12 +14,13 @@ import (
 // BaseDepartmentResolver 实现 rag.DepartmentResolver。
 // 桥接 base 域的 DepartmentRepo 到 chat 域的消费者接口。
 type BaseDepartmentResolver struct {
-	repo *baserepo.DepartmentRepo
+	repo          *baserepo.DepartmentRepo
+	defaultDeptID int64 // chat.default_dept_id；<=0 时取第一个公共启用科室
 }
 
-// NewBaseDepartmentResolver 构造适配器。
-func NewBaseDepartmentResolver(repo *baserepo.DepartmentRepo) *BaseDepartmentResolver {
-	return &BaseDepartmentResolver{repo: repo}
+// NewBaseDepartmentResolver 构造适配器。defaultDeptID 来自 chat.default_dept_id（0 = 未配置）。
+func NewBaseDepartmentResolver(repo *baserepo.DepartmentRepo, defaultDeptID int64) *BaseDepartmentResolver {
+	return &BaseDepartmentResolver{repo: repo, defaultDeptID: defaultDeptID}
 }
 
 // ResolveForPatient 解析患者可访问的科室范围。
@@ -83,6 +84,32 @@ func (r *BaseDepartmentResolver) ResolveByID(ctx context.Context, deptID int64) 
 		return rag.Department{}, nil
 	}
 	return rag.Department{ID: d.ID, Name: d.Name}, nil
+}
+
+// ResolveDefault 返回问答默认责任科室。
+// 配置了 chat.default_dept_id（>0）时以其为准（不存在则退化为第一个公共科室）；
+// 否则取第一个 is_public 且启用的科室（ListPublic 按 name 排序，生产即"公共科室"）。
+// 无可用科室时返回零值 Department（ID=0），不返回错误——由上层决定是否放行。
+func (r *BaseDepartmentResolver) ResolveDefault(ctx context.Context) (rag.Department, error) {
+	if r.defaultDeptID > 0 {
+		d, err := r.repo.GetByID(ctx, r.defaultDeptID)
+		if err != nil {
+			return rag.Department{}, err
+		}
+		if d != nil {
+			return rag.Department{ID: d.ID, Name: d.Name}, nil
+		}
+	}
+	depts, err := r.repo.ListPublic(ctx)
+	if err != nil {
+		return rag.Department{}, err
+	}
+	for _, d := range depts {
+		if d.IsActive {
+			return rag.Department{ID: d.ID, Name: d.Name}, nil
+		}
+	}
+	return rag.Department{}, nil
 }
 
 // BaseDepartmentLookup 实现 wiki/service.DepartmentLookup。

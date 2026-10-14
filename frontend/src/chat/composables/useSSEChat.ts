@@ -114,7 +114,8 @@ export function useSSEChat(options: UseSSEChatOptions) {
             conversation_id: conversationId.value,
             request_id: requestId,
           }
-          // 科室仅在开启新会话时携带（0=全部科室，具体 id=锁定科室）。
+          // 科室仅在开启新会话时携带（具体 id=锁定科室）。问答已取消"全部科室"选项，
+          // 前端默认选中后端标记的 is_default（公共科室）；缺省时由后端落到默认责任科室。
           // 已有会话的科室由服务端按会话锁定值决定：继续携带前端的默认值 0 会被后端判为
           // "会话中切换知识库"（CHAT_DEPT_LOCKED 409），导致历史会话无法续聊。
           if (!conversationId.value && options.selectedDeptId != null) {

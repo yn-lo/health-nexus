@@ -112,10 +112,14 @@ let pendingUserLocalId = ''
 const { activeMode, setMode } = useChatMode()
 
 const initialDepartmentId = Number(route.query.department ?? 0)
-const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId })
+// 问答必须聚焦具体责任科室：不提供"全部科室"。未指定时由科室列表的 is_default（公共科室）预选。
+const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId, includeAll: false })
 
 // SSE: sseOptions 为可变对象，route 变化时更新 conversationId
 const sseOptions = { conversationId: (route.params.id as string) ?? '', selectedDeptId: selectedDepartmentId.value }
+// 科室列表异步加载后会把默认选中改为具体科室（is_default）；同步给 SSE 选项，
+// 保证新建会话携带的 selected_dept_id 与 UI 展示一致。
+watch(selectedDepartmentId, (id) => { sseOptions.selectedDeptId = id })
 const {
   isStreaming, currentContent, references, notices, crisis, error, result, stage, aborted,
   conversationId: sseConversationId, sendQuestion, abort, dismissNotice,
@@ -332,7 +336,9 @@ async function openConversation(id: string, jumpToBottom = false) {
     const conv = await chatStore.fetchConversation(id, epoch)
     // 代次已过期（用户已切到其他会话）→ 放弃后续科室/消息更新，避免污染当前视图。
     if (!chatStore.isCurrentLoad(epoch)) return
-    selectDepartment(conv.locked_dept_id ?? 0)
+    // 仅当会话已锁定科室时覆盖选中项；未锁定（历史 NULL）保持默认责任科室，
+    // 避免把选中项重置为"全部科室"（问答已取消该选项）。
+    if (conv.locked_dept_id != null) selectDepartment(conv.locked_dept_id)
     await chatStore.fetchMessages(id, epoch)
     if (!chatStore.isCurrentLoad(epoch)) return
     syncFeedbackFromMessages()

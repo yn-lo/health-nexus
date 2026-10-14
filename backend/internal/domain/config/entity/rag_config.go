@@ -41,6 +41,9 @@ const (
 	// 导致「有知识也答不出」（e2e 实测），故默认下调至 0.5 留出余量。
 	DefaultSimilarityThreshold = 0.5
 	DefaultRerankThreshold     = 0.5
+	// RecommendedSimilarityThresholdMax 推荐阈值上限：bge-m3 相关命中实测约 0.68，
+	// 超过此值极易把相关切片裁掉（"有知识也答不出"）。仅用于启动/加载告警，不阻断配置。
+	RecommendedSimilarityThresholdMax = 0.6
 )
 
 // DefaultRAGConfig 是 RAG 配置缺失时的默认值（与 SQL DEFAULT 对齐）。

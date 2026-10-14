@@ -82,6 +82,17 @@ type Config struct {
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
 	Upload    UploadConfig    `mapstructure:"upload"`
 	Seed      SeedConfig      `mapstructure:"seed"`
+	Chat      ChatConfig      `mapstructure:"chat"`
+}
+
+// ChatConfig 问答（chat 域）行为配置。
+type ChatConfig struct {
+	// DefaultDeptID 问答默认责任科室 id。
+	// 匿名用户与未指定科室（含历史无锁定科室）的会话落到此科室，保证"统一理解与审查"
+	// 始终有科室语境，避免对"术后注意什么"这类常规宣教问题机械追问。
+	// 0 = 未配置：退化为取第一个 is_public 且启用的科室（生产即"公共科室"）。
+	// 环境变量：HEALTH_NEXUS_CHAT_DEFAULT_DEPT_ID。
+	DefaultDeptID int64 `mapstructure:"default_dept_id"`
 }
 
 // SeedConfig 初始超管账号配置。
@@ -286,4 +297,7 @@ func setDefaults(v *viper.Viper) {
 	// 文章图片上传
 	v.SetDefault("upload.dir", defaultUploadDir)
 	v.SetDefault("upload.max_size_mb", defaultUploadMaxSizeMB)
+
+	// 问答默认责任科室（0 = 未配置，运行时取第一个公共启用科室）
+	v.SetDefault("chat.default_dept_id", 0)
 }
