@@ -71,6 +71,9 @@ owner: backend-team
   - 配置项：`chat.default_dept_id`（环境变量 `HEALTH_NEXUS_CHAT_DEFAULT_DEPT_ID`）。
   - 实现：`adapter.BaseDepartmentResolver.ResolveDefault`（与 `DepartmentService.effectiveDefaultDeptID` 口径一致）。
 - 「全部科室」（全库检索）仅保留在**知识库浏览**路径（文章列表/筛选），不进入问答作答。
+- 责任科室已明确且审查意图为**患者教育**（`patient_education`）时，即使审查判 `clarify` 也在代码层
+  降级为检索（落实审查规则 7，消除 LLM 判定非确定性导致的"有知识却反复澄清/暂无"）；
+  检索 0 命中时由"暂无相关内容"兜底。安全动作（crisis/emergency/restricted/reject）优先级更高，不受影响。
 
 ## 6. 相关代码位置
 

@@ -368,6 +368,16 @@ func (s *ChatSendService) dispatchByAssessment(
 		return true, s.handleFixedReply(ctx, in, sess, out,
 			rag.RestrictedCareMessage(), constants.ResultRejected, st)
 	case rag.ActionClarify:
+		// 责任科室已明确 + 患者教育意图：澄清判定降级为检索。
+		// 依据审查规则 7（科室已限定时，术后/饮食/出院等常规宣教问题视为信息充分），
+		// 但 LLM 判定存在非确定性（实测同一「胸外科 + 术后康复需要注意什么」会交替
+		// clarify/retrieve），代码兜底保证稳定：科室已限定即直接检索，0 命中再由 2.4 的
+		// "暂无相关内容"兜底。不绕过任何安全动作（crisis/emergency/restricted/reject
+		// 在 Assessment.Action() 中优先级更高）。
+		if sess.DeptID != nil && assessment.Intent == rag.IntentPatientEducation {
+			slog.InfoContext(ctx, "chat: clarify downgraded to retrieve (dept-scoped patient education)")
+			return false, nil
+		}
 		// 一次性澄清守卫：上一轮助手已是澄清追问、患者本轮多半就是在回答它，若模型仍判信息不足，
 		// 直接跳过澄清、转入检索（命中则作答，0 命中走"暂无相关内容"兜底），避免"追问→回答→再追问"死循环。
 		if lastAssistantWasClarification(history) {

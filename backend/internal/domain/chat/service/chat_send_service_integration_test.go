@@ -1348,6 +1348,42 @@ func TestStream_RewriteNoHits_FallbackToRawMessage(t *testing.T) {
 	}
 }
 
+// TestStream_ClarifyDowngradedForDeptScopedEducation 责任科室已明确 + 患者教育意图时，
+// 即使审查判 clarify 也降级为检索（落实审查规则 7，消除 LLM 判定非确定性导致的
+// "有知识却反复澄清/暂无"）。
+func TestStream_ClarifyDowngradedForDeptScopedEducation(t *testing.T) {
+	assessor := &mockAssessor{assessment: rag.Assessment{
+		Intent:                rag.IntentPatientEducation,
+		EmergencyRisk:         rag.RiskNotDetected,
+		SelfHarmRisk:          rag.RiskNotDetected,
+		ContextSufficient:     false, // 审查仍判信息不足，应被代码降级
+		RecommendedAction:     rag.ActionClarify,
+		ClarificationQuestion: "请问具体想了解哪方面？",
+	}}
+	knowledge := &mockKnowledgeSearcher{chunks: []rag.Chunk{
+		{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "胸外科术后健康宣教", Content: "术后康复", Score: 0.78, VecScore: 0.78},
+	}}
+	streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
+	svc := newTestChatSendServiceWithAssessor(
+		t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	out := &mockSSEWriter{}
+
+	if err := svc.Stream(context.Background(), newStreamInput("术后康复需要注意什么"), out); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	// 应跳过澄清、进入检索 + 生成。
+	if knowledge.lastQuery == "" {
+		t.Error("期望降级为检索，但知识检索未被调用")
+	}
+	if got := out.resultPayload(t).ResultCode; got != constants.ResultAnswered {
+		t.Errorf("result_code = %q, want %q", got, constants.ResultAnswered)
+	}
+	if ans := out.tokenContent(); strings.Contains(ans, rag.ClarificationPrompt()) ||
+		strings.Contains(ans, rag.ClarificationFallback()) {
+		t.Errorf("责任科室已限定时不应输出澄清话术，实际 %q", ans)
+	}
+}
+
 // TestStream_AssessorReceivesDeptName 会话锁定科室时，统一审查必须收到科室名作为语境提示
 // （修复"术后需要注意什么"被误判为信息不足而反复追问的根因）；
 // 未指定科室时落到默认责任科室并把其名称传给审查（不再以空串进入审查）。
@@ -1609,7 +1645,9 @@ func TestStream_ModelProvidedTextMustPassOutputFilter(t *testing.T) {
 
 	t.Run("澄清问题_越权时退回固定澄清话术", func(t *testing.T) {
 		assessor := &mockAssessor{assessment: rag.Assessment{
-			Intent:                rag.IntentPatientEducation,
+			// 用非"患者教育"意图：责任科室已限定时，患者教育的 clarify 会降级为检索
+			// （见 dispatchByAssessment），需保留澄清路径来验证越权澄清话术被替换为固定安全话术。
+			Intent:                rag.IntentProcessInquiry,
 			EmergencyRisk:         rag.RiskNotDetected,
 			SelfHarmRisk:          rag.RiskNotDetected,
 			ContextSufficient:     false,
