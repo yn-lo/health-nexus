@@ -1210,6 +1210,16 @@ func (s *ChatSendService) stageRAG(
 	slog.InfoContext(ctx, "chat: LLM stream completed",
 		"tokens", st.content.Len(), "duration_ms", time.Since(startTime).Milliseconds())
 
+	// 引用合规观测：答案实际引用的文章数 / 候选数（前端"参考来源"只展示被引用的文章）。
+	// 零引用（但存在候选）时告警——提示模型未遵守规则 8，也便于统计引用合规率。
+	if len(chunks) > 0 {
+		cited := citedArticleCount(st.content.String(), chunks)
+		slog.InfoContext(ctx, "chat: citation coverage", "cited", cited, "candidates", len(chunks))
+		if cited == 0 {
+			slog.WarnContext(ctx, "chat: answer cites no reference despite retrieved candidates")
+		}
+	}
+
 	// 阶段 2.8 + 阶段 3：输出侧安全审查 + 持久化 finalize AI 消息
 	if err := s.finalizeRAGOutput(ctx, sess, st, out, in.Message); err != nil {
 		return err
@@ -1781,6 +1791,23 @@ func chunkContents(chunks []rag.Chunk) []string {
 		out = append(out, c.Content)
 	}
 	return out
+}
+
+// citeMarkerRe 匹配答案中的内联引用标记 [资料N]（N 为文章级编号）。
+var citeMarkerRe = regexp.MustCompile(`\[资料\s*(\d+)\]`)
+
+// citedArticleCount 统计答案实际引用的文章数（按 article_id 去重；忽略越界/非法编号）。
+// 用于观测"引用合规率"：候选 chunks 与答案引用对不上时便于排查（如模型漏标）。
+func citedArticleCount(answer string, chunks []rag.Chunk) int {
+	seen := make(map[string]struct{})
+	for _, m := range citeMarkerRe.FindAllStringSubmatch(answer, -1) {
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n < 1 || n > len(chunks) {
+			continue
+		}
+		seen[chunks[n-1].ArticleID] = struct{}{}
+	}
+	return len(seen)
 }
 
 // groupChunksByArticle 按 article_id 归并命中切片，使引用编号以"文章"为单位。
