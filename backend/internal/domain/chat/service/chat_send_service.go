@@ -89,6 +89,27 @@ type stagePayload struct {
 	Stage string `json:"stage"`
 }
 
+// ChatSendService RAG 核心服务，编排阶段 1（输入安全 + 用户消息持久化）、
+// 阶段 2（检索 + 流式生成）、阶段 3（AI 消息持久化 + SSE 结束事件）。
+type ChatSendService struct {
+	dept           rag.DepartmentResolver
+	safetyIn       rag.InputSafetyFilter
+	safetyOut      rag.OutputSafetyFilter
+	assessor       rag.Assessor       // 每轮统一理解与审查（意图 + 风险 + 检索改写）
+	outputReviewer rag.OutputReviewer // 高风险答案的生成后语义审核（可为 nil：跳过并告警）
+	knowledge      rag.KnowledgeSearcher
+	llm            llm.Streamer
+	promptProvider rag.SystemPromptProvider // 可为 nil：降级为 defaultSystemPrompt
+	conv           ConversationPort
+	msg            MessagePort
+	crisis         CrisisPort
+	crisisNotifier CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
+	locker         LockProvider
+	tx             TxRunner
+	ring           ringStore    // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
+	turns          TurnRegistry // 请求幂等登记；nil 时不启用幂等（重复提交会重复生成）
+}
+
 // writeStage 尽力下发阶段进度事件；写失败（多为客户端已断开）不中止主流程——
 // 阶段仅用于展示，不应因进度推送失败影响问答本身。
 func (s *ChatSendService) writeStage(ctx context.Context, out SSEWriter, stage string) {
@@ -133,27 +154,6 @@ const llmStreamTimeout = 4 * time.Minute
 // idempotencyTTL 幂等登记保留时长：覆盖客户端自动重试与短时断线重连窗口。
 // 过期后同一 request_id 视为新请求（前端每次发送都会生成新的 request_id）。
 const idempotencyTTL = 15 * time.Minute
-
-// ChatSendService RAG 核心服务，编排阶段 1（输入安全 + 用户消息持久化）、
-// 阶段 2（检索 + 流式生成）、阶段 3（AI 消息持久化 + SSE 结束事件）。
-type ChatSendService struct {
-	dept           rag.DepartmentResolver
-	safetyIn       rag.InputSafetyFilter
-	safetyOut      rag.OutputSafetyFilter
-	assessor       rag.Assessor       // 每轮统一理解与审查（意图 + 风险 + 检索改写）
-	outputReviewer rag.OutputReviewer // 高风险答案的生成后语义审核（可为 nil：跳过并告警）
-	knowledge      rag.KnowledgeSearcher
-	llm            llm.Streamer
-	promptProvider rag.SystemPromptProvider // 可为 nil：降级为 defaultSystemPrompt
-	conv           ConversationPort
-	msg            MessagePort
-	crisis         CrisisPort
-	crisisNotifier CrisisNotifier // 危机事件主动通知（入队 asynq 任务，落库站内通知给 DEPT_ADMIN）
-	locker         LockProvider
-	tx             TxRunner
-	ring           ringStore    // 匿名会话瞬态上下文环（Redis）；nil 时匿名退化为单轮（无历史）
-	turns          TurnRegistry // 请求幂等登记；nil 时不启用幂等（重复提交会重复生成）
-}
 
 // CrisisNotifier 危机事件主动通知接口（入队 asynq 任务，由 worker 落库站内通知）。
 type CrisisNotifier interface {

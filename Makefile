@@ -15,7 +15,8 @@ ROOT_DIR := $(CURDIR)
 BACKEND_GO := $(ROOT_DIR)/backend
 
 # 工具版本（与 go.mod 对齐或固定）
-GOLANGCI_VERSION := v1.62.0
+# golangci-lint 与 backend/.golangci.yml 的 version "2" 配置格式对齐（v1 无法加载 v2 配置）。
+GOLANGCI_VERSION := v2.14.0
 WIRE_VERSION := v0.6.0
 SQLC_VERSION := v1.27.0
 
@@ -105,7 +106,7 @@ sqlc: ## sqlc 生成类型安全 SQL 代码
 # ============================================================================
 .PHONY: tools
 tools: ## 安装开发工具（golangci-lint / wire / sqlc）
-	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
+	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 	$(GO) install github.com/google/wire/cmd/wire@$(WIRE_VERSION)
 	$(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 
