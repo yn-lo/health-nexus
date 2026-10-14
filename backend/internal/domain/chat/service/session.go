@@ -69,9 +69,10 @@ type SessionStore interface {
 // Session 一次 RAG 流式请求的会话载体，统一认证 / 匿名两类会话。
 // 链条只认识 Session：会话标识、检索科室、持久化均由 Session 承载，不出现身份分支。
 type Session struct {
-	SID    string // 会话标识：DB 场景为 conversation.ID；匿名场景为 device 派生 uuid。
-	DeptID *int64 // 检索科室范围；nil 表示不限科室。
-	store  SessionStore
+	SID      string // 会话标识：DB 场景为 conversation.ID；匿名场景为 device 派生 uuid。
+	DeptID   *int64 // 检索科室范围；nil 表示不限科室。
+	DeptName string // 科室名（统一理解与审查的语境提示）；空表示不限科室/未知。
+	store    SessionStore
 }
 
 // ID 返回会话标识（用于 conversation SSE 事件回传，供前端续传与会话列表）。

@@ -140,7 +140,7 @@ func runSample(ctx context.Context, assessor rag.Assessor, reviewer rag.OutputRe
 		supported := review.EvidenceSupported
 		return Decision{EvidenceSupported: &supported, Detail: review.Reason}
 	}
-	assessment, err := assessor.AssessAndRewrite(ctx, s.Message, toAssessTurns(s.History))
+	assessment, err := assessor.AssessAndRewrite(ctx, s.Message, "", toAssessTurns(s.History))
 	if err != nil {
 		// 与生产一致：审查不可用 → 降级为固定兜底话术（等同拦截），不是安全放行。
 		return Decision{Action: ActionDegraded, Degraded: true, Detail: "审查调用失败: " + err.Error()}

@@ -86,6 +86,20 @@ func (r *BaseDepartmentResolver) ResolveForAnonymous(
 	return rag.Department{}, apperrors.Forbidden("CHAT_DEPT_NOT_ACCESSIBLE", "所选科室不可访问")
 }
 
+// ResolveByID 按科室 id 精确取名（仅名称，不做可访问性校验）。
+// 用于会话已锁定、续聊未携带 selected_dept_id 时回填科室名，供统一理解与审查作为语境提示。
+// 未找到返回零值 Department（ID=0），不返回错误。
+func (r *BaseDepartmentResolver) ResolveByID(ctx context.Context, deptID int64) (rag.Department, error) {
+	d, err := r.repo.GetByID(ctx, deptID)
+	if err != nil {
+		return rag.Department{}, err
+	}
+	if d == nil {
+		return rag.Department{}, nil
+	}
+	return rag.Department{ID: d.ID, Name: d.Name}, nil
+}
+
 // BaseDepartmentLookup 实现 wiki/service.DepartmentLookup。
 // 桥接 base 域到 wiki 域的引用授权校验。
 type BaseDepartmentLookup struct {

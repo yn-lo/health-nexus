@@ -42,6 +42,11 @@ func (m *mockDeptResolver) ResolveForAnonymous(_ context.Context, _ *int64) (rag
 	return m.dept, m.err
 }
 
+// ResolveByID 按 id 取名：mock 仅持有单科室，忽略 id 直接返回预设 dept。
+func (m *mockDeptResolver) ResolveByID(_ context.Context, _ int64) (rag.Department, error) {
+	return m.dept, m.err
+}
+
 // --- mockKnowledgeSearcher ---
 
 type mockKnowledgeSearcher struct {
@@ -65,18 +70,20 @@ func (m *mockKnowledgeSearcher) SearchSimilarChunks(_ context.Context, q rag.Sea
 // assessment 为零值时按"普通宣教、信息充足、检索改写=用户原话"返回——与真实审查器
 // 在正常宣教场景下的行为一致，便于既有用例聚焦各自关注点。
 type mockAssessor struct {
-	assessment  rag.Assessment
-	err         error
-	called      bool
-	lastMessage string
-	lastHistory []rag.AssessTurn
+	assessment   rag.Assessment
+	err          error
+	called       bool
+	lastMessage  string
+	lastDeptName string
+	lastHistory  []rag.AssessTurn
 }
 
 func (m *mockAssessor) AssessAndRewrite(
-	_ context.Context, message string, history []rag.AssessTurn,
+	_ context.Context, message, deptName string, history []rag.AssessTurn,
 ) (rag.Assessment, error) {
 	m.called = true
 	m.lastMessage = message
+	m.lastDeptName = deptName
 	m.lastHistory = history
 	if m.err != nil {
 		return rag.Assessment{}, m.err
@@ -1290,6 +1297,53 @@ func TestStream_AssessmentQueryUsedForRetrieval(t *testing.T) {
 	}
 	if streamer.lastReq.UserMessage != "怎么控制" {
 		t.Errorf("生成侧 user message = %q, want %q（生成应使用患者原话）", streamer.lastReq.UserMessage, "怎么控制")
+	}
+}
+
+// TestStream_AssessorReceivesDeptName 会话锁定科室时，统一审查必须收到科室名作为语境提示
+// （修复"术后需要注意什么"被误判为信息不足而反复追问的根因）；未锁定科室时收到空串。
+func TestStream_AssessorReceivesDeptName(t *testing.T) {
+	newService := func(assessor *mockAssessor) *ChatSendService {
+		knowledge := &mockKnowledgeSearcher{
+			chunks: []rag.Chunk{
+				{ChunkID: "c1", ArticleID: "a1", ArticleTitle: "t", Content: "c", Score: 0.9, VecScore: 0.9},
+			},
+		}
+		streamer := &mockStreamer{ready: true, tokens: []string{"回答"}}
+		return newTestChatSendServiceWithAssessor(
+			t, assessor, nil, streamer, knowledge, &mockConversationPort{}, &mockMessagePort{}, &mockCrisisPort{})
+	}
+
+	// 场景 1：锁定科室（mockDeptResolver 固定返回 {ID:1, Name:"内科"}）→ 审查收到"内科"。
+	locked := &mockAssessor{assessment: rag.Assessment{
+		Intent: rag.IntentPatientEducation, EmergencyRisk: rag.RiskNotDetected,
+		SelfHarmRisk: rag.RiskNotDetected, ContextSufficient: true,
+		StandaloneQuery: "术后注意事项", RecommendedAction: rag.ActionRetrieve,
+	}}
+	in := newStreamInput("术后需要注意什么")
+	deptID := int64(1)
+	in.SelectedDeptID = &deptID
+	if err := newService(locked).Stream(context.Background(), in, &mockSSEWriter{}); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if locked.lastDeptName != "内科" {
+		t.Errorf("锁定科室时审查收到科室名 = %q, want %q", locked.lastDeptName, "内科")
+	}
+
+	// 场景 2：全部科室（selected_dept_id=0）→ 审查收到空串，不得瞎编科室名。
+	all := &mockAssessor{assessment: rag.Assessment{
+		Intent: rag.IntentPatientEducation, EmergencyRisk: rag.RiskNotDetected,
+		SelfHarmRisk: rag.RiskNotDetected, ContextSufficient: true,
+		StandaloneQuery: "术后注意事项", RecommendedAction: rag.ActionRetrieve,
+	}}
+	in2 := newStreamInput("术后需要注意什么")
+	allDept := int64(0)
+	in2.SelectedDeptID = &allDept
+	if err := newService(all).Stream(context.Background(), in2, &mockSSEWriter{}); err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if all.lastDeptName != "" {
+		t.Errorf("全部科室时审查收到科室名 = %q, want 空串", all.lastDeptName)
 	}
 }
 

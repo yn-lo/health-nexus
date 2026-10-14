@@ -179,11 +179,13 @@ func validRisk(v string) bool {
 }
 
 // Assessor 统一理解与审查能力（消费者定义，由 adapter 适配 platform/llm 实现）。
-// 每轮调用一次：输入患者原话 + 必要历史，输出结构化判定与检索改写。
+// 每轮调用一次：输入患者原话 + 当前科室语境 + 必要历史，输出结构化判定与检索改写。
 type Assessor interface {
 	// AssessAndRewrite 执行统一理解、风险审查与查询改写。
+	// deptName 为当前会话锁定科室名（空串=不限科室/未知），用于结合科室语境判断
+	// 常规宣教问题是否信息充分，避免对"术后注意什么"这类问题机械追问。
 	// 失败（超时/解析失败/字段非法）必须返回包装 ErrAssessmentInvalid 的错误。
-	AssessAndRewrite(ctx context.Context, message string, history []AssessTurn) (Assessment, error)
+	AssessAndRewrite(ctx context.Context, message, deptName string, history []AssessTurn) (Assessment, error)
 }
 
 // 固定处置话术（临床审核的固定指引，代码级常量，不依赖 DB 配置）。

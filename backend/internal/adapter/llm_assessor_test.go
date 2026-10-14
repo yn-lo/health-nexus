@@ -69,7 +69,7 @@ func TestLLMAssessor_ParsesStructuredOutput(t *testing.T) {
 	  "recommended_action": "restricted"
 	}`
 	a := NewLLMAssessor(&fakeJSONCompleter{raw: raw})
-	got, err := a.AssessAndRewrite(context.Background(), "我能把降压药加倍吃吗", nil)
+	got, err := a.AssessAndRewrite(context.Background(), "我能把降压药加倍吃吗", "", nil)
 	if err != nil {
 		t.Fatalf("期望解析成功，实际 %v", err)
 	}
@@ -96,7 +96,7 @@ func TestLLMAssessor_FailuresDegradeToInvalid(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewLLMAssessor(tc.clients[0])
-			_, err := a.AssessAndRewrite(context.Background(), "任意输入", nil)
+			_, err := a.AssessAndRewrite(context.Background(), "任意输入", "", nil)
 			if err == nil {
 				t.Fatal("期望返回错误")
 			}

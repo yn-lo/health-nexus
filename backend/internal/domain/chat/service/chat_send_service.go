@@ -272,7 +272,7 @@ func (s *ChatSendService) loadSnapshotAndAssess(
 	if err != nil {
 		return nil, rag.Assessment{}, fmt.Errorf("%w: load history: %w", rag.ErrAssessmentInvalid, err)
 	}
-	assessment, err := s.assess(ctx, in, history)
+	assessment, err := s.assess(ctx, in, sess.DeptName, history)
 	if err != nil {
 		return nil, rag.Assessment{}, err
 	}
@@ -399,13 +399,15 @@ func (s *ChatSendService) sanitizeModelText(ctx context.Context, text, fallback 
 
 // assess 执行统一理解与审查。
 // history 为本轮统一读取的历史快照（由 Stream 一次性加载并复用），此处不再二次读取。
+// deptName 为当前会话锁定科室名（可为空=不限科室），作为审查的语境提示，
+// 使科室已限定的常规宣教问题不被误判为信息不足。
 func (s *ChatSendService) assess(
-	ctx context.Context, in StreamInput, history []*entity.Message,
+	ctx context.Context, in StreamInput, deptName string, history []*entity.Message,
 ) (rag.Assessment, error) {
 	if s.assessor == nil {
 		return rag.Assessment{}, fmt.Errorf("%w: assessor not injected", rag.ErrAssessmentInvalid)
 	}
-	return s.assessor.AssessAndRewrite(ctx, in.Message, toAssessTurns(history))
+	return s.assessor.AssessAndRewrite(ctx, in.Message, deptName, toAssessTurns(history))
 }
 
 // toAssessTurns 把历史消息转为审查输入（只保留角色与内容）。
@@ -646,18 +648,42 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 		if err != nil {
 			return nil, err
 		}
-		return &Session{SID: sid, DeptID: deptID, store: newMemSessionStore(s.ring, in.Identity.DeviceID, sid)}, nil
+		return &Session{
+			SID:      sid,
+			DeptID:   deptID,
+			DeptName: s.deptNameByID(ctx, deptID),
+			store:    newMemSessionStore(s.ring, in.Identity.DeviceID, sid),
+		}, nil
 	}
 	_, conv, err := s.resolveDeptAndConversation(ctx, in)
 	if err != nil {
 		return nil, err
 	}
+	effDeptID := deptIDPtr(in.SelectedDeptID, conv)
 	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
 	return &Session{
 		SID:    conv.ID.String(),
-		DeptID: deptIDPtr(in.SelectedDeptID, conv),
-		store:  store,
+		DeptID: effDeptID,
+		// 按最终锁定的检索科室 id 取名：续聊（未带 selected_dept_id）时
+		// resolveDeptAndConversation 解析到的可能是患者主科室，其名与锁定科室不一致。
+		DeptName: s.deptNameByID(ctx, effDeptID),
+		store:    store,
 	}, nil
+}
+
+// deptNameByID 按科室 id 取名（best-effort，供统一理解与审查作为语境提示）。
+// deptID 为 nil（不限科室）返回空串；解析失败仅告警并返回空串——科室名缺失时审查侧
+// 退化为"未指定"，不得因此阻断问答（检索范围仍由 DeptID 决定）。
+func (s *ChatSendService) deptNameByID(ctx context.Context, deptID *int64) string {
+	if deptID == nil {
+		return ""
+	}
+	d, err := s.dept.ResolveByID(ctx, *deptID)
+	if err != nil {
+		slog.WarnContext(ctx, "chat: resolve dept name by id failed", "dept_id", *deptID, "err", err)
+		return ""
+	}
+	return d.Name
 }
 
 // resolveAnonDept 解析匿名会话的检索科室范围（REQ-CHAT-019）：

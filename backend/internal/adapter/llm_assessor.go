@@ -59,7 +59,11 @@ const assessSystemPrompt = `你是医院健康宣教平台的"理解与审查"�
    也包括非医学的院内服务内容（**院区地图/位置、就医引导、挂号与就诊流程、探视与院内规定**）——
    后者同样属于相关，必须置 false。
    即使表述含糊、信息不足，也一律视为相关（信息不足用 context_sufficient=false 表达，
-   不要用 out_of_domain 兜底）。`
+   不要用 out_of_domain 兜底）。
+7. 若输入中已给出「当前科室」（非"未指定"），请结合科室语境理解问题：科室已限定的常规宣教问题
+   （如"术后注意什么""饮食注意什么""出院注意什么"）视为信息充分，直接给出检索改写并置
+   context_sufficient=true，**不要**因未说明具体病种/术式而追问。仍需追问的场景仅限信息缺失会
+   显著影响本次回答的（如个体化用药、症状鉴别）。若"当前科室"为未指定，则维持第 4 条判定。`
 
 // LLMAssessor 统一理解与审查的 LLM 实现（rag.Assessor）。
 // client 为动态解析函数：每次调用取当前 swappable Chat 快照，管理员切换模型后自动跟随。
@@ -76,7 +80,7 @@ func NewLLMAssessor(client llm.JSONCompleter) *LLMAssessor {
 
 // AssessAndRewrite 实现 rag.Assessor。
 func (a *LLMAssessor) AssessAndRewrite(
-	ctx context.Context, message string, history []rag.AssessTurn,
+	ctx context.Context, message, deptName string, history []rag.AssessTurn,
 ) (rag.Assessment, error) {
 	var out rag.Assessment
 	if a == nil || a.client == nil {
@@ -85,7 +89,8 @@ func (a *LLMAssessor) AssessAndRewrite(
 	if strings.TrimSpace(message) == "" {
 		return out, fmt.Errorf("%w: empty message", rag.ErrAssessmentInvalid)
 	}
-	raw, err := a.client.CompleteJSON(ctx, assessSystemPrompt, buildAssessUserContent(message, history), assessTimeout)
+	userContent := buildAssessUserContent(message, deptName, history)
+	raw, err := a.client.CompleteJSON(ctx, assessSystemPrompt, userContent, assessTimeout)
 	if err != nil {
 		slog.WarnContext(ctx, "chat: assess call failed", "err", err)
 		return out, fmt.Errorf("%w: %v", rag.ErrAssessmentInvalid, err)
@@ -111,7 +116,8 @@ func (a *LLMAssessor) AssessAndRewrite(
 		"emergency_risk", out.EmergencyRisk,
 		"self_harm_risk", out.SelfHarmRisk,
 		"out_of_domain", out.OutOfDomain,
-		"context_sufficient", out.ContextSufficient)
+		"context_sufficient", out.ContextSufficient,
+		"dept", deptName)
 	if out.Action() != out.RecommendedAction {
 		// 模型建议与后端固定优先级不一致时以日志留痕（供临床评测复盘冲突样本）。
 		slog.InfoContext(ctx, "chat: assess action overridden by backend priority",
@@ -124,13 +130,20 @@ func (a *LLMAssessor) AssessAndRewrite(
 	return out, nil
 }
 
-// buildAssessUserContent 构造审查输入：最近若干轮历史（截断）+ 最新患者输入。
-func buildAssessUserContent(message string, history []rag.AssessTurn) string {
+// buildAssessUserContent 构造审查输入：当前科室语境 + 最近若干轮历史（截断）+ 最新患者输入。
+func buildAssessUserContent(message, deptName string, history []rag.AssessTurn) string {
 	limit := assessHistoryTurns * 2
 	if len(history) > limit {
 		history = history[len(history)-limit:]
 	}
 	var b strings.Builder
+	if strings.TrimSpace(deptName) == "" {
+		b.WriteString("当前科室：未指定（不限，全部科室）\n\n")
+	} else {
+		b.WriteString("当前科室：")
+		b.WriteString(strings.TrimSpace(deptName))
+		b.WriteString("\n\n")
+	}
 	b.WriteString("对话历史（旧→新，可能为空）：\n")
 	if len(history) == 0 {
 		b.WriteString("（无）\n")
