@@ -74,6 +74,21 @@ export function clearTokens(): void {
 /** 统一登录页路径（chat SPA 下的 /login，所有端共享） */
 const LOGIN_PATH = '/login';
 
+/** 患者端公开路径（未登录可正常使用）：会话失效时降级匿名，不硬跳登录 */
+const ANON_PATHS = ['/chat', '/wiki', '/about', '/terms', '/privacy'];
+/** 位于公开前缀下但仍需登录的子路径：仍需跳登录 */
+const AUTH_SUBPATHS = ['/chat/profile', '/chat/change-password'];
+
+/**
+ * 当前页面能否匿名使用——决定会话彻底失效时是否硬跳登录。
+ * 公开页仅清除本地登录态交给调用方降级，避免打断「暂不登录直接提问」的访客。
+ */
+function canRunAnonymous(): boolean {
+  const p = window.location.pathname;
+  if (AUTH_SUBPATHS.some((a) => p === a || p.startsWith(`${a}/`))) return false;
+  return ANON_PATHS.some((b) => p === b || p.startsWith(`${b}/`));
+}
+
 /** 跨标签页刷新锁 key（localStorage 共享，同一 Web Storage 域内可见） */
 const REFRESH_LOCK_KEY = 'hn_refresh_lock';
 /** 刷新完成广播频道名（跨标签页通知"已轮换出新 token，请复用"） */
@@ -257,8 +272,11 @@ export async function apiClient<T>(request: string, options?: FetchOptions<'json
         return await baseClient<T>(request, options);
       }
       clearTokens();
-      // ponytail:allow-location - 401 刷新失败后必须跳转登录页，跨 MPA 无 Vue Router 替代方案，折中
-      window.location.href = LOGIN_PATH;
+      // 公开页（/chat 等）可匿名继续：仅清登录态、由调用方降级，不硬跳登录打断访客。
+      if (!canRunAnonymous()) {
+        // ponytail:allow-location - 需登录页面会话失效时必须跳转登录页，跨 MPA 无 Vue Router 替代方案，折中
+        window.location.href = LOGIN_PATH;
+      }
       throw err;
     }
     // 重试一次：onRequest 会附加新 token；仍失败则直接抛给调用方，不再二次刷新（防循环）

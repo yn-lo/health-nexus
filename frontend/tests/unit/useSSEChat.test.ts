@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
+import { mockFetchRouter, jsonRes } from './helpers/mock-fetch'
 
 /** 构造 SSE 格式的 ReadableStream */
 function makeSSEStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -463,5 +464,45 @@ describe('useSSEChat', () => {
     await promise
 
     expect(aborted.value).toBe(true)
+  })
+
+  // ── 会话失效降级 ──────────────────────────────────────────────
+
+  it('401 + refresh 失败 → 降级匿名端点继续，不跳转 /login', async () => {
+    localStorage.setItem('hn_access_token', 'expired-access')
+    localStorage.setItem('hn_refresh_token', 'invalid-refresh')
+    // ofetch 在模块加载时捕获 globalThis.fetch，需在 mock 之后重新加载被测模块
+    vi.resetModules()
+    const router = mockFetchRouter()
+    router.addMatcher({
+      name: 'refresh',
+      match: (url) => url.includes('/api/auth/refresh'),
+      respond: () => jsonRes(401, { message: 'refresh token 已失效' }),
+    })
+    router.addMatcher({
+      name: 'auth-stream',
+      match: (url) => url.includes('/api/chat/stream'),
+      respond: () => jsonRes(401, { message: '无效的访问令牌' }),
+    })
+    router.addMatcher({
+      name: 'anon-stream',
+      match: (url) => url.includes('/api/public/chat/stream'),
+      respond: () => makeOkResponse(makeSSEStream(['event: done\ndata: [DONE]\n\n'])),
+    })
+
+    const { useSSEChat: freshUseSSEChat } = await import('@/chat/composables/useSSEChat')
+    const { sendQuestion } = freshUseSSEChat({ conversationId: 'conv-1' })
+    await sendQuestion('hi')
+
+    // 首轮走鉴权端点被拒（1 次）→ 刷新失败 → 改走匿名端点
+    expect(router.callsFor((u) => u.includes('/api/chat/stream'))).toBe(1)
+    const anonCall = router.callLog.find((c) => c.url.includes('/api/public/chat/stream'))
+    expect(anonCall).toBeTruthy()
+    // 匿名端点不携带 Authorization
+    const headers = anonCall?.init?.headers as Record<string, string> | undefined
+    expect(headers?.Authorization).toBeUndefined()
+    // 登录态被清空（降级匿名），而非跳登录
+    expect(localStorage.getItem('hn_access_token')).toBeNull()
+    expect(localStorage.getItem('hn_refresh_token')).toBeNull()
   })
 })

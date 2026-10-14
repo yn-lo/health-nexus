@@ -30,16 +30,21 @@ export function useDepartments(options: UseDepartmentsOptions = {}) {
   })
 
   async function fetchDepartments() {
-    try {
-      const data = getAccessToken()
-        ? await baseApi.listDepartments()
-        : await baseApi.listPublicDepartments()
+    const apply = (data: Department[]) => {
       const filtered = filter === 'public' ? data.filter((d) => d.is_public)
         : filter === 'active' ? data.filter((d) => d.is_active)
         : data
       departments.value = [ALL_DEPARTMENTS, ...filtered]
+    }
+    try {
+      apply(getAccessToken() ? await baseApi.listDepartments() : await baseApi.listPublicDepartments())
     } catch {
-      departments.value = [ALL_DEPARTMENTS]
+      // 登录态失效时 client.ts 已清除 token：降级公开接口，保证匿名仍可选用科室。
+      try {
+        apply(await baseApi.listPublicDepartments())
+      } catch {
+        departments.value = [ALL_DEPARTMENTS]
+      }
     }
   }
 

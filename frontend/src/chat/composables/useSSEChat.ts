@@ -98,11 +98,13 @@ export function useSSEChat(options: UseSSEChatOptions) {
     try {
       while (true) {
         controller.value = new AbortController()
+        const signal = controller.value.signal
         let receivedAnyEvent = false
         let receivedDone = false
 
         try {
-          const token = getAccessToken()
+          // 认证态：会话彻底失效时降级为匿名端点，保持在患者端公开页（不硬跳登录丢上下文）。
+          let useAuth = !!getAccessToken()
 
           const body: Record<string, unknown> = {
             message: question,
@@ -116,47 +118,31 @@ export function useSSEChat(options: UseSSEChatOptions) {
             body.selected_dept_id = options.selectedDeptId
           }
 
-          const endpoint = token ? '/api/chat/stream' : '/api/public/chat/stream'
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`
-          } else {
-            headers['X-Device-Id'] = getDeviceId()
+          const doFetch = () => {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+            if (useAuth) headers['Authorization'] = `Bearer ${getAccessToken()}`
+            else headers['X-Device-Id'] = getDeviceId()
+            return fetch(useAuth ? '/api/chat/stream' : '/api/public/chat/stream', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(body),
+              signal,
+            })
           }
 
-          let response = await fetch(endpoint, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: controller.value.signal,
-          })
+          let response = await doFetch()
 
-          if (response.status === 401 && token) {
+          if (response.status === 401 && useAuth) {
             const attemptedRefresh = getRefreshToken()
             const refreshed = await tryRefreshToken()
-            if (refreshed) {
-              headers['Authorization'] = `Bearer ${getAccessToken()}`
-              response = await fetch(endpoint, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-                signal: controller.value.signal,
-              })
-            } else if (getRefreshToken() && getRefreshToken() !== attemptedRefresh) {
-              // 刷新失败但 refresh token 已被其它标签页轮换（跨标签页并发刷新）→ 复用新 token 重试，
-              // 避免一个页面成功、另一个被清空跳登录（P2）。
-              headers['Authorization'] = `Bearer ${getAccessToken()}`
-              response = await fetch(endpoint, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body),
-                signal: controller.value.signal,
-              })
+            // 刷新成功，或 refresh token 已被其它标签页轮换（跨标签页并发刷新）→ 复用新 token 重试。
+            if (refreshed || (getRefreshToken() !== null && getRefreshToken() !== attemptedRefresh)) {
+              response = await doFetch()
             } else {
+              // 会话彻底失效：清除本地登录态并降级为匿名继续本轮问答，避免硬跳登录打断访客。
               clearTokens()
-              // ponytail:allow-location - 401 刷新失败后必须跳转登录页
-              window.location.href = '/login'
-              return
+              useAuth = false
+              response = await doFetch()
             }
           }
 

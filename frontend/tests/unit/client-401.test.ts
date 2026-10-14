@@ -124,6 +124,59 @@ describe('apiClient 401 刷新逻辑', () => {
     expect(window.location.href).toBe('/login')
   })
 
+  it('患者端公开页 /chat refresh 失败 -> 清 token 但不跳转（降级匿名）', async () => {
+    setTokens('expired-access', 'invalid-refresh')
+    Object.defineProperty(window, 'location', {
+      value: { href: '', pathname: '/chat' },
+      writable: true,
+      configurable: true,
+    })
+    const router = mockFetchRouter()
+    router.addMatcher({
+      name: 'protected',
+      match: (url) => url.includes('/api/protected'),
+      respond: () => jsonRes(401, {}),
+    })
+    router.addMatcher({
+      name: 'refresh',
+      match: (url) => url.includes('/api/auth/refresh'),
+      respond: () => jsonRes(401, {}),
+    })
+
+    const { apiClient } = await import('@/shared/api/client')
+    await expect(apiClient('/protected')).rejects.toBeTruthy()
+
+    expect(getAccessToken()).toBeNull()
+    expect(getRefreshToken()).toBeNull()
+    // 关键：停留在 /chat，不硬跳登录
+    expect(window.location.href).toBe('')
+  })
+
+  it('需登录子页 /chat/profile refresh 失败 -> 仍跳转 /login', async () => {
+    setTokens('expired-access', 'invalid-refresh')
+    Object.defineProperty(window, 'location', {
+      value: { href: '', pathname: '/chat/profile' },
+      writable: true,
+      configurable: true,
+    })
+    const router = mockFetchRouter()
+    router.addMatcher({
+      name: 'protected',
+      match: (url) => url.includes('/api/protected'),
+      respond: () => jsonRes(401, {}),
+    })
+    router.addMatcher({
+      name: 'refresh',
+      match: (url) => url.includes('/api/auth/refresh'),
+      respond: () => jsonRes(401, {}),
+    })
+
+    const { apiClient } = await import('@/shared/api/client')
+    await expect(apiClient('/protected')).rejects.toBeTruthy()
+
+    expect(window.location.href).toBe('/login')
+  })
+
   it('匿名 401（无任何 token） -> 不尝试 refresh，不跳转', async () => {
     clearTokens()
     const router = mockFetchRouter()
