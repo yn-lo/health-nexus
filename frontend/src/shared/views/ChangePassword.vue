@@ -107,13 +107,13 @@ async function handleChange() {
      <!-- 原密码 -->
      <div class="auth-field">
       <label class="auth-label">原密码</label>
-      <DsPasswordField v-model="oldPassword" placeholder="请输入原密码" autocomplete="current-password" aria-label="原密码" />
+      <DsPasswordField v-model="oldPassword" placeholder="请输入原密码" autocomplete="current-password" aria-label="原密码" tone="brand" />
      </div>
 
      <!-- 新密码 -->
      <div class="auth-field">
       <label class="auth-label">新密码</label>
-      <DsPasswordField v-model="newPassword" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码">
+      <DsPasswordField v-model="newPassword" placeholder="设置新密码(8-20位)" autocomplete="new-password" aria-label="新密码" tone="brand">
        <PasswordStrength :password="newPassword" :segments="4" />
        <p
         v-if="sameAsOld"
@@ -127,7 +127,7 @@ async function handleChange() {
      <!-- 确认新密码 -->
      <div class="auth-field">
       <label class="auth-label">确认新密码</label>
-      <DsPasswordField v-model="confirmPassword" placeholder="请再次输入新密码" autocomplete="new-password" aria-label="确认新密码" :error="passwordMismatch">
+      <DsPasswordField v-model="confirmPassword" placeholder="请再次输入新密码" autocomplete="new-password" aria-label="确认新密码" :error="passwordMismatch" tone="brand">
        <p
         v-if="passwordMismatch"
         class="text-body-sm text-[var(--status-error-default)]"

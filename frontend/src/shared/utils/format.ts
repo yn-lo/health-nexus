@@ -56,3 +56,12 @@ export function stripHtml(html: string): string {
   if (!html) return ''
   return html.replace(/<[^>]*>/g, '')
 }
+
+/**
+ * 系统标语分行 — 约定用字面量 `\n` 表示换行（配置页输入框为单行文本）。
+ * 空串回退 fallback；各行去除首尾空白。
+ */
+export function splitSlogan(text: string, fallback: string[]): string[] {
+  if (!text) return fallback
+  return text.split('\\n').map((line) => line.trim())
+}

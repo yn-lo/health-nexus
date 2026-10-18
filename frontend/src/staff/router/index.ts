@@ -152,6 +152,12 @@ const routes = [
         beforeEnter: superAdminRouteGuard,
       },
       {
+        path: 'profile/config/brand',
+        name: 'staff-config-brand',
+        component: () => import('@/staff/views/config/BrandConfig.vue'),
+        beforeEnter: superAdminRouteGuard,
+      },
+      {
         path: 'profile/config/invite-codes',
         name: 'staff-config-invite-codes',
         component: () => import('@/staff/views/config/InviteCodeConfig.vue'),

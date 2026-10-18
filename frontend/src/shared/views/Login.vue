@@ -16,18 +16,24 @@
  * 与 Register / ForgotPassword / ChangePassword 共用 PageShell + 设计令牌，
  * 不写组件级 scoped 样式（遵循 frontend/AGENTS.md 硬性规则 1）。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import { CircleAlert, MessageCircle, User } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
 import { PageShell, AuthHero, DsPasswordField, DsSubmitButton } from '@/shared/components'
+import { splitSlogan } from '@/shared'
 import { useAuthStore } from '@/stores/auth'
+import { useBrandStore } from '@/stores/brand'
 import { errmsg } from '@/shared/api/client'
 import { STAFF_ROLES, type UserRole } from '@/shared/constants/roles'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const { brand } = storeToRefs(useBrandStore())
+/** 大标题：品牌配置的 slogan（支持 `\n` 换行）；未配置回退默认两行 */
+const sloganLines = computed(() => splitSlogan(brand.value.slogan, ['智能健康', '宣教平台']))
 const { showFailToast } = useDsToast()
 
 const username = ref('')
@@ -92,7 +98,9 @@ function goForgotPassword() {
     <div class="auth-scroll relative mx-auto flex min-h-dvh w-full max-w-[400px] flex-col px-[var(--spacer-24)]">
       <!-- 上半屏：品牌叙事区（视觉重心） -->
       <AuthHero>
-        <template #title>智能健康<br>宣教平台</template>
+        <template #title>
+          <span v-for="(line, i) in sloganLines" :key="i">{{ line }}<br v-if="i < sloganLines.length - 1"></span>
+        </template>
         <template #subtitle>7×24 小时 AI 健康问答，<br>为患者提供可溯源的健康指导</template>
       </AuthHero>
 
@@ -101,7 +109,7 @@ function goForgotPassword() {
         <form class="auth-form flex flex-col gap-[var(--spacer-16)]" @submit.prevent="handleLogin">
           <div class="auth-field">
             <label class="auth-label" for="auth-username">用户名</label>
-            <div class="ds-field-wrap ds-field-wrap--underline">
+            <div class="ds-field-wrap">
               <User class="h-4 w-4 shrink-0 text-icon-brand" />
               <input
                 id="auth-username"

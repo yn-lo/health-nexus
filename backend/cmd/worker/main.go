@@ -188,6 +188,7 @@ func buildVectorizeHandler(
 		configrepo.NewRAGConfigRepo(infra.Pool),
 		configrepo.NewPromptTemplateRepo(infra.Pool),
 		configrepo.NewSafetyMessageRepo(infra.Pool),
+		configrepo.NewBrandConfigRepo(infra.Pool),
 		configrepo.NewConfigAuditLogRepo(infra.Pool),
 		infra.TxMgr, aesKey, infra.Redis,
 	)

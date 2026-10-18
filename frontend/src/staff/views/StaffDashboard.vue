@@ -14,6 +14,7 @@ import {
   Cpu,
   FileText,
   MessageSquareWarning,
+  Palette,
   ScrollText,
   Share2,
   ShieldAlert,
@@ -131,6 +132,12 @@ const systemActions = computed<QuickAction[]>(() => [
   icon: Cpu,
   label: 'AI 提供商',
   routeName: 'staff-config-ai-providers',
+  level: 'super',
+ },
+ {
+  icon: Palette,
+  label: '品牌配置',
+  routeName: 'staff-config-brand',
   level: 'super',
  },
  {

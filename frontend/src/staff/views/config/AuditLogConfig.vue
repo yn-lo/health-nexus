@@ -38,6 +38,7 @@ const typeOptions: { value: ConfigAuditEntityType | 'all'; label: string }[] = [
  { value: 'rag_config', label: 'RAG 配置' },
  { value: 'safety_message', label: '安全话术' },
  { value: 'prompt_template', label: 'Prompt 模板' },
+ { value: 'brand_config', label: '品牌配置' },
 ]
 
 const typeLabel: Record<ConfigAuditEntityType, string> = {
@@ -47,6 +48,7 @@ const typeLabel: Record<ConfigAuditEntityType, string> = {
  rag_config: 'RAG 配置',
  safety_message: '安全话术',
  prompt_template: 'Prompt 模板',
+ brand_config: '品牌配置',
 }
 
 const actionLabel: Record<string, string> = {

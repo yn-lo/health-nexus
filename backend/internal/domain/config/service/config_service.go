@@ -21,6 +21,7 @@ import (
 // config 缓存 key（FIX-6：单例配置 cache-aside）。
 const (
 	cacheKeyRAGConfig      = "health-nexus:config:rag"
+	cacheKeyBrandConfig    = "health-nexus:config:brand"
 	cacheKeySafetyMessages = "health-nexus:config:safety_messages"
 	cacheTTL               = 5 * time.Minute
 
@@ -29,8 +30,8 @@ const (
 	llmReloadChannel = "health-nexus:llm:reload"
 )
 
-// ConfigService 系统配置统一服务，覆盖 6 个子模块：
-// AI Provider / 敏感词 / 安全规则 / RAG / Prompt 模板 / 安全话术。
+// ConfigService 系统配置统一服务，覆盖 7 个子模块：
+// AI Provider / 敏感词 / 安全规则 / RAG / Prompt 模板 / 安全话术 / 品牌配置。
 type ConfigService struct {
 	aiProviderRepo     AIProviderPort
 	sensitiveWordRepo  SensitiveWordPort
@@ -38,6 +39,7 @@ type ConfigService struct {
 	ragConfigRepo      RAGConfigPort
 	promptTemplateRepo PromptTemplatePort
 	safetyMessageRepo  SafetyMessagePort
+	brandConfigRepo    BrandConfigPort
 	auditLogRepo       AuditLogPort
 	tx                 *postgres.TxManager
 	aesKey             []byte
@@ -47,7 +49,7 @@ type ConfigService struct {
 
 // NewConfigService 创建 ConfigService。
 // aesKey 必须是 32 字节（AES-256），由 di 层从 cfg.Security.EncryptionKey 派生 SHA-256 注入。
-// redis 用于单例配置（RAGConfig/SafetyMessages）cache-aside，可为 nil（跳过缓存，回源 DB）。
+// redis 用于单例配置（RAGConfig/SafetyMessages/BrandConfig）cache-aside，可为 nil（跳过缓存，回源 DB）。
 // auditLogRepo 用于持久化变更审计日志（契约 §6 ConfigAuditLog）；tx 用于事务包裹批量写。
 func NewConfigService(
 	aiProviderRepo AIProviderPort,
@@ -56,6 +58,7 @@ func NewConfigService(
 	ragConfigRepo RAGConfigPort,
 	promptTemplateRepo PromptTemplatePort,
 	safetyMessageRepo SafetyMessagePort,
+	brandConfigRepo BrandConfigPort,
 	auditLogRepo AuditLogPort,
 	tx *postgres.TxManager,
 	aesKey []byte,
@@ -68,6 +71,7 @@ func NewConfigService(
 		ragConfigRepo:      ragConfigRepo,
 		promptTemplateRepo: promptTemplateRepo,
 		safetyMessageRepo:  safetyMessageRepo,
+		brandConfigRepo:    brandConfigRepo,
 		auditLogRepo:       auditLogRepo,
 		tx:                 tx,
 		aesKey:             aesKey,
@@ -84,6 +88,7 @@ func NewConfigServiceWithLLM(
 	ragConfigRepo RAGConfigPort,
 	promptTemplateRepo PromptTemplatePort,
 	safetyMessageRepo SafetyMessagePort,
+	brandConfigRepo BrandConfigPort,
 	auditLogRepo AuditLogPort,
 	tx *postgres.TxManager,
 	aesKey []byte,
@@ -91,7 +96,7 @@ func NewConfigServiceWithLLM(
 	llmCfg config.LLMConfig,
 ) *ConfigService {
 	svc := NewConfigService(aiProviderRepo, sensitiveWordRepo, safetyRuleRepo,
-		ragConfigRepo, promptTemplateRepo, safetyMessageRepo,
+		ragConfigRepo, promptTemplateRepo, safetyMessageRepo, brandConfigRepo,
 		auditLogRepo, tx, aesKey, redis)
 	svc.llmCfg = llmCfg
 	return svc

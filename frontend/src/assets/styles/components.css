@@ -1948,6 +1948,11 @@
   border-bottom-color: var(--bg-brand);
   box-shadow: none;
 }
+/* 错误态：下划线转错误色。特异性与上方两条规则相等，靠源码顺序取胜，故必须置于其后 */
+.auth-form .ds-field-wrap--error,
+.auth-form .ds-field-wrap--error:focus-within {
+  border-bottom-color: var(--status-error-default);
+}
 .auth-form .ds-field-wrap input {
   font-size: var(--reading-font-size-a11y);
 }

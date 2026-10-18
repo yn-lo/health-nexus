@@ -210,6 +210,50 @@ func toRAGConfigResponse(c *entity.RAGConfig) RAGConfigResponse {
 	}
 }
 
+// ============ Brand Config DTOs ============
+
+// UpdateBrandConfigRequest 更新品牌配置请求。所有字段可选，nil 表示不更新。
+type UpdateBrandConfigRequest struct {
+	Name       *string `json:"name,omitempty"`
+	Wordmark   *string `json:"wordmark,omitempty"`
+	OrgName    *string `json:"org_name,omitempty"`
+	Slogan     *string `json:"slogan,omitempty"`
+	SiteURL    *string `json:"site_url,omitempty"`
+	LogoURL    *string `json:"logo_url,omitempty"`
+	SiteTitle  *string `json:"site_title,omitempty"`
+	FaviconURL *string `json:"favicon_url,omitempty"`
+}
+
+// BrandConfigResponse 品牌配置响应（后台管理与公开接口共用同一视图）。
+type BrandConfigResponse struct {
+	Name       string    `json:"name"`
+	Wordmark   string    `json:"wordmark"`
+	OrgName    string    `json:"org_name"`
+	Slogan     string    `json:"slogan"`
+	SiteURL    string    `json:"site_url"`
+	LogoURL    string    `json:"logo_url"`
+	SiteTitle  string    `json:"site_title"`
+	FaviconURL string    `json:"favicon_url"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func toBrandConfigResponse(c *entity.BrandConfig) BrandConfigResponse {
+	if c == nil {
+		return BrandConfigResponse{}
+	}
+	return BrandConfigResponse{
+		Name:       c.Name,
+		Wordmark:   c.Wordmark,
+		OrgName:    c.OrgName,
+		Slogan:     c.Slogan,
+		SiteURL:    c.SiteURL,
+		LogoURL:    c.LogoURL,
+		SiteTitle:  c.SiteTitle,
+		FaviconURL: c.FaviconURL,
+		UpdatedAt:  c.UpdatedAt,
+	}
+}
+
 // ============ Prompt Template DTOs ============
 
 // CreatePromptTemplateRequest 创建 Prompt 模板请求。Version 由 service 层自动递增。

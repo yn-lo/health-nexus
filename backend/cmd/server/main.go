@@ -106,7 +106,10 @@ func buildRouter(app *di.App) http.Handler {
 	// chat 域（8 端点：SSE + 会话管理 + 危机事件）
 	r.Mount("/", app.Chat)
 
-	// config 域（20 端点，需要 JWT + RequireAdmin）
+	// config 域：公开只读端点（品牌配置），须在鉴权路由组之外注册。
+	app.Config.RegisterPublicRoutes(r)
+
+	// config 域（22 端点，需要 JWT + RequireAdmin）
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(app.Infra.Auth), middleware.RequireAdmin())
 		app.Config.RegisterRoutes(r)

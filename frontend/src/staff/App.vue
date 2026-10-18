@@ -1,8 +1,9 @@
 <template>
   <router-view />
   <DsFeedbackLayer />
+  <BrandFavicon />
 </template>
 
 <script setup lang="ts">
-import { DsFeedbackLayer } from '@/shared/components'
+import { DsFeedbackLayer, BrandFavicon } from '@/shared/components'
 </script>

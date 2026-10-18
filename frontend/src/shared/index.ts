@@ -22,13 +22,14 @@ export type {
   SensitiveWord, SensitiveWordCategory, SensitiveWordCreateRequest, SensitiveWordUpdateRequest,
   SafetyRule, SafetyRuleCategory, SafetyRuleAction, SafetyRuleCreateRequest, SafetyRuleUpdateRequest,
   RAGConfig, RAGConfigUpdateRequest,
+  BrandConfig, BrandConfigUpdateRequest,
   SafetyMessages, SafetyMessagesUpdateRequest,
   SafetyPolicyWords, SafetyPolicyInputWords, SafetyPolicyOutputRule, SafetyPolicyResponse,
   PromptTemplate, PromptTemplateType, PromptTemplateCreateRequest, PromptTemplateUpdateRequest,
   EffectivePromptResponse,
   ConfigAuditEntityType, ConfigAuditLog, ConfigAuditLogParams,
 } from './types/config';
-export { RAG_LIMITS } from './types/config';
+export { RAG_LIMITS, BRAND_LIMITS } from './types/config';
 
 // API client
 export { apiClient, getAccessToken, getRefreshToken, getDeviceId, setTokens, clearTokens, getUserStored, setUserStored, errmsg } from './api/client';
@@ -54,4 +55,4 @@ export { usePagedList } from './composables/usePagedList';
 export { useCrudEditor } from './composables/useCrudEditor';
 
 // Utils
-export { timeAgo, fmtDate, fmtDateTime, fmtShortDate, fmtCompact, fmtUserId, stripHtml } from './utils/format';
+export { timeAgo, fmtDate, fmtDateTime, fmtShortDate, fmtCompact, fmtUserId, stripHtml, splitSlogan } from './utils/format';

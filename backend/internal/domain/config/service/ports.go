@@ -47,6 +47,12 @@ type RAGConfigPort interface {
 	Upsert(ctx context.Context, c *entity.RAGConfig) error
 }
 
+// BrandConfigPort 品牌配置仓储能力。
+type BrandConfigPort interface {
+	Get(ctx context.Context) (*entity.BrandConfig, error)
+	Upsert(ctx context.Context, c *entity.BrandConfig) error
+}
+
 // PromptTemplatePort Prompt 模板仓储能力。
 type PromptTemplatePort interface {
 	List(

@@ -461,6 +461,24 @@ CREATE TABLE IF NOT EXISTS safety_messages (
     )
 );
 
+CREATE TABLE IF NOT EXISTS brand_configs (
+    id          BIGSERIAL    PRIMARY KEY,
+    name        VARCHAR(50)  NOT NULL DEFAULT 'Health Nexus',
+    wordmark    VARCHAR(50)  NOT NULL DEFAULT 'HEALTH NEXUS',
+    org_name    VARCHAR(100) NOT NULL DEFAULT '',
+    slogan      VARCHAR(50)  NOT NULL DEFAULT '',
+    site_url    VARCHAR(500) NOT NULL DEFAULT '',
+    logo_url    VARCHAR(500) NOT NULL DEFAULT '',
+    site_title  VARCHAR(100) NOT NULL DEFAULT '健康宣教平台',
+    favicon_url VARCHAR(500) NOT NULL DEFAULT '',
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT brand_configs_singleton CHECK (id = 1)
+);
+-- 已有库补列（CREATE TABLE IF NOT EXISTS 不会改已有表结构，故显式 ADD COLUMN）
+ALTER TABLE brand_configs ADD COLUMN IF NOT EXISTS org_name VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE brand_configs ADD COLUMN IF NOT EXISTS slogan VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE brand_configs ADD COLUMN IF NOT EXISTS site_url VARCHAR(500) NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS config_audit_logs (
     id            BIGSERIAL    PRIMARY KEY,
     action        VARCHAR(50)  NOT NULL,

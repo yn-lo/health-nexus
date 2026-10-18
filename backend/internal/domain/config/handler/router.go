@@ -6,13 +6,19 @@ import (
 	"health-nexus/internal/middleware"
 )
 
-// RegisterRoutes 在给定 router 上注册 config 域全部 22 个端点。
+// RegisterPublicRoutes 注册公开只读端点（无鉴权），须在鉴权路由组之外调用。
+//   - GET /api/public/brand  患者端未登录时读取品牌标识（Logo/名称/站点标题/favicon）
+func (h *ConfigHandler) RegisterPublicRoutes(r chi.Router) {
+	r.Get("/api/public/brand", h.GetPublicBrandConfig)
+}
+
+// RegisterRoutes 在给定 router 上注册 config 域全部 24 个端点。
 // 调用方负责在父路由链上挂载 JWTAuth + RequireAdmin 中间件；本处在
 // /api/staff/config 路由组内追加 DataIsolation（REQ-SEC-003），
 // 执行顺序：JWTAuth → RequireAdmin → DataIsolation。
 //
 // 权限边界（与前端 superAdminRouteGuard / adminRouteGuard 一致，P1）：
-//   - 全局安全配置（AI Provider、敏感词、安全规则、安全话术、审计日志）影响全院，
+//   - 全局安全配置（AI Provider、敏感词、安全规则、安全话术、品牌配置、审计日志）影响全院，
 //     仅超级管理员可读写——科室管理员调用返回 403，不得只靠前端路由限制；
 //   - 科室级/运营配置（RAG、Prompt 模板、邀请码等）由科室管理员维护，保持 RequireAdmin。
 func (h *ConfigHandler) RegisterRoutes(r chi.Router) {
@@ -50,6 +56,10 @@ func (h *ConfigHandler) RegisterRoutes(r chi.Router) {
 			r.Get("/safety-messages", h.GetSafetyMessages)
 			r.Get("/safety-policy", h.GetSafetyPolicy)
 			r.Put("/safety-messages", h.UpdateSafetyMessages)
+
+			// 品牌配置（2 个，全局：影响全院的 Logo/名称/站点标题）
+			r.Get("/brand", h.GetBrandConfig)
+			r.Put("/brand", h.UpdateBrandConfig)
 
 			// 配置审计日志（1 个，REQ-CONFIG-010）
 			r.Get("/audit-logs", h.ListAuditLogs)

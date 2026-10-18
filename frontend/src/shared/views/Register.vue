@@ -11,7 +11,7 @@
  */
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { CircleAlert } from '@lucide/vue'
+import { CircleAlert, KeyRound, User } from '@lucide/vue'
 import { useDsToast } from '@/shared/composables/useDsToast'
 import { PageShell, AuthHero, PasswordStrength, DsPasswordField, DsSubmitButton } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
@@ -106,7 +106,8 @@ function goLogin() {
      <!-- 用户名 -->
      <div class="auth-field">
       <label class="auth-label" for="reg-username">用户名</label>
-      <div class="ds-field-wrap ds-field-wrap--underline">
+      <div class="ds-field-wrap">
+       <User class="h-4 w-4 shrink-0 text-icon-brand" />
        <input id="reg-username" v-model="username" type="text" placeholder="设置用户名" autocomplete="username" aria-label="用户名">
       </div>
      </div>
@@ -114,7 +115,7 @@ function goLogin() {
      <!-- 密码 -->
      <div class="auth-field">
       <label class="auth-label">密码</label>
-      <DsPasswordField v-model="password" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码">
+      <DsPasswordField v-model="password" placeholder="设置密码(8-20位)" autocomplete="new-password" aria-label="密码" tone="brand">
        <PasswordStrength :password="password" :segments="4" />
       </DsPasswordField>
      </div>
@@ -122,7 +123,7 @@ function goLogin() {
      <!-- 确认密码 -->
      <div class="auth-field">
       <label class="auth-label">确认密码</label>
-      <DsPasswordField v-model="confirmPassword" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码" :error="passwordMismatch">
+      <DsPasswordField v-model="confirmPassword" placeholder="确认密码" autocomplete="new-password" aria-label="确认密码" :error="passwordMismatch" tone="brand">
        <p
         v-if="passwordMismatch"
         class="text-body-sm text-[var(--status-error-default)]"
@@ -135,7 +136,8 @@ function goLogin() {
      <!-- 邀请码 -->
      <div class="auth-field">
       <label class="auth-label" for="reg-invite">邀请码</label>
-      <div class="ds-field-wrap ds-field-wrap--underline">
+      <div class="ds-field-wrap">
+       <KeyRound class="h-4 w-4 shrink-0 text-icon-brand" />
        <input id="reg-invite" v-model="inviteCode" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="请输入 6 位邀请码" aria-label="邀请码">
       </div>
       <p class="text-body-xs text-text-tertiary">注册本平台需要邀请码，请向管理员索取</p>

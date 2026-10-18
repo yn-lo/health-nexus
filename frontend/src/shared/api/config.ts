@@ -15,6 +15,8 @@ import type {
   SafetyRuleCategory,
   RAGConfig,
   RAGConfigUpdateRequest,
+  BrandConfig,
+  BrandConfigUpdateRequest,
   SafetyMessages,
   SafetyMessagesUpdateRequest,
   SafetyPolicyResponse,
@@ -121,6 +123,23 @@ export function getRAGConfig() {
 /** 更新 RAG 配置 */
 export function updateRAGConfig(data: RAGConfigUpdateRequest) {
   return apiClient<RAGConfig>('/staff/config/rag', { method: 'PUT', body: data });
+}
+
+// ===== 6.4.1 品牌配置（单例） =====
+
+/** 获取品牌配置（公开只读，患者端未登录也可用） */
+export function getPublicBrandConfig() {
+  return apiClient<BrandConfig>('/public/brand');
+}
+
+/** 获取品牌配置（后台管理，仅超级管理员） */
+export function getBrandConfig() {
+  return apiClient<BrandConfig>('/staff/config/brand');
+}
+
+/** 更新品牌配置（仅超级管理员） */
+export function updateBrandConfig(data: BrandConfigUpdateRequest) {
+  return apiClient<BrandConfig>('/staff/config/brand', { method: 'PUT', body: data });
 }
 
 // ===== 6.5 安全话术（单例聚合） =====

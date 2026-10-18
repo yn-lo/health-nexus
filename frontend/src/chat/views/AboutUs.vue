@@ -4,10 +4,15 @@
  * Hero 区保留（用户满意）：品牌行 + 大标题 + 副标题
  * 其余部分推倒重来：大字号分区标题 + 编号特性 + 精致留白节奏
  */
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { AppHeader, BrandLogo } from '@/shared/components'
+import { splitSlogan } from '@/shared'
+import { useBrandStore } from '@/stores/brand'
 
 const router = useRouter()
+const { brand } = storeToRefs(useBrandStore())
 
 function goBack() {
  router.back()
@@ -15,6 +20,18 @@ function goBack() {
 
 const appTagline = '健康宣教系统'
 const version = 'v1.0.0'
+
+/** 系统标语分行：品牌配置的 slogan（支持 `\n` 换行），未配置回退默认定位语 */
+const sloganLines = computed(() => splitSlogan(brand.value.slogan, [appTagline]))
+/** 版权署名：配置了单位名称则派生「© 年份 单位名称 版权所有」，否则回退原作者署名 */
+const copyrightText = computed(() => {
+ const year = new Date().getFullYear()
+ return brand.value.org_name
+  ? `© ${year} ${brand.value.org_name} 版权所有`
+  : `${year} © YNLO`
+})
+/** 官网链接文案：去掉协议前缀，与原展示风格一致（www.xxx） */
+const siteLabel = computed(() => brand.value.site_url.replace(/^https?:\/\//, ''))
 
 const features = [
  { title: 'AI 智能问答', desc: '基于 RAG 技术，AI 回答 100% 可追溯来源' },
@@ -43,7 +60,7 @@ const techStack = [
  <div class="about-brand-row flex items-center gap-[var(--spacer-10)]">
  <BrandLogo size="sm" hide-name />
  <span class="about-brand-name font-heading text-body-sm-strong tracking-[0.14em] text-text-tertiary">
-  HEALTH NEXUS
+  {{ brand.wordmark }}
  </span>
  </div>
 
@@ -52,7 +69,8 @@ const techStack = [
   关于我们
  </h1>
  <p class="about-subtitle text-body-base leading-relaxed text-text-secondary">
-  {{ appTagline }} · {{ version }}
+  <span v-for="(line, i) in sloganLines" :key="i">{{ line }}<br v-if="i < sloganLines.length - 1"></span>
+  <span> · {{ version }}</span>
  </p>
  </div>
  </section>
@@ -135,15 +153,16 @@ const techStack = [
 <section class="text-center pb-[var(--spacer-32)]">
  <div class="about-author mt-[var(--spacer-24)]">
  <p class="about-author-line text-body-sm text-text-tertiary">
-  2026 © YNLO
+  {{ copyrightText }}
  </p>
  <a
+  v-if="brand.site_url"
   class="about-author-link text-body-sm text-text-brand hover:text-text-brand-hover"
-  href="https://www.ynlo.top"
+  :href="brand.site_url"
   target="_blank"
   rel="noopener noreferrer"
  >
-  www.ynlo.top
+  {{ siteLabel }}
  </a>
  </div>
  </section>

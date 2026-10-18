@@ -35,7 +35,7 @@ const show = ref(false)
   <label v-if="label" class="text-body-sm font-medium text-text-secondary">
    {{ label }}
   </label>
-  <div class="ds-field-wrap ds-field-wrap--secondary" :class="{ 'ds-field-wrap--error': error }">
+  <div class="ds-field-wrap" :class="{ 'ds-field-wrap--error': error }">
    <Lock
     class="h-4 w-4 shrink-0"
     :class="tone === 'brand' ? 'text-icon-brand' : 'text-icon-tertiary'"

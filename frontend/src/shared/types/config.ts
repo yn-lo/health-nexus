@@ -152,6 +152,41 @@ export const RAG_LIMITS = {
   rerank_threshold: { min: 0, max: 1 },
 } as const;
 
+/** 品牌配置响应（单例） */
+export interface BrandConfig {
+  name: string;
+  wordmark: string;
+  org_name: string;
+  slogan: string;
+  site_url: string;
+  logo_url: string;
+  site_title: string;
+  favicon_url: string;
+  updated_at: string;
+}
+
+/** 更新品牌配置请求（所有字段可选） */
+export interface BrandConfigUpdateRequest {
+  name?: string;
+  wordmark?: string;
+  org_name?: string;
+  slogan?: string;
+  site_url?: string;
+  logo_url?: string;
+  site_title?: string;
+  favicon_url?: string;
+}
+
+/** 品牌配置字段长度上限（与后端 entity 一致，用于前端校验提示） */
+export const BRAND_LIMITS = {
+  name: 50,
+  wordmark: 50,
+  org_name: 100,
+  slogan: 50,
+  site_title: 100,
+  url: 500,
+} as const;
+
 /** 安全话术响应（聚合单例，crisis_hotline 已合并到 crisis_response，medication_disclaimer 已合并到 safety_warning_message） */
 export interface SafetyMessages {
   rejection_message: string;
@@ -228,7 +263,8 @@ export type ConfigAuditEntityType =
   | 'safety_rule'
   | 'rag_config'
   | 'safety_message'
-  | 'prompt_template';
+  | 'prompt_template'
+  | 'brand_config';
 
 /** 配置审计日志响应 */
 export interface ConfigAuditLog {

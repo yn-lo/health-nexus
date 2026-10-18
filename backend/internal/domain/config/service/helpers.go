@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"health-nexus/internal/domain/config/entity"
@@ -72,6 +73,7 @@ var (
 		entity.AuditEntityRAGConfig,
 		entity.AuditEntitySafetyMessage,
 		entity.AuditEntityPromptTemplate,
+		entity.AuditEntityBrandConfig,
 	}
 )
 
@@ -198,6 +200,120 @@ func applyRAGPatch(c *entity.RAGConfig, req UpdateRAGConfigRequest) {
 	if req.RerankThreshold != nil {
 		c.RerankThreshold = *req.RerankThreshold
 	}
+}
+
+func validateBrandConfig(req UpdateBrandConfigRequest) error {
+	if err := checkTextLen(
+		req.Name, entity.BrandNameMaxLen,
+		"CONFIG_BRAND_NAME_TOO_LONG", "name 长度不能超过 50 字符",
+	); err != nil {
+		return err
+	}
+	if err := checkTextLen(
+		req.Wordmark, entity.BrandWordmarkMaxLen,
+		"CONFIG_BRAND_WORDMARK_TOO_LONG", "wordmark 长度不能超过 50 字符",
+	); err != nil {
+		return err
+	}
+	if err := checkTextLen(
+		req.OrgName, entity.BrandOrgNameMaxLen,
+		"CONFIG_BRAND_ORG_NAME_TOO_LONG", "org_name 长度不能超过 100 字符",
+	); err != nil {
+		return err
+	}
+	if err := checkTextLen(
+		req.Slogan, entity.BrandSloganMaxLen,
+		"CONFIG_BRAND_SLOGAN_TOO_LONG", "slogan 长度不能超过 50 字符",
+	); err != nil {
+		return err
+	}
+	if err := checkAbsoluteURL(
+		req.SiteURL, "CONFIG_BRAND_SITE_URL_INVALID", "site_url 必须为 http(s) 绝对地址",
+	); err != nil {
+		return err
+	}
+	if err := checkTextLen(
+		req.SiteTitle, entity.BrandSiteTitleMaxLen,
+		"CONFIG_BRAND_SITE_TITLE_TOO_LONG", "site_title 长度不能超过 100 字符",
+	); err != nil {
+		return err
+	}
+	if err := checkBrandURL(
+		req.LogoURL, "CONFIG_BRAND_LOGO_URL_INVALID", "logo_url 必须为站内路径或 http(s) 地址",
+	); err != nil {
+		return err
+	}
+	return checkBrandURL(
+		req.FaviconURL, "CONFIG_BRAND_FAVICON_URL_INVALID", "favicon_url 必须为站内路径或 http(s) 地址",
+	)
+}
+
+func applyBrandPatch(c *entity.BrandConfig, req UpdateBrandConfigRequest) {
+	if req.Name != nil {
+		c.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Wordmark != nil {
+		c.Wordmark = strings.TrimSpace(*req.Wordmark)
+	}
+	if req.OrgName != nil {
+		c.OrgName = strings.TrimSpace(*req.OrgName)
+	}
+	if req.Slogan != nil {
+		c.Slogan = strings.TrimSpace(*req.Slogan)
+	}
+	if req.SiteURL != nil {
+		c.SiteURL = strings.TrimSpace(*req.SiteURL)
+	}
+	if req.LogoURL != nil {
+		c.LogoURL = strings.TrimSpace(*req.LogoURL)
+	}
+	if req.SiteTitle != nil {
+		c.SiteTitle = strings.TrimSpace(*req.SiteTitle)
+	}
+	if req.FaviconURL != nil {
+		c.FaviconURL = strings.TrimSpace(*req.FaviconURL)
+	}
+}
+
+// checkTextLen 校验可选文本字段长度（按 rune 计）。空串允许（表示清空）。
+func checkTextLen(v *string, maxLen int, code, msg string) error {
+	if v != nil && utf8.RuneCountInString(*v) > maxLen {
+		return apperrors.Validation(code, msg)
+	}
+	return nil
+}
+
+// checkBrandURL 校验可选 URL 字段：空串允许；否则须为站内相对路径或 http(s) 绝对地址。
+// 拒绝 javascript:/data: 等伪协议——前端会把该值直接写入 <img src> / <link href>。
+func checkBrandURL(v *string, code, msg string) error {
+	if v == nil || *v == "" {
+		return nil
+	}
+	u := *v
+	if utf8.RuneCountInString(u) > entity.BrandURLMaxLen {
+		return apperrors.Validation(code, msg)
+	}
+	if strings.HasPrefix(u, "/") ||
+		strings.HasPrefix(u, "http://") ||
+		strings.HasPrefix(u, "https://") {
+		return nil
+	}
+	return apperrors.Validation(code, msg)
+}
+
+// checkAbsoluteURL 校验可选外链字段：空串允许；否则须为 http(s) 绝对地址（外链用相对路径无意义）。
+func checkAbsoluteURL(v *string, code, msg string) error {
+	if v == nil || *v == "" {
+		return nil
+	}
+	u := *v
+	if utf8.RuneCountInString(u) > entity.BrandURLMaxLen {
+		return apperrors.Validation(code, msg)
+	}
+	if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return nil
+	}
+	return apperrors.Validation(code, msg)
 }
 
 func ptrString(p *string) string {

@@ -9,7 +9,8 @@
  * - Accessible & Ethical -> 3px focus ring / 44px 触摸目标 / reduced-motion
  * 保留功能：科室选择、历史抽屉、推荐问题、SSE 触发
  */
-import { ref, type Component } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import {
  Activity,
@@ -19,6 +20,7 @@ import {
  Pill,
  Sparkles,
 } from '@lucide/vue'
+import { useDsToast } from '@/shared/composables/useDsToast'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useChatMode } from '@/chat/composables/useChatMode'
 import { DisclaimerFooter } from '@/shared/components'
@@ -28,9 +30,25 @@ import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
 import KnowledgeList from '@/chat/views/KnowledgeList.vue'
+import { useBrandStore } from '@/stores/brand'
 
 const router = useRouter()
+const { brand } = storeToRefs(useBrandStore())
+/** 助手称呼：配置了单位名称则落款到机构（{单位名称}智能助手），否则回退「智能健康助手」 */
+const assistantName = computed(() =>
+  brand.value.org_name ? `${brand.value.org_name}智能助手` : '智能健康助手',
+)
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0, includeAll: false })
+
+const { showToast } = useDsToast()
+// 知识库提示改为一过式 toast：进入页面（科室加载完成）自动提示一次，切换科室后再提示一次。
+// 监听 name 而非整个对象，避免科室数组被重新赋值时同样的名字重复弹窗。
+watch(
+ () => activeDepartment.value?.name,
+ (name) => {
+  if (name) showToast(`当前知识库：${name}`)
+ },
+)
 
 const showHistory = ref(false)
 const showDeptPicker = ref(false)
@@ -45,10 +63,10 @@ interface QuickAction {
 }
 
 const recommendedQuestions: QuickAction[] = [
- { label: '高血压患者饮食注意事项', value: '高血压患者饮食注意事项', icon: HeartPulse },
- { label: '糖尿病日常管理建议', value: '糖尿病日常管理建议', icon: Droplet },
- { label: '术后康复需要注意什么', value: '术后康复需要注意什么', icon: Activity },
- { label: '感冒发烧如何正确用药', value: '感冒发烧如何正确用药', icon: Pill },
+  { label: '高血压怎么吃更安全', value: '高血压怎么吃更安全', icon: HeartPulse },
+  { label: '糖尿病日常怎么管理', value: '糖尿病日常怎么管理', icon: Droplet },
+  { label: '术后康复注意什么', value: '术后康复注意什么', icon: Activity },
+  { label: '感冒发烧怎么用药', value: '感冒发烧怎么用药', icon: Pill },
 ]
 
 function openHistory() {
@@ -106,11 +124,11 @@ function onPromptClick(item: QuickAction) {
  </div>
  </div>
 
- <h2 class="hero-headline text-center font-semibold leading-[1.3] text-text break-keep text-[var(--hero-headline-size)] mt-[var(--spacer-24)]">
- 您好，我是您的<span class="hero-headline-accent">智能健康助手</span>
+ <h2 class="hero-headline text-center font-semibold leading-[1.3] text-text break-words text-[var(--hero-headline-size)] mt-[var(--spacer-24)]">
+ 您好，我是您的<span class="hero-headline-accent">{{ assistantName }}</span>
  </h2>
  <p class="text-center text-body-base text-text-secondary max-w-[300px] leading-[1.6] mt-[var(--spacer-12)]">
- 随时解答健康疑问，提供可信医学参考
+ 7×24 小时问答，答案可溯源
  </p>
  </section>
 

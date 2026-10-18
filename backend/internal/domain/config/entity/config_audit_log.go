@@ -23,6 +23,7 @@ const (
 	AuditEntityRAGConfig      = "rag_config"
 	AuditEntitySafetyMessage  = "safety_message"
 	AuditEntityPromptTemplate = "prompt_template"
+	AuditEntityBrandConfig    = "brand_config"
 
 	AuditActionCreate = "create"
 	AuditActionUpdate = "update"

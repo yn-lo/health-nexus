@@ -4,7 +4,7 @@
  *
  * 平台不提供自助找回密码：重置令牌没有可靠的投递渠道（无短信/邮件），
  * 仅写入后端 Redis 会让患者卡在无法获取令牌的步骤上（P2）。
- * 因此本页只做引导：由医院信息科 / 服务窗口核验身份后由管理员重置密码。
+ * 因此本页只做引导：联系管理员核验身份后由管理员重置密码。
  * 管理员重置通道见 `resetStaffAccountPassword`（POST /api/staff/auth/accounts/{id}/reset-password）。
  */
 import { ShieldCheck } from '@lucide/vue'
@@ -29,7 +29,7 @@ function goLogin() {
       <!-- 上半屏：品牌叙事区 -->
       <AuthHero>
         <template #title>找回密码</template>
-        <template #subtitle>密码重置需由医院信息科协助完成</template>
+        <template #subtitle>密码重置需联系管理员处理</template>
       </AuthHero>
 
       <!-- 下半屏：协助说明 -->
@@ -42,8 +42,6 @@ function goLogin() {
         </div>
 
         <ol class="flex flex-col gap-[var(--spacer-12)] text-body-base text-text-secondary">
-          <li>前往医院信息科现场办理；</li>
-          <li>携带本人有效证件至服务窗口核验身份；</li>
           <li>由管理员重置后，使用新密码重新登录。</li>
         </ol>
 

@@ -206,12 +206,13 @@ func buildConfigDomain(
 	ragConfigRepo := configrepo.NewRAGConfigRepo(infra.Pool)
 	promptTemplateRepo := configrepo.NewPromptTemplateRepo(infra.Pool)
 	safetyMessageRepo := configrepo.NewSafetyMessageRepo(infra.Pool)
+	brandConfigRepo := configrepo.NewBrandConfigRepo(infra.Pool)
 	configAuditLogRepo := configrepo.NewConfigAuditLogRepo(infra.Pool)
 
 	configSvc := configservice.NewConfigServiceWithLLM(
 		aiProviderRepo, sensitiveWordRepo, safetyRuleRepo,
 		ragConfigRepo, promptTemplateRepo, safetyMessageRepo,
-		configAuditLogRepo, infra.TxMgr,
+		brandConfigRepo, configAuditLogRepo, infra.TxMgr,
 		aesKey[:], infra.Redis, cfg.LLM,
 	)
 	return confighandler.NewConfigHandler(configSvc), configSvc, aesKey[:], nil

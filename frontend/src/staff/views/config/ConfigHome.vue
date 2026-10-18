@@ -19,6 +19,7 @@ import {
  ChevronRight,
  ShieldCheck,
  KeyRound,
+ Palette,
 } from '@lucide/vue'
 import { AppHeader, StatRow, SectionHeading } from '@/shared/components'
 import { useAuthStore } from '@/stores/auth'
@@ -109,6 +110,19 @@ const sections = computed<ConfigSection[]>(() => {
  variant: 'brand',
  },
  )
+ all.push({
+ title: '品牌与外观',
+ entries: [
+ {
+ key: 'brand',
+ label: '品牌配置',
+ desc: 'Logo / 品牌名称 / 站点标题 / favicon',
+ icon: Palette,
+ routeName: 'staff-config-brand',
+ variant: 'brand',
+ },
+ ],
+ })
  all.push({
  title: '安全与合规',
  entries: [

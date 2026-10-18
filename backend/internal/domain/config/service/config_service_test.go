@@ -76,12 +76,12 @@ func newTestService(
 	smRepo SafetyMessagePort,
 	auditRepo AuditLogPort,
 ) *ConfigService {
-	return NewConfigService(aiRepo, swRepo, srRepo, ragRepo, ptRepo, smRepo, auditRepo, nil, testAESKey, nil)
+	return NewConfigService(aiRepo, swRepo, srRepo, ragRepo, ptRepo, smRepo, nil, auditRepo, nil, testAESKey, nil)
 }
 
 // newTestServiceWithLLM creates a ConfigService with LLMConfig for GetConfigStatus tests.
 func newTestServiceWithLLM(aiRepo AIProviderPort, llmCfg config.LLMConfig) *ConfigService {
-	return NewConfigServiceWithLLM(aiRepo, nil, nil, nil, nil, nil, nil, nil, testAESKey, nil, llmCfg)
+	return NewConfigServiceWithLLM(aiRepo, nil, nil, nil, nil, nil, nil, nil, nil, testAESKey, nil, llmCfg)
 }
 
 // ============================================================================

@@ -2,6 +2,7 @@
 export { default as PageShell } from './PageShell.vue'
 export { default as AppHeader } from './AppHeader.vue'
 export { default as BrandLogo } from './BrandLogo.vue'
+export { default as BrandFavicon } from './BrandFavicon.vue'
 export { default as AuthHero } from './AuthHero.vue'
 export { default as SectionHeading } from './SectionHeading.vue'
 export { default as QuickActionGrid } from './QuickActionGrid.vue'

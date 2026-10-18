@@ -237,6 +237,44 @@ func (h *ConfigHandler) UpdateRAGConfig(w http.ResponseWriter, r *http.Request) 
 	response.WriteOK(w, c)
 }
 
+// ============ Brand Config ============
+
+// GetBrandConfig GET /api/staff/config/brand
+func (h *ConfigHandler) GetBrandConfig(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.GetBrandConfig(r.Context())
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, c)
+}
+
+// UpdateBrandConfig PUT /api/staff/config/brand
+func (h *ConfigHandler) UpdateBrandConfig(w http.ResponseWriter, r *http.Request) {
+	var req service.UpdateBrandConfigRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	c, err := h.svc.UpdateBrandConfig(r.Context(), req)
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, c)
+}
+
+// GetPublicBrandConfig GET /api/public/brand — 公开只读品牌配置。
+// 患者端未登录也需展示品牌标识（Logo/名称/站点标题）。
+func (h *ConfigHandler) GetPublicBrandConfig(w http.ResponseWriter, r *http.Request) {
+	c, err := h.svc.GetBrandConfig(r.Context())
+	if err != nil {
+		response.WriteError(w, r, err)
+		return
+	}
+	response.WriteOK(w, c)
+}
+
 // ============ Prompt Template ============
 
 // ListPromptTemplates GET /api/staff/config/prompts

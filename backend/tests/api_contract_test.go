@@ -256,11 +256,12 @@ var publicEndpoints = []endpoint{
 	{http.MethodPost, "/api/public/chat/stream"},
 	{http.MethodDelete, "/api/public/chat/conversations/550e8400-e29b-41d4-a716-446655440000"},
 	{http.MethodGet, "/api/public/departments"},
+	{http.MethodGet, "/api/public/brand"},
 	// 文章正文图片（匿名读取，患者端文章详情引用）
 	{http.MethodGet, "/uploads/" + testUUID},
 }
 
-// protectedEndpoints 需 JWT 的端点（66 个）。
+// protectedEndpoints 需 JWT 的端点（68 个）。
 var protectedEndpoints = []endpoint{
 	// auth 已登录
 	{http.MethodPost, "/api/auth/logout"},
@@ -319,7 +320,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/chat/feedback/stats"},
 	{http.MethodGet, "/api/staff/chat/crisis-events"},
 	{http.MethodPost, "/api/staff/chat/crisis-events/1/handle"},
-	// config（27）
+	// config（29）
 	{http.MethodGet, "/api/staff/config/ai-providers"},
 	{http.MethodPost, "/api/staff/config/ai-providers"},
 	{http.MethodGet, "/api/staff/config/ai-providers/1"},
@@ -344,6 +345,8 @@ var protectedEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/safety-policy"},
 	{http.MethodPut, "/api/staff/config/safety-messages"},
+	{http.MethodGet, "/api/staff/config/brand"},
+	{http.MethodPut, "/api/staff/config/brand"},
 	{http.MethodGet, "/api/staff/config/audit-logs"},
 	{http.MethodGet, "/api/staff/config/status"},
 }
@@ -386,8 +389,8 @@ var chatEndpoints = []endpoint{
 	{http.MethodPost, "/api/chat/messages/1/feedback"},
 }
 
-// superAdminConfigEndpoints 需 JWT + SUPER_ADMIN 的全局安全配置端点（18 个）。
-// 这些配置影响全院（AI Provider / 敏感词 / 安全规则 / 安全话术 / 审计日志），
+// superAdminConfigEndpoints 需 JWT + SUPER_ADMIN 的全局安全配置端点（20 个）。
+// 这些配置影响全院（AI Provider / 敏感词 / 安全规则 / 安全话术 / 品牌配置 / 审计日志），
 // 科室管理员（DEPT_ADMIN）必须同样被拒——与前端 superAdminRouteGuard 保持一致（P1）。
 var superAdminConfigEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/ai-providers"},
@@ -407,10 +410,12 @@ var superAdminConfigEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/safety-policy"},
 	{http.MethodPut, "/api/staff/config/safety-messages"},
+	{http.MethodGet, "/api/staff/config/brand"},
+	{http.MethodPut, "/api/staff/config/brand"},
 	{http.MethodGet, "/api/staff/config/audit-logs"},
 }
 
-// configEndpoints 需 JWT + Admin 角色的端点（27 个）。
+// configEndpoints 需 JWT + Admin 角色的端点（29 个）。
 var configEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/ai-providers"},
 	{http.MethodPost, "/api/staff/config/ai-providers"},
@@ -436,6 +441,8 @@ var configEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/safety-messages"},
 	{http.MethodGet, "/api/staff/config/safety-policy"},
 	{http.MethodPut, "/api/staff/config/safety-messages"},
+	{http.MethodGet, "/api/staff/config/brand"},
+	{http.MethodPut, "/api/staff/config/brand"},
 	{http.MethodGet, "/api/staff/config/audit-logs"},
 	{http.MethodGet, "/api/staff/config/status"},
 }

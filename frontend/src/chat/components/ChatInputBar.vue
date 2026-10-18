@@ -25,7 +25,7 @@ const props = withDefaults(defineProps<{
  departmentName: '选择科室',
  loading: false,
  disabled: false,
- placeholder: '请输入您的健康问题...',
+ placeholder: '请输入健康问题或就诊疑问...',
 })
 
 const emit = defineEmits<{

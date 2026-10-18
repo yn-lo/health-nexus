@@ -115,12 +115,13 @@
 
 ### 4.3 字段块（auth-field / auth-label）
 
-标签在上、输入框在下，标签为小号灰色字距：
+标签在上、输入框在下，标签为小号灰色字距；每个字段前置一枚品牌色装饰图标（`text-icon-brand` + `h-4 w-4 shrink-0`，密码字段的锁形图标由 DsPasswordField 内置）：
 
 ```html
 <div class="auth-field">
   <label class="auth-label">用户名</label>
-  <div class="ds-field-wrap ds-field-wrap--underline">
+  <div class="ds-field-wrap">
+    <User class="h-4 w-4 shrink-0 text-icon-brand" />
     <input id="auth-username" v-model="username" placeholder="请输入用户名或手机号" autocomplete="username" aria-label="用户名">
   </div>
 </div>
@@ -157,6 +158,11 @@
 .auth-form .ds-field-wrap:focus-within {
   border-bottom-color: var(--bg-brand);
   box-shadow: none;
+}
+/* 错误态（如两次密码不一致）：下划线转错误色；需置于聚焦态之后以覆盖品牌色 */
+.auth-form .ds-field-wrap--error,
+.auth-form .ds-field-wrap--error:focus-within {
+  border-bottom-color: var(--status-error-default);
 }
 ```
 
