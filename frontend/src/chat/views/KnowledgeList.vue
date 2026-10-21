@@ -3,7 +3,7 @@
  * KnowledgeList 健康知识库 - v3 风格（ui-ux-pro-max: Content-First + Accessible & Ethical）
  * 风格升级要点：
  * - 触摸目标全部 ≥44pt（搜索/分类按钮）- WCAG AAA
- * - 精选卡头像渐变光晕（hero-orb 视觉锤）
+ * - 置顶与全部文章合并为单一列表，置顶仅以图标底色（alert vs brand）区分
  * - 列表卡片化容器 + hover 阴影微反馈
  * - meta 用图标点分隔，提升可读性
  * - 加载骨架屏（pulse 动画，避免空白闪烁）
@@ -14,7 +14,7 @@
  */
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, BookOpen, Flame } from '@lucide/vue'
+import { Search, BookOpen } from '@lucide/vue'
 import { wikiApi } from '@/shared'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { EmptyState, DepartmentTabs, DsPullRefresh } from '@/shared/components'
@@ -55,10 +55,24 @@ const tabOptions = computed(() =>
   departments.value.map((d) => ({ id: d.id, label: d.name })),
 )
 
-/** 精选文章（搜索时不显示轮播，避免与列表结果重复且聚焦搜索结果） */
-const visibleFeaturedArticles = computed(() => {
+/** 置顶文章（仅 featured_rank > 0 才是医护端设置的置顶；搜索时不提升置顶） */
+const pinnedArticles = computed(() => {
   if (searchQuery.value.trim()) return []
-  return featuredArticles.value
+  return featuredArticles.value.filter((a) => a.featured_rank > 0)
+})
+
+const pinnedIds = computed(() => new Set(pinnedArticles.value.map((a) => a.id)))
+
+/** 单一列表：置顶在前 + 全部文章（按 id 去重，避免置顶文章在列表里重复出现） */
+const mergedArticles = computed(() => {
+  const seen = new Set<number>()
+  const merged: ArticlePublic[] = []
+  for (const article of [...pinnedArticles.value, ...articles.value]) {
+    if (seen.has(article.id)) continue
+    seen.add(article.id)
+    merged.push(article)
+  }
+  return merged
 })
 
 /** 跳转文章详情 */
@@ -237,15 +251,6 @@ onBeforeUnmount(() => {
     <section class="flex-1 px-[var(--spacer-16)] py-[var(--spacer-16)]">
       <!-- 骨架屏 - loading 期间显示，避免空白闪烁 -->
       <div v-if="loading" class="space-y-[var(--spacer-16)]">
-        <!-- 精选骨架 -->
-        <div class="rounded-[var(--radius-card-soft)] overflow-hidden bg-[var(--bg-base-default)] shadow-[var(--shadow-md)]">
-          <div class="p-[var(--spacer-20)] space-y-[var(--spacer-12)]">
-            <div class="h-7 w-20 rounded-[var(--radius-full)] bg-[var(--bg-overlay-l2)] skeleton-pulse" />
-            <div class="h-6 w-3/4 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)] skeleton-pulse" />
-            <div class="h-4 w-full rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] skeleton-pulse" />
-            <div class="h-4 w-2/3 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] skeleton-pulse" />
-          </div>
-        </div>
         <!-- 列表骨架 -->
         <div class="rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden">
           <div
@@ -262,38 +267,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 热门置顶 - 按浏览量 Top3 竖向可折叠列表（复用 ds-list-item 样式，与文章列表一致） -->
-      <section v-if="visibleFeaturedArticles.length" class="mb-[var(--spacer-24)]">
-        <!-- 区块标题 -->
-        <div class="flex items-center justify-between mb-[var(--spacer-12)]">
-          <h2 class="truncate font-heading text-heading-sm font-semibold text-text">
-            热门置顶
-          </h2>
-          <span class="shrink-0 text-body-sm text-text-tertiary">
-            按浏览热度精选
-          </span>
-        </div>
-
-        <!-- 卡片列表：与下方文章列表一致的横排 ds-list-item -->
-        <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
-          <div
-            v-for="article in visibleFeaturedArticles"
-            :key="article.id"
-            class="ds-list-item--divider"
-          >
-            <KnowledgeListItem
-              :article="article"
-              :icon="Flame"
-              :expanded="expandedIds.has(article.id)"
-              @open="goArticle"
-              @toggle="toggleExpand"
-            />
-          </div>
-        </div>
-      </section>
-
       <!-- 分隔标题 -->
-      <div v-if="!loading && articles.length" class="flex items-center justify-between mb-[var(--spacer-12)]">
+      <div v-if="!loading && mergedArticles.length" class="flex items-center justify-between mb-[var(--spacer-12)]">
         <h2 class="truncate font-heading text-heading-sm font-semibold text-text">
           {{ searchQuery.trim() ? '搜索结果' : '全部文章' }}
         </h2>
@@ -302,17 +277,18 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <!-- 文章列表 - v3 风格：卡片化容器 + 图标化 meta + chevron 展开摘要 -->
+      <!-- 文章列表 - 置顶文章排在最前，仅用图标底色区分，不再单独分区 -->
       <DsPullRefresh v-if="!loading" :loading="refreshing" @refresh="onRefresh">
         <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
           <div
-            v-for="article in articles"
+            v-for="article in mergedArticles"
             :key="article.id"
             class="ds-list-item--divider"
           >
             <KnowledgeListItem
               :article="article"
               :icon="BookOpen"
+              :tone="pinnedIds.has(article.id) ? 'alert' : 'brand'"
               :expanded="expandedIds.has(article.id)"
               @open="goArticle"
               @toggle="toggleExpand"
@@ -325,14 +301,14 @@ onBeforeUnmount(() => {
           <div v-if="listLoading" class="ds-loading py-[var(--spacer-8)]">
             <span class="ds-loading__spinner ds-loading__spinner--sm" />
           </div>
-          <p v-else-if="listFinished && articles.length" class="text-center text-body-xs text-text-tertiary m-0 py-[var(--spacer-8)]">
+          <p v-else-if="listFinished && mergedArticles.length" class="text-center text-body-xs text-text-tertiary m-0 py-[var(--spacer-8)]">
             没有更多了
           </p>
         </div>
       </DsPullRefresh>
 
       <!-- 空状态 - v3 风格：图标 + 文案 -->
-      <EmptyState v-if="!loading && articles.length === 0" :text="searchQuery.trim() ? '未找到相关文章' : '暂无文章'" />
+      <EmptyState v-if="!loading && mergedArticles.length === 0" :text="searchQuery.trim() ? '未找到相关文章' : '暂无文章'" />
     </section>
   </div>
 </template>

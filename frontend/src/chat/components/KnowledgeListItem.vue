@@ -9,11 +9,15 @@ import MarkdownIt from 'markdown-it'
 import { fmtCompact, fmtShortDate } from '@/shared'
 import type { ArticlePublic } from '@/shared'
 
-defineProps<{
+withDefaults(defineProps<{
   article: ArticlePublic
   icon: Component
   expanded: boolean
-}>()
+  /** 图标底色：brand=普通文章，alert=置顶文章（仅颜色区分，不新增区块） */
+  tone?: 'brand' | 'alert'
+}>(), {
+  tone: 'brand',
+})
 const emit = defineEmits<{
   (e: 'open', id: number): void
   (e: 'toggle', id: number): void
@@ -41,7 +45,7 @@ function estimateReadTime(summary: string): number {
 
 <template>
   <div class="ds-list-item min-h-[var(--touch-target-min)]">
-    <span class="ds-list-item__icon ds-list-item__icon--brand">
+    <span class="ds-list-item__icon" :class="`ds-list-item__icon--${tone}`">
       <component :is="icon" :size="20" />
     </span>
     <div class="ds-list-item__content" @click="emit('open', article.id)">
