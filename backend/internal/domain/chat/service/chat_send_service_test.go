@@ -446,6 +446,36 @@ func TestChunkContents(t *testing.T) {
 }
 
 // ============================================================================
+// citedArticleCount：统计答案实际引用的文章数（去重、忽略越界/非法编号）
+// ============================================================================
+
+func TestCitedArticleCount(t *testing.T) {
+	chunks := []rag.Chunk{
+		{ChunkID: "c1", ArticleID: "A"},
+		{ChunkID: "c2", ArticleID: "B"},
+		{ChunkID: "c3", ArticleID: "A"}, // 同篇文章多切片，应去重
+	}
+	cases := []struct {
+		name, answer string
+		want         int
+	}{
+		{"无引用", "没有任何标记的答案", 0},
+		{"单篇多次引用去重", "结论A[资料1]，结论B[资料1]", 1},
+		{"多篇", "先[资料1]后[资料2]", 2},
+		{"空格容错", "[资料 2]", 1},
+		{"越界编号忽略", "[资料9]", 0},
+		{"非法编号忽略", "[资料x] 与 [资料1]", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := citedArticleCount(c.answer, chunks); got != c.want {
+				t.Errorf("citedArticleCount(%q) = %d, want %d", c.answer, got, c.want)
+			}
+		})
+	}
+}
+
+// ============================================================================
 // groupChunksByArticle：引用编号以"文章"为单位，与前端参考来源列表（按 article_id 去重）一致
 // ============================================================================
 

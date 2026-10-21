@@ -82,6 +82,12 @@ owner: backend-team
 实现：检索后 `groupChunksByArticle` 归并，生成侧 `chunkContentsForLLM`、审核侧证据、
 落库 `referenced_chunks`、SSE `references` 事件均复用该归并结果，避免"列表 1 条、正文却引用 [资料3]"。
 
+**患者端"参考来源"只展示答案实际引用的文章**（由正文 `[资料N]` 反解得到，按首次引用顺序去重，
+角标序号 = 该文章在引用列表中的位置）；未被正文引用的候选文章不展示——避免暗示答案依据了未使用的内容。
+`messages.referenced_chunks` 仍保留完整候选集供审计；答案零引用时列表为空并记
+`chat: answer cites no reference despite retrieved candidates` 告警（引用合规率可度量）。
+归一逻辑：`frontend/src/shared/utils/citations.ts`。
+
 ## 7. 相关代码位置
 
 - 可见性 SQL：`internal/domain/wiki/repository/chunk_repo.go` `deptVisibilitySQL`

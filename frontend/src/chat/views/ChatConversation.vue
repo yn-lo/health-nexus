@@ -31,6 +31,7 @@ import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
 import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 import MarkdownIt from 'markdown-it'
 import { sanitizeHtml } from '@/shared/utils/sanitize-html'
+import { citedRefs } from '@/shared/utils/citations'
 import { submitMessageFeedback } from '@/shared/api/chat'
 import { errmsg, getAccessToken } from '@/shared/api/client'
 import { FEEDBACK_OPTIONS, type MessageFeedback } from '@/shared/constants/feedback'
@@ -57,13 +58,12 @@ const SAFE_ARTICLE_ID = /^[A-Za-z0-9_-]+$/
 function renderMd(text: string, refs: Reference[] = []): string {
   const html = sanitizeHtml(md.render(text))
   if (!html.includes('[资料')) return html
-  // 引用单位 = 文章：把角标 N 解析为第 N 条原始 reference 所属的文章，
-  // 再映射到"参考来源"去重列表中的文章序号（角标文案）。
-  // - 新会话：references 已是文章级，N 即文章序号，文案不变；
-  // - 历史会话：references 仍为切片级，文案会归一到同一篇文章的序号，避免"列表 1 条、正文引用 3"。
-  const articles = dedupeRefs(refs)
+  // 引用单位 = 文章：正文 [资料N] 的 N 指向本轮 references 第 N 条（后端已按文章归并）。
+  // 角标序号 = 该文章在"被引用文章"列表中的位置（1 起），与下方卡片序号一致；
+  // 未被正文引用的候选文章不展示，故角标可能被重新编号（如 [资料3] → 1）。
+  const cited = citedRefs(text, refs)
   const posByArticle = new Map<number, number>()
-  articles.forEach((a, i) => posByArticle.set(a.article_id, i + 1))
+  cited.forEach((r, i) => posByArticle.set(r.article_id, i + 1))
   return html.replace(CITE_RE, (_m, n: string) => {
     const raw = refs[Number(n) - 1]?.article_id
     if (raw !== undefined) {
@@ -300,17 +300,6 @@ async function copyMessage(content: string) {
   }
 }
 
-/** 按 article_id 去重引用，只保留每篇文章第一条 */
-function dedupeRefs(refs: Reference[]): Reference[] {
-  const seen = new Map<number, Reference>()
-  for (const ref of refs) {
-    if (!seen.has(ref.article_id)) {
-      seen.set(ref.article_id, ref)
-    }
-  }
-  return Array.from(seen.values())
-}
-
 /** 跳转到文章详情页 */
 function goToArticle(articleId: number) {
   router.push({ name: 'wiki-article', params: { id: articleId } })
@@ -545,12 +534,12 @@ onUnmounted(() => {
                 <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content, msg.references)"></div>
               </div>
 
-              <!-- 引用来源 -->
-              <div v-if="msg.references?.length" class="mt-[var(--spacer-12)]">
+              <!-- 引用来源（仅正文实际引用的文章；未引用的候选不展示） -->
+              <div v-if="citedRefs(msg.content, msg.references).length" class="mt-[var(--spacer-12)]">
                 <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
                 <div class="flex flex-col gap-[var(--spacer-6)]">
                   <div
-                    v-for="(ref, refIdx) in dedupeRefs(msg.references)"
+                    v-for="(ref, refIdx) in citedRefs(msg.content, msg.references)"
                     :key="ref.article_id"
                     :data-article-id="String(ref.article_id)"
                     class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
@@ -629,12 +618,12 @@ onUnmounted(() => {
             <div class="ds-bubble ds-bubble--ai">
               <div class="m-0 break-words markdown-content" v-html="renderMd(currentContent, references) + '<span class=\'streaming-cursor\'></span>'"></div>
             </div>
-            <!-- 流式中的引用来源 -->
-            <div v-if="references.length" class="mt-[var(--spacer-12)]">
+            <!-- 流式中的引用来源（仅正文已引用的文章） -->
+            <div v-if="citedRefs(currentContent, references).length" class="mt-[var(--spacer-12)]">
               <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
               <div class="flex flex-col gap-[var(--spacer-6)]">
                 <div
-                  v-for="(ref, refIdx) in dedupeRefs(references)"
+                  v-for="(ref, refIdx) in citedRefs(currentContent, references)"
                   :key="ref.article_id"
                   :data-article-id="String(ref.article_id)"
                   class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
