@@ -5,11 +5,14 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"health-nexus/internal/domain/chat/entity"
+	apperrors "health-nexus/internal/shared/errors"
 	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/rag"
 )
@@ -104,6 +107,56 @@ func TestDeptVisibility_SpecificDeptID(t *testing.T) {
 	if q.DeptID == nil || *q.DeptID != 3 {
 		t.Errorf("DeptID 应为 3")
 	}
+}
+
+// TestAssertDeptOnline 科室禁用 = 整体知识库下线：已锁定/默认到该科室的会话必须明确拒绝，
+// 不得继续以离线知识域作答；科室不存在（已删除）同样拒绝；未限定科室时由检索层过滤。
+func TestAssertDeptOnline(t *testing.T) {
+	deptID := int64(3)
+
+	t.Run("未限定科室_放行", func(t *testing.T) {
+		s := &ChatSendService{dept: &mockDeptResolver{}}
+		if err := s.assertDeptOnline(context.Background(), nil); err != nil {
+			t.Fatalf("DeptID=nil 不应被拦截，实际: %v", err)
+		}
+	})
+
+	t.Run("科室启用_放行", func(t *testing.T) {
+		s := &ChatSendService{dept: &mockDeptResolver{
+			dept: rag.Department{ID: 3, Name: "内科", IsActive: true},
+		}}
+		if err := s.assertDeptOnline(context.Background(), &deptID); err != nil {
+			t.Fatalf("启用科室不应被拦截，实际: %v", err)
+		}
+	})
+
+	t.Run("科室禁用_拒绝", func(t *testing.T) {
+		s := &ChatSendService{dept: &mockDeptResolver{
+			dept: rag.Department{ID: 3, Name: "内科", IsActive: false},
+		}}
+		err := s.assertDeptOnline(context.Background(), &deptID)
+		var appErr *apperrors.AppError
+		if !errors.As(err, &appErr) || appErr.Code != "CHAT_DEPT_INACTIVE" {
+			t.Fatalf("期望 CHAT_DEPT_INACTIVE，实际: %v", err)
+		}
+	})
+
+	t.Run("科室不存在_拒绝", func(t *testing.T) {
+		s := &ChatSendService{dept: &mockDeptResolver{}}
+		err := s.assertDeptOnline(context.Background(), &deptID)
+		var appErr *apperrors.AppError
+		if !errors.As(err, &appErr) || appErr.Code != "CHAT_DEPT_INACTIVE" {
+			t.Fatalf("期望 CHAT_DEPT_INACTIVE，实际: %v", err)
+		}
+	})
+
+	t.Run("解析失败_向上返回", func(t *testing.T) {
+		boomed := errors.New("db down")
+		s := &ChatSendService{dept: &mockDeptResolver{err: boomed}}
+		if err := s.assertDeptOnline(context.Background(), &deptID); !errors.Is(err, boomed) {
+			t.Fatalf("期望透传底层错误，实际: %v", err)
+		}
+	})
 }
 
 // usedImport suppresses unused import warnings.

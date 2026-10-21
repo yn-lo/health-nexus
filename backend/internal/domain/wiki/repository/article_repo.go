@@ -28,6 +28,20 @@ var ErrStatusConflict = errors.New("article status conflict")
 // service 层翻译为 409。
 var ErrVersionConflict = errors.New("article version conflict")
 
+// onlineDepartmentSQL 返回"文章所属科室仍在线"的可见性条件。
+// 科室禁用 = 该科室整体知识库下线：其全部文章立即退出检索候选库与所有患者可见面
+// （列表/精选/详情），无需重建切片——恢复启用后即时恢复，不产生向量化成本。
+// alias 为 articles 表别名（空串表示无别名，如 UPDATE 语句）。
+// department_id 为空表示全院公共知识，不受任何科室启用状态影响。
+func onlineDepartmentSQL(alias string) string {
+	col := "department_id"
+	if alias != "" {
+		col = alias + ".department_id"
+	}
+	return fmt.Sprintf(`(%s IS NULL OR NOT EXISTS (
+		SELECT 1 FROM departments d WHERE d.id = %s AND d.is_active = false))`, col, col)
+}
+
 // articleColumns articles 表的核心列（不含 view 字段），用于 INSERT/SELECT。
 const articleColumns = `id, title, content, summary, cover_image_url, status, version,
 	content_hash, author_id, department_id, reviewer_id, review_comment, view_count, featured_rank,
@@ -129,10 +143,11 @@ func (r *ArticleRepo) LockPublishedVersion(ctx context.Context, id int64) (int, 
 // 否则待审核的新正文会直接对患者公开（无需并发即可绕过审核）。
 // 未找到（不存在/不可见/已删除）返回 (nil, ErrNotFound)。
 func (r *ArticleRepo) GetPublishedByID(ctx context.Context, id int64) (*entity.Article, error) {
-	const sql = `WITH bumped AS (
+	sql := `WITH bumped AS (
 		UPDATE articles SET view_count = view_count + 1, updated_at = now()
 		WHERE id = $1 AND is_deleted = false
 		  AND (status = $2 OR (status = $3 AND published_at IS NOT NULL))
+		  AND ` + onlineDepartmentSQL("") + `
 		RETURNING ` + articleColumns + `
 	)
 	SELECT ` + articleScanCols + `,
@@ -171,7 +186,7 @@ type ListPublishedFilter struct {
 func (r *ArticleRepo) ListPublished(
 	ctx context.Context, f ListPublishedFilter, limit, offset int,
 ) ([]*entity.Article, int64, error) {
-	where := "a.status = $1 AND a.is_deleted = false"
+	where := "a.status = $1 AND a.is_deleted = false AND " + onlineDepartmentSQL("a")
 	args := []any{constants.ArticleStatusPublished}
 	if f.DepartmentID != nil {
 		args = append(args, *f.DepartmentID)
@@ -229,7 +244,7 @@ func (r *ArticleRepo) ListPublished(
 }
 
 func (r *ArticleRepo) ListFeatured(ctx context.Context, departmentID *int64, limit int) ([]*entity.Article, error) {
-	where := "a.status = $1 AND a.is_deleted = false"
+	where := "a.status = $1 AND a.is_deleted = false AND " + onlineDepartmentSQL("a")
 	args := []any{constants.ArticleStatusPublished}
 	if departmentID != nil {
 		args = append(args, *departmentID)

@@ -130,6 +130,7 @@ owner: backend-team
 | `CHAT_CRISIS_ALREADY_HANDLED` | 409 | 危机事件已处理 |
 | `CHAT_CRISIS_EVENT_EXISTS` | 409 | 会话包含危机事件记录，不可删除 |
 | `CHAT_DEPT_LOCKED` | 409 | 会话科室已锁定，不可更改 |
+| `CHAT_DEPT_INACTIVE` | 409 | 会话锁定/默认科室的知识库已停用，需重新选择科室 |
 | `CHAT_LLM_UNAVAILABLE` | 503 | AI 服务暂不可用 |
 | `CHAT_LLM_TIMEOUT` | 503 | AI 服务响应超时 |
 

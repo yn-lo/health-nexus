@@ -45,7 +45,7 @@ func (r *BaseDepartmentResolver) ResolveForPatient(
 	}
 	for _, d := range depts {
 		if d.ID == *selectedDeptID {
-			return rag.Department{ID: d.ID, Name: d.Name}, nil
+			return rag.Department{ID: d.ID, Name: d.Name, IsActive: true}, nil
 		}
 	}
 	return rag.Department{}, apperrors.Forbidden("CHAT_DEPT_NOT_ACCESSIBLE", "所选科室不可访问")
@@ -66,14 +66,15 @@ func (r *BaseDepartmentResolver) ResolveForAnonymous(
 	}
 	for _, d := range depts {
 		if d.ID == *selectedDeptID {
-			return rag.Department{ID: d.ID, Name: d.Name}, nil
+			return rag.Department{ID: d.ID, Name: d.Name, IsActive: true}, nil
 		}
 	}
 	return rag.Department{}, apperrors.Forbidden("CHAT_DEPT_NOT_ACCESSIBLE", "所选科室不可访问")
 }
 
-// ResolveByID 按科室 id 精确取名（仅名称，不做可访问性校验）。
-// 用于会话已锁定、续聊未携带 selected_dept_id 时回填科室名，供统一理解与审查作为语境提示。
+// ResolveByID 按科室 id 精确取名并返回启用状态（仅名称 + 启用标记，不做可访问性校验）。
+// 用于会话已锁定、续聊未携带 selected_dept_id 时回填科室名，供统一理解与审查作为语境提示；
+// 调用方同时据 IsActive 复核锁定科室是否仍在线（科室禁用=整体知识库下线）。
 // 未找到返回零值 Department（ID=0），不返回错误。
 func (r *BaseDepartmentResolver) ResolveByID(ctx context.Context, deptID int64) (rag.Department, error) {
 	d, err := r.repo.GetByID(ctx, deptID)
@@ -83,11 +84,12 @@ func (r *BaseDepartmentResolver) ResolveByID(ctx context.Context, deptID int64) 
 	if d == nil {
 		return rag.Department{}, nil
 	}
-	return rag.Department{ID: d.ID, Name: d.Name}, nil
+	return rag.Department{ID: d.ID, Name: d.Name, IsActive: d.IsActive}, nil
 }
 
 // ResolveDefault 返回问答默认责任科室。
-// 配置了 chat.default_dept_id（>0）时以其为准（不存在则退化为第一个公共科室）；
+// 配置了 chat.default_dept_id（>0）时以其为准——但必须仍启用，禁用科室视为整体知识库下线，
+// 不得作为问答默认范围（配置指向已禁用科室时退化为第一个公共启用科室）；
 // 否则取第一个 is_public 且启用的科室（ListPublic 按 name 排序，生产即"公共科室"）。
 // 无可用科室时返回零值 Department（ID=0），不返回错误——由上层决定是否放行。
 func (r *BaseDepartmentResolver) ResolveDefault(ctx context.Context) (rag.Department, error) {
@@ -96,8 +98,8 @@ func (r *BaseDepartmentResolver) ResolveDefault(ctx context.Context) (rag.Depart
 		if err != nil {
 			return rag.Department{}, err
 		}
-		if d != nil {
-			return rag.Department{ID: d.ID, Name: d.Name}, nil
+		if d != nil && d.IsActive {
+			return rag.Department{ID: d.ID, Name: d.Name, IsActive: true}, nil
 		}
 	}
 	depts, err := r.repo.ListPublic(ctx)
@@ -106,7 +108,7 @@ func (r *BaseDepartmentResolver) ResolveDefault(ctx context.Context) (rag.Depart
 	}
 	for _, d := range depts {
 		if d.IsActive {
-			return rag.Department{ID: d.ID, Name: d.Name}, nil
+			return rag.Department{ID: d.ID, Name: d.Name, IsActive: true}, nil
 		}
 	}
 	return rag.Department{}, nil

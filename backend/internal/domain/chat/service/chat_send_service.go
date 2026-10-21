@@ -708,6 +708,9 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 		if err != nil {
 			return nil, err
 		}
+		if err := s.assertDeptOnline(ctx, deptID); err != nil {
+			return nil, err
+		}
 		return &Session{
 			SID:      sid,
 			DeptID:   deptID,
@@ -729,6 +732,9 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 			effDeptID = &d.ID
 		}
 	}
+	if err := s.assertDeptOnline(ctx, effDeptID); err != nil {
+		return nil, err
+	}
 	store := newDBSessionStore(s.conv, s.msg, s.crisis, s.crisisNotifier, s.tx, conv)
 	return &Session{
 		SID:    conv.ID.String(),
@@ -738,6 +744,24 @@ func (s *ChatSendService) buildSession(ctx context.Context, in StreamInput) (*Se
 		DeptName: s.deptNameByID(ctx, effDeptID),
 		store:    store,
 	}, nil
+}
+
+// assertDeptOnline 复核检索科室仍在线：科室禁用 = 该科室整体知识库下线，
+// 已锁定（或默认）到该科室的会话不得继续静默作答——医疗场景宁可明确失败，
+// 也不在已下线的知识域里生成答案。科室不存在（已删除）同样视为不可用。
+// nil 表示不限定科室（全部科室检索），由检索层按启用状态过滤，无需校验。
+func (s *ChatSendService) assertDeptOnline(ctx context.Context, deptID *int64) error {
+	if deptID == nil {
+		return nil
+	}
+	d, err := s.dept.ResolveByID(ctx, *deptID)
+	if err != nil {
+		return fmt.Errorf("resolve dept online status: %w", err)
+	}
+	if d.ID == 0 || !d.IsActive {
+		return apperrors.Conflict("CHAT_DEPT_INACTIVE", "所选科室的知识库已停用，请返回重新选择科室")
+	}
+	return nil
 }
 
 // deptNameByID 按科室 id 取名（best-effort，供统一理解与审查作为语境提示）。

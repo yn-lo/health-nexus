@@ -8,6 +8,30 @@ import (
 	"health-nexus/internal/shared/constants"
 )
 
+// TestOnlineDepartmentSQL_ExcludesInactiveDepartments 科室禁用 = 整体知识库下线：
+// 公开列表/精选/详情与 RAG 检索共用的可见性条件必须排除所属科室已禁用的文章，
+// 同时保留 department_id 为空的全院公共知识（schema 允许 NULL）。
+func TestOnlineDepartmentSQL_ExcludesInactiveDepartments(t *testing.T) {
+	withAlias := onlineDepartmentSQL("a")
+	for _, want := range []string{
+		"a.department_id IS NULL",
+		"FROM departments d",
+		"d.is_active = false",
+	} {
+		if !strings.Contains(withAlias, want) {
+			t.Errorf("科室在线条件缺少 %q：\n%s", want, withAlias)
+		}
+	}
+
+	noAlias := onlineDepartmentSQL("")
+	if !strings.Contains(noAlias, "department_id IS NULL") {
+		t.Errorf("无别名（UPDATE 语句）未兼容 department_id 为空：\n%s", noAlias)
+	}
+	if strings.Contains(noAlias, "a.department_id") {
+		t.Errorf("无别名场景不得带上别名 a.：\n%s", noAlias)
+	}
+}
+
 // TestApplyUpdateFields_ContentChangeGuardsReReview P1：内容变更时，状态回退重新审核的判定
 // 必须写在 UPDATE 语句内、按行**当前**状态求值（CASE），不能依赖服务端读取时的状态快照——
 // 否则"作者读到 pending、管理员随后审核发布、作者的写才提交"会让未审核的新正文保持

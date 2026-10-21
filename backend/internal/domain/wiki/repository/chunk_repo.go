@@ -203,6 +203,7 @@ func (r *ChunkRepo) SearchByVector(
 	// 避免并发重建写入的超前版本切片（新内容尚未审核）被检索命中。
 	// 有效期与逾期策略：显式过期（valid_until）的资料一律退出检索；
 	// 高风险（用药/检查准备等）且已逾期的资料同样退出（普通宣教逾期仅标记待复审，仍可命中）。
+	// 科室停用：所属科室已禁用的文章整体知识库下线，一律退出候选库（含"全部科室"检索）。
 	sql := fmt.Sprintf(`SELECT %s,
 		1 - (c.embedding <=> $1) AS score
 		FROM article_chunks c
@@ -215,11 +216,12 @@ func (r *ChunkRepo) SearchByVector(
 		  AND (a.status = '%s' OR (a.status = '%s' AND a.published_at IS NOT NULL))
 		  AND (a.valid_until IS NULL OR a.valid_until > now())
 		  AND NOT (a.published_content_risk = '%s' AND a.review_overdue = true)
+		  AND %s
 		  AND %s%s%s
 		ORDER BY c.embedding <=> $1
 		LIMIT $2`, chunkSearchColumns,
 		constants.ArticleStatusPublished, constants.ArticleStatusPending, entity.ContentRiskHigh,
-		visSQL, thresholdSQL, modelSQL)
+		onlineDepartmentSQL("a"), visSQL, thresholdSQL, modelSQL)
 
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, sql, args...)
 	if err != nil {

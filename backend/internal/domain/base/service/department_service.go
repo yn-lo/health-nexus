@@ -135,10 +135,12 @@ func (s *DepartmentService) ListPublic(ctx context.Context) ([]DepartmentDTO, er
 // effectiveDefaultDeptID 计算默认责任科室 id：chat.default_dept_id 优先；
 // 未配置（<=0）或配置科室不在列表时，取列表中第一个 is_public 且启用的科室。
 // 口径需与 adapter.BaseDepartmentResolver.ResolveDefault 保持一致。
+// 配置的默认科室已禁用时不得继续标记为 is_default（禁用=整体知识库下线），
+// 前端据此预选科室也就不会落到一个无法问答的科室上。
 func (s *DepartmentService) effectiveDefaultDeptID(depts []*entity.Department) int64 {
 	if s.defaultDeptID > 0 {
 		for _, d := range depts {
-			if d.ID == s.defaultDeptID {
+			if d.ID == s.defaultDeptID && d.IsActive {
 				return d.ID
 			}
 		}

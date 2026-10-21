@@ -623,7 +623,7 @@ func newTestChatSendService(
 	crisis *mockCrisisPort,
 ) *ChatSendService {
 	t.Helper()
-	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科"}}
+	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科", IsActive: true}}
 	safetyIn := rag.NewDefaultInputSafetyFilter(nil) // nil provider=默认关键词
 	safetyOut := rag.NewDefaultOutputSafetyFilter(nil)
 	locker := &mockLockProvider{}
@@ -1253,7 +1253,7 @@ func newTestChatSendServiceWithAssessor(
 	crisis *mockCrisisPort,
 ) *ChatSendService {
 	t.Helper()
-	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科"}}
+	dept := &mockDeptResolver{dept: rag.Department{ID: 1, Name: "内科", IsActive: true}}
 	safetyIn := rag.NewDefaultInputSafetyFilter(nil)
 	safetyOut := rag.NewDefaultOutputSafetyFilter(nil)
 	locker := &mockLockProvider{}

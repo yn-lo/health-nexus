@@ -8,9 +8,11 @@ package rag
 import "context"
 
 // Department 跨域科室 DTO。仅包含 chat 域需要的字段。
+// IsActive=false 表示科室已禁用——该科室整体知识库下线，不得再作为检索范围。
 type Department struct {
-	ID   int64
-	Name string
+	ID       int64
+	Name     string
+	IsActive bool
 }
 
 // DepartmentResolver 跨域：base 域实现。
@@ -25,9 +27,9 @@ type DepartmentResolver interface {
 	// nil 或 0 表示"全部科室"（不限定）；具体 id 不在公共科室列表中返回 403。
 	// 匿名用户不得访问非公共科室（与患者端"公共科室"可见性一致）。
 	ResolveForAnonymous(ctx context.Context, selectedDeptID *int64) (Department, error)
-	// ResolveByID 按科室 id 精确取名，用于会话已锁定、续聊未携带 selected_dept_id 时回填科室名
-	// （供统一理解与审查作为语境提示）。仅取名，不做可访问性校验；
-	// 未找到返回零值 Department（ID=0），不返回错误。
+	// ResolveByID 按科室 id 精确取名并返回启用状态，用于会话已锁定、续聊未携带
+	// selected_dept_id 时回填科室名（供统一理解与审查作为语境提示），以及复核该科室是否仍在线。
+	// 不做可访问性校验；未找到返回零值 Department（ID=0），不返回错误。
 	ResolveByID(ctx context.Context, deptID int64) (Department, error)
 	// ResolveDefault 返回问答默认责任科室：优先配置的 chat.default_dept_id，
 	// 未配置（<=0）时取第一个 is_public 且启用的科室。
