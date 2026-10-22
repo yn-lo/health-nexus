@@ -13,7 +13,7 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
-// homeFeaturedLimit 首页热门文章展示数量。
+// homeFeaturedLimit 首页置顶文章展示数量。
 const homeFeaturedLimit = 3
 
 // PublicHandler 公开文章端点（匿名可访问，契约 §4.1/4.2）。

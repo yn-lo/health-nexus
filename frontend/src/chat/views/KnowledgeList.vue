@@ -38,7 +38,6 @@ const PAGE_SIZE = 20
 const SEARCH_DEBOUNCE_MS = 300
 
 const articles = ref<ArticlePublic[]>([])
-const featuredArticles = ref<ArticlePublic[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
@@ -55,25 +54,7 @@ const tabOptions = computed(() =>
   departments.value.map((d) => ({ id: d.id, label: d.name })),
 )
 
-/** 置顶文章（仅 featured_rank > 0 才是医护端设置的置顶；搜索时不提升置顶） */
-const pinnedArticles = computed(() => {
-  if (searchQuery.value.trim()) return []
-  return featuredArticles.value.filter((a) => a.featured_rank > 0)
-})
-
-const pinnedIds = computed(() => new Set(pinnedArticles.value.map((a) => a.id)))
-
-/** 单一列表：置顶在前 + 全部文章（按 id 去重，避免置顶文章在列表里重复出现） */
-const mergedArticles = computed(() => {
-  const seen = new Set<number>()
-  const merged: ArticlePublic[] = []
-  for (const article of [...pinnedArticles.value, ...articles.value]) {
-    if (seen.has(article.id)) continue
-    seen.add(article.id)
-    merged.push(article)
-  }
-  return merged
-})
+/** 置顶排序由服务端处理：选定具体科室时置顶文章按科室顺序排在最前；全部科室保持发布时间序。 */
 
 /** 跳转文章详情 */
 function goArticle(id: number) {
@@ -89,11 +70,6 @@ function toggleExpand(id: number) {
 }
 
 /** 拉取指定页（按当前科室 + 搜索词），拼接或替换 articles */
-async function fetchFeatured() {
-  const res = await wikiApi.listFeaturedArticles(activeDepartmentId.value || undefined)
-  featuredArticles.value = res.items
-}
-
 async function fetchPage(targetPage: number, replace: boolean) {
   const params: { page: number; page_size: number; department_id?: number; search?: string } = {
     page: targetPage,
@@ -117,7 +93,7 @@ async function fetchPage(targetPage: number, replace: boolean) {
 async function onRefresh() {
   refreshing.value = true
   try {
-    await Promise.all([fetchPage(1, true), fetchFeatured()])
+    await fetchPage(1, true)
   } catch {
     showFailToast('刷新失败')
   } finally {
@@ -169,7 +145,7 @@ watch(loading, (val) => {
 async function onDepartmentChange() {
   loading.value = true
   try {
-    await Promise.all([fetchPage(1, true), fetchFeatured()])
+    await fetchPage(1, true)
   } catch {
     showFailToast('加载失败')
   } finally {
@@ -203,7 +179,6 @@ onMounted(async () => {
     // 并行拉取文章和科室列表；科室失败时仅退化分类筛选，不阻塞文章展示
     await Promise.all([
       fetchPage(1, true),
-      fetchFeatured(),
       fetchDepartments().catch(() => {}),
     ])
   } catch {
@@ -268,7 +243,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 分隔标题 -->
-      <div v-if="!loading && mergedArticles.length" class="flex items-center justify-between mb-[var(--spacer-12)]">
+      <div v-if="!loading && articles.length" class="flex items-center justify-between mb-[var(--spacer-12)]">
         <h2 class="truncate font-heading text-heading-sm font-semibold text-text">
           {{ searchQuery.trim() ? '搜索结果' : '全部文章' }}
         </h2>
@@ -277,18 +252,18 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <!-- 文章列表 - 置顶文章排在最前，仅用图标底色区分，不再单独分区 -->
+      <!-- 文章列表 - 具体科室时置顶由服务端排在前面；全部科室按时间序，置顶仅用图标底色区分 -->
       <DsPullRefresh v-if="!loading" :loading="refreshing" @refresh="onRefresh">
         <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden shadow-[var(--shadow-xs)]">
           <div
-            v-for="article in mergedArticles"
+            v-for="article in articles"
             :key="article.id"
             class="ds-list-item--divider"
           >
             <KnowledgeListItem
               :article="article"
               :icon="BookOpen"
-              :tone="pinnedIds.has(article.id) ? 'alert' : 'brand'"
+              :tone="article.featured_rank > 0 ? 'alert' : 'brand'"
               :expanded="expandedIds.has(article.id)"
               @open="goArticle"
               @toggle="toggleExpand"
@@ -301,14 +276,14 @@ onBeforeUnmount(() => {
           <div v-if="listLoading" class="ds-loading py-[var(--spacer-8)]">
             <span class="ds-loading__spinner ds-loading__spinner--sm" />
           </div>
-          <p v-else-if="listFinished && mergedArticles.length" class="text-center text-body-xs text-text-tertiary m-0 py-[var(--spacer-8)]">
+          <p v-else-if="listFinished && articles.length" class="text-center text-body-xs text-text-tertiary m-0 py-[var(--spacer-8)]">
             没有更多了
           </p>
         </div>
       </DsPullRefresh>
 
       <!-- 空状态 - v3 风格：图标 + 文案 -->
-      <EmptyState v-if="!loading && mergedArticles.length === 0" :text="searchQuery.trim() ? '未找到相关文章' : '暂无文章'" />
+      <EmptyState v-if="!loading && articles.length === 0" :text="searchQuery.trim() ? '未找到相关文章' : '暂无文章'" />
     </section>
   </div>
 </template>

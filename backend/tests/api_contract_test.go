@@ -177,6 +177,9 @@ func (stubArticleRepo) ListFeatured(context.Context, *int64, int) ([]*entity.Art
 	return nil, nil
 }
 func (stubArticleRepo) SetFeaturedRank(context.Context, int64, int) error { return nil }
+func (stubArticleRepo) ListFeaturedRanksByDept(context.Context, int64) ([]entity.FeaturedRankEntry, error) {
+	return nil, nil
+}
 func (stubArticleRepo) ListForStaff(context.Context, repository.ListStaffFilter, int, int) ([]*entity.Article, int64, error) {
 	return nil, 0, nil
 }
@@ -261,7 +264,7 @@ var publicEndpoints = []endpoint{
 	{http.MethodGet, "/uploads/" + testUUID},
 }
 
-// protectedEndpoints 需 JWT 的端点（68 个）。
+// protectedEndpoints 需 JWT 的端点（69 个）。
 var protectedEndpoints = []endpoint{
 	// auth 已登录
 	{http.MethodPost, "/api/auth/logout"},
@@ -298,6 +301,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/articles/1/archive"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/unarchive"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/featured"},
+	{http.MethodPost, "/api/staff/wiki/articles/1/featured-move"},
 	{http.MethodGet, "/api/staff/wiki/articles/1/chunks"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/revectorize"},
 	{http.MethodPost, "/api/staff/wiki/uploads"},
@@ -351,7 +355,7 @@ var protectedEndpoints = []endpoint{
 	{http.MethodGet, "/api/staff/config/status"},
 }
 
-// staffEndpoints 需 JWT + Staff 角色的端点（18 个）。
+// staffEndpoints 需 JWT + Staff 角色的端点（19 个）。
 var staffEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/articles"},
 	{http.MethodGet, "/api/staff/wiki/articles"},
@@ -364,6 +368,7 @@ var staffEndpoints = []endpoint{
 	{http.MethodPost, "/api/staff/wiki/articles/1/archive"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/unarchive"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/featured"},
+	{http.MethodPost, "/api/staff/wiki/articles/1/featured-move"},
 	{http.MethodGet, "/api/staff/wiki/articles/1/chunks"},
 	{http.MethodPost, "/api/staff/wiki/articles/1/revectorize"},
 	{http.MethodPost, "/api/staff/wiki/uploads"},

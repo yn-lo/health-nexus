@@ -406,3 +406,15 @@ func (h *StaffArticleHandler) SetFeatured(w http.ResponseWriter, r *http.Request
 			return h.svc.SetFeaturedRank(ctx, id, req.Rank, actor)
 		})
 }
+
+type moveFeaturedRequest struct {
+	Direction string `json:"direction"`
+}
+
+// MoveFeatured 在本科室置顶序列内上移/下移一篇文章。
+func (h *StaffArticleHandler) MoveFeatured(w http.ResponseWriter, r *http.Request) {
+	actorIDAction(w, r, parseArticleID,
+		func(ctx context.Context, id int64, req *moveFeaturedRequest, actor service.Actor) error {
+			return h.svc.MoveFeatured(ctx, id, req.Direction, actor)
+		})
+}

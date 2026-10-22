@@ -89,6 +89,7 @@ func (rt *Router) Mount(r chi.Router) {
 			r.Post("/{article_id}/archive", rt.staff.Archive)
 			r.Post("/{article_id}/unarchive", rt.staff.Unarchive)
 			r.Post("/{article_id}/featured", rt.staff.SetFeatured)
+			r.Post("/{article_id}/featured-move", rt.staff.MoveFeatured)
 			r.Get("/{article_id}/chunks", rt.staff.Chunks)
 			r.Post("/{article_id}/revectorize", rt.staff.Revectorize)
 		})

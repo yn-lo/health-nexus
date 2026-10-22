@@ -76,7 +76,8 @@
 | `POST` | `/api/staff/wiki/articles/{id}/submit` | — | 提交审核 |
 | `POST` | `/api/staff/wiki/articles/{id}/approve` | Admin only | 审核通过（服务层 assertCanReview） |
 | `POST` | `/api/staff/wiki/articles/{id}/reject` | Admin only | 审核拒绝（同上） |
-| `POST` | `/api/staff/wiki/articles/{id}/featured` | Admin only | 设置热门 |
+| `POST` | `/api/staff/wiki/articles/{id}/featured` | Admin only | 设置置顶 |
+| `POST` | `/api/staff/wiki/articles/{id}/featured-move` | Admin only | 调整置顶顺序（up/down） |
 | `POST` | `/api/staff/wiki/articles/{id}/archive` | — | 归档文章 |
 | `POST` | `/api/staff/wiki/articles/{id}/unarchive` | — | 取消归档 |
 | `GET` | `/api/staff/wiki/articles/{id}/chunks` | — | 查看文章切片 |
@@ -119,7 +120,8 @@
 | 编辑文章 | 任意 | 仅作者本人 | 仅作者本人 |
 | 删除文章 | 任意 | 仅作者本人 | 仅作者本人 |
 | 审核文章 | 全部可审 | 仅本科室 | **无权** |
-| 设置热门 | 全部 | 仅本科室 | **无权** |
+| 设置置顶 | 全部 | 仅本科室 | **无权** |
+| 调整置顶顺序 | 全部 | 仅本科室 | **无权** |
 | 引用申请 | 任意目标科室 | 仅目标为本科室 | 仅目标为本科室 |
 | 引用审批/撤销 | 任意 | 仅源科室（纳入须源科室管理员审批） | **无权** |
 

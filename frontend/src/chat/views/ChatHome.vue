@@ -41,12 +41,18 @@ const assistantName = computed(() =>
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0, includeAll: false })
 
 const { showToast } = useDsToast()
+/** 提示当前生效的知识库；科室未加载完成时静默，等 name watcher 首次就绪再提示 */
+function notifyCurrentDept() {
+  const name = activeDepartment.value?.name
+  if (name) showToast(`当前知识库：${name}`)
+}
+
 // 知识库提示改为一过式 toast：进入页面（科室加载完成）自动提示一次，切换科室后再提示一次。
 // 监听 name 而非整个对象，避免科室数组被重新赋值时同样的名字重复弹窗。
 watch(
  () => activeDepartment.value?.name,
  (name) => {
-  if (name) showToast(`当前知识库：${name}`)
+  if (name) notifyCurrentDept()
  },
 )
 
@@ -55,6 +61,11 @@ const showDeptPicker = ref(false)
 
 /** 视图模式：聊天 / 知识库 — 同步到 URL query，跨导航（如文章详情返回）可恢复 */
 const { activeMode, setMode } = useChatMode()
+
+// 从知识库切回聊天模式时，即使科室没有变化也提示一次当前知识库
+watch(activeMode, (mode, prev) => {
+  if (mode === 'chat' && prev === 'knowledge') notifyCurrentDept()
+})
 
 interface QuickAction {
  label: string
@@ -84,10 +95,15 @@ function onHistoryNewChat() {
 
 function openDeptPicker() {
  showDeptPicker.value = true
+ // 打开科室选择器即提示当前知识库，便于确认当前生效范围（不依赖是否有值变化）
+ notifyCurrentDept()
 }
 
 function onDeptSelect(id: number) {
+ const unchanged = id === selectedDepartmentId.value
  selectDepartment(id)
+ // 选择同一科室不会触发 name watcher，这里补一次提示
+ if (unchanged) notifyCurrentDept()
 }
 
 function sendMessage(text: string) {

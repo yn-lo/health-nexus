@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { MessageSquare, ChevronRight, SquarePen, Trash2 } from '@lucide/vue'
+import { MessageSquare, Settings, SquarePen, PanelRightClose, Trash2 } from '@lucide/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useChatStore, removeAnonSession } from '@/stores/chat'
 import { deleteAnonConversation } from '@/shared/api/chat'
@@ -50,6 +50,12 @@ watch(() => props.visible, (visible) => {
   else chatStore.fetchConversations()
 })
 
+/** 是否医护角色：仅医护可从对话抽屉直达工作台 */
+const isStaff = computed(() => {
+  const role = getAccessToken() ? (getUserStored()?.role as UserRole) : null
+  return !!role && STAFF_ROLES.includes(role)
+})
+
 function onClose() {
   emit('update:visible', false)
 }
@@ -61,12 +67,17 @@ function onSelect(id: string) {
 
 function goProfile() {
   onClose()
-  const role = getAccessToken() ? (getUserStored()?.role as UserRole) : null
-  if (role && STAFF_ROLES.includes(role)) {
+  if (isStaff.value) {
     window.location.href = '/staff/profile' // ponytail:allow-location 跨 MPA 跳转
   } else {
     router.push({ name: 'personal-center' })
   }
+}
+
+/** 工作台入口：医护跨 MPA 回到医护端首页 */
+function goWorkbench() {
+  onClose()
+  window.location.href = '/staff' // ponytail:allow-location 跨 MPA 跳转
 }
 
 async function onDelete(id: string) {
@@ -116,11 +127,8 @@ async function loadMore() {
       <!-- 顶部栏：左侧折叠关闭 + 用户信息区 -->
       <div class="history-drawer__topbar">
         <!-- 折叠按钮：点击关闭整个抽屉 -->
-        <button type="button" class="history-drawer__fold" aria-label="关闭抽屉" @click="onClose">
-          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" aria-hidden="true">
-            <path d="M165.312 144a21.312 21.312 0 0 0-21.312 21.312v693.376c0 11.776 9.6 21.312 21.312 21.312h693.376c11.776 0 21.312-9.6 21.312-21.312V165.312a21.312 21.312 0 0 0-21.312-21.312H165.312zM48 165.312C48 100.544 100.48 48 165.312 48h693.376c64.768 0 117.312 52.48 117.312 117.312v693.376c0 64.768-52.48 117.312-117.312 117.312H165.312A117.312 117.312 0 0 1 48 858.688V165.312z"/>
-            <path d="M336 896V128h96v768h-96zM716.608 392.704a48 48 0 0 1 0 67.904L665.216 512l51.392 51.392a48 48 0 1 1-67.904 67.84L563.392 545.92a48 48 0 0 1 0-67.84l85.312-85.376a48 48 0 0 1 67.84 0z"/>
-          </svg>
+        <button type="button" class="history-drawer__fold" aria-label="收起抽屉" @click="onClose">
+          <PanelRightClose :size="18" />
         </button>
         <!-- 用户信息区：头像 + 用户名 + 个人中心（整卡可点击） -->
         <button type="button" class="history-drawer__user" aria-label="个人中心" @click="goProfile">
@@ -129,7 +137,16 @@ async function loadMore() {
             <span class="history-drawer__user-name">{{ user?.username }}</span>
             <span class="history-drawer__user-sub">{{ userRoleLabel }}</span>
           </span>
-          <ChevronRight :size="18" class="history-drawer__profile" />
+        </button>
+        <!-- 工作台入口：仅医护可见，点击直接回到医护端工作台 -->
+        <button
+          v-if="isStaff"
+          type="button"
+          class="history-drawer__workbench"
+          aria-label="前往工作台"
+          @click="goWorkbench"
+        >
+          <Settings :size="18" />
         </button>
       </div>
 
@@ -157,7 +174,7 @@ async function loadMore() {
           :key="conv.id"
         >
           <li
-            class="ds-list-item"
+            class="ds-list-item ds-list-item--compact"
             :class="{ 'ds-list-item--active': conv.id === activeConvId }"
             @click="onSelect(conv.id)"
           >
@@ -269,9 +286,23 @@ async function loadMore() {
   color: var(--text-tertiary);
 }
 
-.history-drawer__profile {
+/* 工作台入口：仅医护可见的 40px 点击区，与折叠按钮同尺寸 */
+.history-drawer__workbench {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
   color: var(--icon-tertiary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+.history-drawer__workbench:active {
+  background: var(--bg-overlay-l1);
 }
 
 /* ── 新对话入口：整行按钮（Qwen 风格） ─────────────────── */

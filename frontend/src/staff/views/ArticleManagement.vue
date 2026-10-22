@@ -14,7 +14,7 @@
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Trash2, Search, FileText, ChevronRight, Archive, ArchiveRestore, Eye, PenLine, Star } from '@lucide/vue'
+import { Plus, Trash2, Search, FileText, ChevronUp, ChevronDown, Archive, ArchiveRestore, Eye, PenLine, Pin } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, StatRow } from '@/shared/components'
 import { wikiApi, fmtShortDate, fmtCompact, stripHtml } from '@/shared'
@@ -183,31 +183,81 @@ async function handleUnarchive(id: number) {
  }
 }
 
+/** 科室内置顶顺序：rank > 0 即置顶，1 最靠前；置顶不限数量。 */
+function nextFeaturedRank(article: ArticleStaff): number {
+  const ranks = articles.value
+    .filter((a) => a.department_id === article.department_id && a.featured_rank > 0)
+    .map((a) => a.featured_rank)
+  return ranks.length ? Math.max(...ranks) + 1 : 1
+}
+
 async function handleFeatured(article: ArticleStaff, rank: number) {
- try {
- await wikiApi.setArticleFeatured(article.id, rank)
- if (rank > 0) {
- for (const item of articles.value) {
- if (item.department_id === article.department_id && item.featured_rank === rank) item.featured_rank = 0
- }
- }
- article.featured_rank = rank
- showSuccessToast(rank ? `已设为热门 ${rank}` : '已取消热门')
- } catch (e) {
- showFailToast(errmsg(e, '设置热门失败'))
- }
+  try {
+    await wikiApi.setArticleFeatured(article.id, rank)
+    if (rank > 0) {
+      for (const item of articles.value) {
+        if (item.department_id === article.department_id && item.featured_rank === rank) item.featured_rank = 0
+      }
+    }
+    article.featured_rank = rank
+    showSuccessToast(rank ? '已置顶' : '已取消置顶')
+  } catch (e) {
+    showFailToast(errmsg(e, rank ? '设置置顶失败' : '取消置顶失败'))
+  }
+}
+
+/** 置顶开关：已置顶→取消；未置顶→排到本科室置顶序列末尾 */
+async function toggleFeatured(article: ArticleStaff) {
+  if (article.featured_rank > 0) {
+    await handleFeatured(article, 0)
+    return
+  }
+  await handleFeatured(article, nextFeaturedRank(article))
+}
+
+/** 同科室置顶文章，按顺序排列（用于上移/下移的边界判断） */
+function featuredSiblings(article: ArticleStaff): ArticleStaff[] {
+  return articles.value
+    .filter((a) => a.department_id === article.department_id && a.featured_rank > 0)
+    .sort((a, b) => a.featured_rank - b.featured_rank)
+}
+
+function canMove(article: ArticleStaff, direction: 'up' | 'down'): boolean {
+  const siblings = featuredSiblings(article)
+  const index = siblings.findIndex((a) => a.id === article.id)
+  return direction === 'up' ? index > 0 : index >= 0 && index < siblings.length - 1
+}
+
+/** 上移/下移：服务端在事务内交换顺序，成功后以服务端列表为准重新拉取 */
+const movingId = ref<number | null>(null)
+async function moveFeatured(article: ArticleStaff, direction: 'up' | 'down') {
+  if (movingId.value !== null) return
+  movingId.value = article.id
+  try {
+    await wikiApi.moveArticleFeatured(article.id, direction)
+    await loadArticles()
+    showSuccessToast(direction === 'up' ? '已上移' : '已下移')
+  } catch (e) {
+    showFailToast(errmsg(e, '调整置顶顺序失败'))
+  } finally {
+    movingId.value = null
+  }
+}
+
+async function loadArticles() {
+  // ponytail: 拉取较大 page_size 以一次性加载本地过滤，折中；如文章数增长可改服务端分页 + tab 切换拉取。
+  const res = await wikiApi.listMyArticles({ page: 1, page_size: 100 })
+  articles.value = res.items
 }
 
 onMounted(async () => {
- loading.value = true
- try {
- // ponytail: 拉取较大 page_size 以一次性加载本地过滤，折中；如文章数增长可改服务端分页 + tab 切换拉取。
- const res = await wikiApi.listMyArticles({ page: 1, page_size: 100 })
- articles.value = res.items
- } catch (e) {
- showFailToast(errmsg(e, '加载失败'))
- } finally {
- loading.value = false
+  loading.value = true
+  try {
+    await loadArticles()
+  } catch (e) {
+    showFailToast(errmsg(e, '加载失败'))
+  } finally {
+    loading.value = false
  }
 })
 </script>
@@ -228,8 +278,8 @@ onMounted(async () => {
  </AppHeader>
 
  <!-- Hero 统计卡 - 品牌渐变软底，创造视觉锤 -->
- <section class="px-[var(--spacer-16)] py-[var(--spacer-16)]">
- <div class="ds-card p-[var(--spacer-20)] bg-[var(--ai-gradient-soft)]">
+ <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)] pb-[var(--spacer-8)]">
+ <div class="ds-card px-[var(--spacer-16)] py-[var(--spacer-8)] bg-[var(--ai-gradient-soft)]">
  <StatRow
  :stats="[
  { value: totalCount, label: '总文章' },
@@ -240,9 +290,10 @@ onMounted(async () => {
  </div>
  </section>
 
- <!-- 搜索栏 - v3 风格：硬编码 rgba 改用 token，扩大触摸高度 -->
- <section class="px-[var(--spacer-16)] pb-[var(--spacer-12)]">
- <div class="ds-search-box ds-search-box--md">
+ <!-- 搜索 + 状态筛选同一行，减少纵向占用 -->
+ <section class="px-[var(--spacer-16)] pb-[var(--spacer-8)]">
+ <div class="flex items-center gap-[var(--spacer-8)]">
+ <div class="ds-search-box ds-search-box--md min-w-0 flex-1">
  <Search class="h-4 w-4 shrink-0 text-icon-brand" />
  <input
  v-model="searchQuery"
@@ -252,57 +303,55 @@ onMounted(async () => {
  class="min-w-0 flex-1 border-none bg-transparent font-heading text-body-base text-text outline-none placeholder:text-text-tertiary"
  >
  </div>
- </section>
-
- <!-- 筛选标签页 - v4 风格：计数徽章（新建入口统一在 AppHeader 右侧） -->
- <section class="px-[var(--spacer-16)]">
-  <select v-model="activeTab" class="ds-input">
-   <option value="all">全部状态</option>
-   <option v-for="tab in tabItems.slice(1)" :key="tab.key" :value="tab.key">{{ tab.label }}（{{ statusCounts[tab.key] ?? 0 }}）</option>
-  </select>
+ <div class="w-[140px] shrink-0">
+ <select v-model="activeTab" class="ds-input">
+ <option value="all">全部状态</option>
+ <option v-for="tab in tabItems.slice(1)" :key="tab.key" :value="tab.key">{{ tab.label }}（{{ statusCounts[tab.key] ?? 0 }}）</option>
+ </select>
+ </div>
+ </div>
  </section>
 
  <!-- 文章列表 -->
- <section class="px-[var(--spacer-16)] py-[var(--spacer-16)]">
+ <section class="px-[var(--spacer-16)] pb-[var(--spacer-8)]">
  <!-- 骨架屏 - loading 期间显示，形态与真实卡片一致 -->
- <div v-if="loading" class="flex flex-col gap-[var(--spacer-12)]">
+ <div v-if="loading" class="flex flex-col gap-[var(--spacer-8)]">
  <div
  v-for="i in skeletonRows"
  :key="i"
- class="rounded-[var(--radius-12)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] p-[var(--spacer-16)]"
+ class="rounded-[var(--radius-12)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] p-[var(--spacer-12)]"
  >
- <div class="flex gap-[var(--spacer-12)]">
- <div class="h-12 w-12 rounded-full bg-[var(--bg-overlay-l2)] skeleton-pulse shrink-0" />
+ <div class="flex gap-[var(--spacer-8)]">
+ <div class="h-8 w-8 rounded-full bg-[var(--bg-overlay-l2)] skeleton-pulse shrink-0" />
  <div class="flex-1 space-y-[var(--spacer-6)]">
  <div class="h-4 w-4/5 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)] skeleton-pulse" />
- <div class="h-4 w-3/5 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l2)] skeleton-pulse" />
  <div class="h-3 w-1/2 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] skeleton-pulse" />
  </div>
  <div class="h-5 w-14 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] skeleton-pulse shrink-0" />
  </div>
- <div class="mt-[var(--spacer-12)] border-t border-[var(--border-neutral-l1)] pt-[var(--spacer-12)]">
+ <div class="mt-[var(--spacer-8)]">
  <div class="h-4 w-24 rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] skeleton-pulse" />
  </div>
  </div>
  </div>
 
- <!-- 块状卡片列表：标题两行截断 + 摘要 + meta 独占整行 + 操作区下沉到 footer，告别单行挤压 -->
- <div v-else-if="filteredArticles.length > 0" class="flex flex-col gap-[var(--spacer-12)]">
+ <!-- 紧凑块状卡片：标题单行截断 + 摘要单行 + meta 一行 + 操作区 -->
+ <div v-else-if="filteredArticles.length > 0" class="flex flex-col gap-[var(--spacer-8)]">
  <article
  v-for="article in filteredArticles"
  :key="article.id"
- class="ds-list-item ds-list-item--block"
+ class="ds-list-item ds-list-item--block ds-list-item--compact"
  @click="goEdit(article.id)"
  >
  <div class="ds-list-item__head">
- <div class="flex min-w-0 flex-1 items-center gap-[var(--spacer-12)]">
+ <div class="flex min-w-0 flex-1 items-center gap-[var(--spacer-8)]">
  <span
  class="ds-list-item__icon"
  :class="statusIconVariant[article.status]"
  >
- <FileText :size="20" />
+ <FileText :size="18" />
  </span>
- <span class="min-w-0 font-heading text-heading-sm font-semibold text-text line-clamp-2">
+ <span class="min-w-0 font-heading text-heading-sm font-semibold text-text line-clamp-1">
  {{ article.title }}
  </span>
  </div>
@@ -311,7 +360,7 @@ onMounted(async () => {
 
  <p v-if="article.summary" class="ds-list-item__summary">{{ stripHtml(article.summary) }}</p>
 
- <div class="ds-list-item__meta mt-[var(--spacer-8)]">
+ <div class="ds-list-item__meta">
  <span class="truncate">{{ article.department_name }}</span>
  <span class="text-[var(--border-neutral-l2)]" aria-hidden="true">·</span>
  <span class="shrink-0">{{ metaText(article) }}</span>
@@ -344,19 +393,37 @@ onMounted(async () => {
  >
  <ArchiveRestore :size="16" />
  </button>
- <template v-if="canManageFeatured && article.status === 'published'">
+ <template v-if="canManageFeatured && article.status === 'published' && article.featured_rank > 0">
  <button
- v-for="rank in [1, 2, 3]"
- :key="rank"
  type="button"
- class="ds-list-item__action-btn"
- :class="article.featured_rank === rank ? 'text-text-brand' : ''"
- :aria-label="`设为热门 ${rank}`"
- @click="handleFeatured(article, article.featured_rank === rank ? 0 : rank)"
+ class="ds-list-item__action-btn disabled:opacity-30"
+ aria-label="置顶上移"
+ :disabled="movingId !== null || !canMove(article, 'up')"
+ @click="moveFeatured(article, 'up')"
  >
- <Star :size="16" :fill="article.featured_rank === rank ? 'currentColor' : 'none'" />
+ <ChevronUp :size="16" />
+ </button>
+ <button
+ type="button"
+ class="ds-list-item__action-btn disabled:opacity-30"
+ aria-label="置顶下移"
+ :disabled="movingId !== null || !canMove(article, 'down')"
+ @click="moveFeatured(article, 'down')"
+ >
+ <ChevronDown :size="16" />
  </button>
  </template>
+ <button
+ v-if="canManageFeatured && article.status === 'published'"
+ type="button"
+ class="ds-list-item__action-btn"
+ :class="article.featured_rank > 0 ? 'text-text-brand' : ''"
+ :aria-label="article.featured_rank > 0 ? '取消置顶' : '置顶'"
+ :aria-pressed="article.featured_rank > 0"
+ @click="toggleFeatured(article)"
+ >
+ <Pin :size="16" :fill="article.featured_rank > 0 ? 'currentColor' : 'none'" />
+ </button>
  <button
  v-if="article.status !== 'deleted'"
  type="button"
@@ -367,10 +434,6 @@ onMounted(async () => {
  <Trash2 :size="16" />
  </button>
  </div>
- <span class="inline-flex items-center gap-[var(--spacer-2)] text-body-sm text-text-tertiary">
- 编辑
- <ChevronRight :size="16" class="text-icon-tertiary" />
- </span>
  </div>
  </article>
  </div>

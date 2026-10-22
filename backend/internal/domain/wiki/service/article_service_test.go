@@ -30,6 +30,12 @@ func (f *fakeTxRunner) WithTx(ctx context.Context, fn func(ctx context.Context) 
 	return fn(ctx)
 }
 
+// featuredCall 记录一次置顶顺序写入，供重排断言。
+type featuredCall struct {
+	id   int64
+	rank int
+}
+
 // mockArticleRepo 模拟 ArticleRepoPort。
 type mockArticleRepo struct {
 	article       *entity.Article
@@ -39,6 +45,9 @@ type mockArticleRepo struct {
 	softDeleteID  int64
 	featuredRank  int
 	featuredID    int64
+	// featuredCalls 记录逐次 SetFeaturedRank 调用，供置顶重排的三步交换断言。
+	featuredCalls   []featuredCall
+	featuredEntries []entity.FeaturedRankEntry
 	// 落库捕获：Create 的实体 / UpdateFields 的待更新字段，便于断言写入前已被规范化。
 	created      *entity.Article
 	updateFields repository.UpdateFields
@@ -68,7 +77,11 @@ func (m *mockArticleRepo) ListFeatured(_ context.Context, _ *int64, _ int) ([]*e
 func (m *mockArticleRepo) SetFeaturedRank(_ context.Context, id int64, rank int) error {
 	m.featuredID = id
 	m.featuredRank = rank
+	m.featuredCalls = append(m.featuredCalls, featuredCall{id: id, rank: rank})
 	return nil
+}
+func (m *mockArticleRepo) ListFeaturedRanksByDept(_ context.Context, _ int64) ([]entity.FeaturedRankEntry, error) {
+	return m.featuredEntries, nil
 }
 func (m *mockArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaffFilter, _, _ int) ([]*entity.Article, int64, error) {
 	return nil, 0, nil
@@ -1008,6 +1021,59 @@ func TestArticleService_SetFeaturedRank_RejectsUnauthorizedOrUnpublished(t *test
 	article.Status = constants.ArticleStatusPublished
 	if err := svc.SetFeaturedRank(context.Background(), article.ID, 1, Actor{UserID: 3, Role: constants.RoleDoctor, DeptID: deptID}); err == nil {
 		t.Fatal("非管理员设置热门应失败")
+	}
+}
+
+// 置顶不限数量：rank 只要求非负，不再受 0–3 上限约束；负值仍拒绝。
+func TestArticleService_SetFeaturedRank_AllowsUnlimitedRank(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{ID: 42, Status: constants.ArticleStatusPublished, DepartmentID: &deptID}
+	svc, repo, _, _, _ := buildSvc(article)
+	actor := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: deptID}
+
+	if err := svc.SetFeaturedRank(context.Background(), article.ID, 9, actor); err != nil {
+		t.Fatalf("第 9 位置顶应被允许: %v", err)
+	}
+	if repo.featuredRank != 9 {
+		t.Fatalf("置顶顺序未写入: %d", repo.featuredRank)
+	}
+	if err := svc.SetFeaturedRank(context.Background(), article.ID, -1, actor); err == nil {
+		t.Fatal("负的置顶顺序应被拒绝")
+	}
+}
+
+// MoveFeatured 采用"先腾位、再占位、后回填"三步交换，避免唯一索引在中间态冲突。
+func TestArticleService_MoveFeatured_SwapsRanks(t *testing.T) {
+	deptID := int64(10)
+	article := &entity.Article{
+		ID: 42, Status: constants.ArticleStatusPublished, DepartmentID: &deptID, FeaturedRank: 2,
+	}
+	svc, repo, _, _, tx := buildSvc(article)
+	repo.featuredEntries = []entity.FeaturedRankEntry{
+		{ArticleID: 1, Rank: 1},
+		{ArticleID: 42, Rank: 2},
+		{ArticleID: 7, Rank: 3},
+	}
+	actor := Actor{UserID: 2, Role: constants.RoleDeptAdmin, DeptID: deptID}
+
+	if err := svc.MoveFeatured(context.Background(), article.ID, "down", actor); err != nil {
+		t.Fatalf("下移失败: %v", err)
+	}
+	if !tx.called {
+		t.Fatal("置顶重排应在事务内执行")
+	}
+	want := []featuredCall{{id: 42, rank: 0}, {id: 7, rank: 2}, {id: 42, rank: 3}}
+	if len(repo.featuredCalls) != len(want) {
+		t.Fatalf("期望 %d 次顺序写入，实际 %d: %v", len(want), len(repo.featuredCalls), repo.featuredCalls)
+	}
+	for i := range want {
+		if repo.featuredCalls[i] != want[i] {
+			t.Fatalf("第 %d 次写入错误: want=%+v got=%+v", i, want[i], repo.featuredCalls[i])
+		}
+	}
+
+	if err := svc.MoveFeatured(context.Background(), article.ID, "sideways", actor); err == nil {
+		t.Fatal("非法 direction 应被拒绝")
 	}
 }
 

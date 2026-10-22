@@ -55,6 +55,7 @@ type ArticleRepoPort interface {
 	UpdateStatus(ctx context.Context, id int64, fromStatus, toStatus string, opts repository.StatusUpdateOpts) error
 	ListFeatured(ctx context.Context, departmentID *int64, limit int) ([]*entity.Article, error)
 	SetFeaturedRank(ctx context.Context, id int64, rank int) error
+	ListFeaturedRanksByDept(ctx context.Context, departmentID int64) ([]entity.FeaturedRankEntry, error)
 	SoftDelete(ctx context.Context, id int64) error
 }
 
@@ -331,9 +332,10 @@ func (s *ArticleService) ListFeatured(
 	return dtos, nil
 }
 
+// SetFeaturedRank 设置文章置顶顺序：0 = 取消置顶，>0 = 置顶且数值为科室内顺序（1 最靠前），不限数量。
 func (s *ArticleService) SetFeaturedRank(ctx context.Context, articleID int64, rank int, actor Actor) error {
-	if rank < 0 || rank > 3 {
-		return apperrors.Validation("WIKI_INVALID_FEATURED_RANK", "featured_rank 必须在 0 到 3 之间")
+	if rank < 0 {
+		return apperrors.Validation("WIKI_INVALID_FEATURED_RANK", "置顶顺序必须为非负整数")
 	}
 	return s.tx.WithTx(ctx, func(ctx context.Context) error {
 		a, err := s.repo.GetByID(ctx, articleID)
@@ -344,7 +346,7 @@ func (s *ArticleService) SetFeaturedRank(ctx context.Context, articleID int64, r
 			return err
 		}
 		if a.Status != constants.ArticleStatusPublished {
-			return apperrors.Conflict("WIKI_FEATURED_NOT_PUBLISHED", "仅已发布文章可设为热门")
+			return apperrors.Conflict("WIKI_FEATURED_NOT_PUBLISHED", "仅已发布文章可置顶")
 		}
 		if err := s.repo.SetFeaturedRank(ctx, articleID, rank); err != nil {
 			return translateArticleErr(err)
@@ -355,9 +357,90 @@ func (s *ArticleService) SetFeaturedRank(ctx context.Context, articleID int64, r
 			Action:     entity.AuditActionFeature,
 			FromStatus: a.Status,
 			ToStatus:   a.Status,
-			Summary:    fmt.Sprintf("热门位：%d", rank),
+			Summary:    fmt.Sprintf("置顶顺序：%d", rank),
 		})
 	})
+}
+
+// MoveFeatured 在同科室置顶序列内上移/下移一篇文章（顺序仅对本科室患者列表生效）。
+// 到两端时幂等成功，不报错。
+func (s *ArticleService) MoveFeatured(ctx context.Context, articleID int64, direction string, actor Actor) error {
+	if direction != "up" && direction != "down" {
+		return apperrors.Validation("WIKI_INVALID_FEATURED_DIRECTION", "direction 必须为 up 或 down")
+	}
+	return s.tx.WithTx(ctx, func(ctx context.Context) error {
+		a, err := s.repo.GetByID(ctx, articleID)
+		if err != nil {
+			return translateArticleErr(err)
+		}
+		if err := assertCanFeature(a, actor); err != nil {
+			return err
+		}
+		neighbor, err := s.featuredNeighbor(ctx, a, direction)
+		if err != nil {
+			return err
+		}
+		if neighbor == nil {
+			return nil
+		}
+		if err := s.swapFeaturedRank(ctx, a, neighbor); err != nil {
+			return err
+		}
+		return s.audit.Create(ctx, &entity.ArticleAuditLog{
+			ArticleID:  articleID,
+			OperatorID: actor.UserID,
+			Action:     entity.AuditActionFeature,
+			FromStatus: a.Status,
+			ToStatus:   a.Status,
+			Summary:    "置顶排序：" + direction,
+		})
+	})
+}
+
+// featuredNeighbor 定位同科室置顶序列中的相邻文章；已在端点时返回 nil（幂等成功）。
+func (s *ArticleService) featuredNeighbor(
+	ctx context.Context, a *entity.Article, direction string,
+) (*entity.FeaturedRankEntry, error) {
+	if a.FeaturedRank <= 0 || a.DepartmentID == nil {
+		return nil, apperrors.Conflict("WIKI_FEATURED_NOT_PINNED", "文章未置顶，无法调整顺序")
+	}
+	entries, err := s.repo.ListFeaturedRanksByDept(ctx, *a.DepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	idx := -1
+	for i, e := range entries {
+		if e.ArticleID == a.ID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, apperrors.Conflict("WIKI_FEATURED_NOT_PINNED", "文章未置顶，无法调整顺序")
+	}
+	neighborIdx := idx - 1
+	if direction == "down" {
+		neighborIdx = idx + 1
+	}
+	if neighborIdx < 0 || neighborIdx >= len(entries) {
+		return nil, nil
+	}
+	neighbor := entries[neighborIdx]
+	return &neighbor, nil
+}
+
+// swapFeaturedRank 三步交换：先腾出当前位，再让相邻项占位，最后回填当前项，
+// 避免 uq_articles_featured_rank 在中间态冲突（唯一索引不可延迟）。
+func (s *ArticleService) swapFeaturedRank(
+	ctx context.Context, a *entity.Article, neighbor *entity.FeaturedRankEntry,
+) error {
+	if err := s.repo.SetFeaturedRank(ctx, a.ID, 0); err != nil {
+		return translateArticleErr(err)
+	}
+	if err := s.repo.SetFeaturedRank(ctx, neighbor.ArticleID, a.FeaturedRank); err != nil {
+		return translateArticleErr(err)
+	}
+	return translateArticleErr(s.repo.SetFeaturedRank(ctx, a.ID, neighbor.Rank))
 }
 
 // ============ Staff Read ============
@@ -1022,13 +1105,13 @@ func assertCanAuthorOrAdmin(a *entity.Article, actor Actor) error {
 	return apperrors.Forbidden("WIKI_FORBIDDEN", "无权操作该文章")
 }
 
-// assertCanFeature 校验热门设置权限：仅管理员可操作；超管可操作所有文章；科室管理员限本科室。
+// assertCanFeature 校验置顶设置权限：仅管理员可操作；超管可操作所有文章；科室管理员限本科室。
 func assertCanFeature(a *entity.Article, actor Actor) error {
 	if !constants.IsAdmin(actor.Role) {
-		return apperrors.Forbidden("WIKI_FEATURED_FORBIDDEN", "仅管理员可设置热门文章")
+		return apperrors.Forbidden("WIKI_FEATURED_FORBIDDEN", "仅管理员可设置置顶文章")
 	}
 	if actor.Role != constants.RoleSuperAdmin && (a.DepartmentID == nil || *a.DepartmentID != actor.DeptID) {
-		return apperrors.Forbidden("WIKI_DEPT_MISMATCH", "非本科室文章不可设置热门")
+		return apperrors.Forbidden("WIKI_DEPT_MISMATCH", "非本科室文章不可设置置顶")
 	}
 	return nil
 }

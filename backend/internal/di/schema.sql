@@ -99,8 +99,13 @@ CREATE TABLE IF NOT EXISTS articles (
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT articles_status_chk CHECK (status IN ('draft','pending','published','archived','deleted')),
-    CONSTRAINT articles_featured_rank_check CHECK (featured_rank BETWEEN 0 AND 3)
+    CONSTRAINT articles_featured_rank_check CHECK (featured_rank >= 0)
 );
+
+-- 置顶不限数量：featured_rank > 0 即置顶，数值表示科室内排序（1 最靠前）。
+-- 旧库可能残留 0–3 的历史 CHECK，重跑本文件时先删后建，统一为"仅非负"。
+ALTER TABLE articles DROP CONSTRAINT IF EXISTS articles_featured_rank_check;
+ALTER TABLE articles ADD CONSTRAINT articles_featured_rank_check CHECK (featured_rank >= 0);
 
 -- P1 修复：知识条目的来源、适用人群、有效期与内容风险等级。
 -- 逾期策略按内容风险区分（高风险资料有效期更短），检索排除"高风险且已逾期"的文章。

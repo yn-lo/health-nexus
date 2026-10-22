@@ -41,8 +41,9 @@ func (r *BrandConfigRepo) Get(ctx context.Context) (*entity.BrandConfig, error) 
 
 // Upsert 插入或更新单例配置（id=1）。
 func (r *BrandConfigRepo) Upsert(ctx context.Context, c *entity.BrandConfig) error {
-	q := `INSERT INTO brand_configs (id, name, wordmark, org_name, slogan, site_url, logo_url, site_title, favicon_url, updated_at)
-		VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, now())
+	q := `INSERT INTO brand_configs (id, name, wordmark, org_name, slogan, site_url,
+			logo_url, site_title, favicon_url, updated_at)
+			VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, now())
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			wordmark = EXCLUDED.wordmark,

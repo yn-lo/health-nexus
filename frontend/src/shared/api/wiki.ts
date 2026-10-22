@@ -23,12 +23,6 @@ export function listArticles(params?: ArticleListParams) {
   );
 }
 
-export function listFeaturedArticles(departmentId?: number) {
-  return apiClient<{ items: ArticlePublic[] }>('/wiki/articles/featured', {
-    params: departmentId ? { department_id: departmentId } : undefined,
-  });
-}
-
 /** 获取文章详情（契约 §4.2） */
 export function getArticleDetail(articleId: number) {
   return apiClient<ArticleDetail>(`/wiki/articles/${articleId}`);
@@ -113,6 +107,14 @@ export function setArticleFeatured(articleId: number, rank: number) {
   return apiClient<{ success: boolean }>(`/staff/wiki/articles/${articleId}/featured`, {
     method: 'POST',
     body: { rank },
+  });
+}
+
+/** 在同科室置顶序列内上移/下移（到两端时幂等成功） */
+export function moveArticleFeatured(articleId: number, direction: 'up' | 'down') {
+  return apiClient<{ success: boolean }>(`/staff/wiki/articles/${articleId}/featured-move`, {
+    method: 'POST',
+    body: { direction },
   });
 }
 

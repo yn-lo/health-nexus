@@ -56,6 +56,12 @@ type Article struct {
 	AuthorName     string
 }
 
+// FeaturedRankEntry 科室内置顶序列表项：重排时用于定位相邻置顶文章。
+type FeaturedRankEntry struct {
+	ArticleID int64
+	Rank      int
+}
+
 // 内容风险等级（articles.content_risk）。
 const (
 	// ContentRiskNormal 普通宣教内容：逾期 180 天后标记待复审。

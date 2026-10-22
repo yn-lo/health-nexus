@@ -211,6 +211,12 @@ func (r *ArticleRepo) ListPublished(
 		return nil, 0, fmt.Errorf("count published articles: %w", err)
 	}
 
+	// 置顶排序的生效范围：选定具体科室时置顶优先（rank 升序），
+	// "全部科室"不跨科室提升置顶（各科室 rank 无全局可比性），保持发布时间序。
+	orderBy := "a.published_at DESC NULLS LAST, a.created_at DESC"
+	if f.DepartmentID != nil {
+		orderBy = "CASE WHEN a.featured_rank > 0 THEN 0 ELSE 1 END, a.featured_rank ASC, " + orderBy
+	}
 	args = append(args, limit, offset)
 	listSQL := fmt.Sprintf(`SELECT a.id, a.title, '' AS content, a.summary, a.cover_image_url, a.status, a.version,
 		a.content_hash, a.author_id, a.department_id, a.reviewer_id, a.review_comment, a.view_count, a.featured_rank,
@@ -224,8 +230,8 @@ func (r *ArticleRepo) ListPublished(
 	LEFT JOIN departments d ON d.id = a.department_id
 	LEFT JOIN users u ON u.id = a.author_id
 	WHERE %s
-	ORDER BY a.published_at DESC NULLS LAST, a.created_at DESC
-	LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
+	ORDER BY %s
+	LIMIT $%d OFFSET $%d`, where, orderBy, len(args)-1, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list published articles: %w", err)
@@ -578,6 +584,30 @@ func (r *ArticleRepo) SetFeaturedRank(ctx context.Context, id int64, rank int) e
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ListFeaturedRanksByDept 返回科室当前置顶文章及顺序（rank 升序）。
+// 用于置顶重排时定位相邻文章；不含未置顶与已删除文章。
+func (r *ArticleRepo) ListFeaturedRanksByDept(
+	ctx context.Context, departmentID int64,
+) ([]entity.FeaturedRankEntry, error) {
+	rows, err := postgres.Q(ctx, r.pool).Query(ctx,
+		`SELECT id, featured_rank FROM articles
+		 WHERE department_id = $1 AND is_deleted = false AND featured_rank > 0
+		 ORDER BY featured_rank ASC, id ASC`, departmentID)
+	if err != nil {
+		return nil, fmt.Errorf("list featured ranks: %w", err)
+	}
+	defer rows.Close()
+	out := make([]entity.FeaturedRankEntry, 0)
+	for rows.Next() {
+		var e entity.FeaturedRankEntry
+		if err := rows.Scan(&e.ArticleID, &e.Rank); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // SoftDelete 软删除（is_deleted=true，status=deleted）。仅对未删除文章生效。

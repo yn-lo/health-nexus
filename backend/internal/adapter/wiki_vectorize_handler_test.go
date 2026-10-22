@@ -1187,6 +1187,9 @@ func (m *chainArticleRepo) ListFeatured(_ context.Context, _ *int64, _ int) ([]*
 	return nil, nil
 }
 func (m *chainArticleRepo) SetFeaturedRank(_ context.Context, _ int64, _ int) error { return nil }
+func (m *chainArticleRepo) ListFeaturedRanksByDept(_ context.Context, _ int64) ([]entity.FeaturedRankEntry, error) {
+	return nil, nil
+}
 func (m *chainArticleRepo) ListForStaff(_ context.Context, _ repository.ListStaffFilter, _, _ int) ([]*entity.Article, int64, error) {
 	return nil, 0, nil
 }

@@ -135,14 +135,14 @@ describe('wikiApi 接口契约', () => {
     expect(last.init?.method).toBeUndefined()
   })
 
-  it('listFeaturedArticles({departmentId}) → GET /api/wiki/articles/featured 且带科室参数', async () => {
-    const { listFeaturedArticles } = await import('@/shared/api/wiki')
-    await listFeaturedArticles(5)
+  it('moveArticleFeatured(articleId, direction) → POST 置顶排序接口且 body 正确', async () => {
+    const { moveArticleFeatured } = await import('@/shared/api/wiki')
+    await moveArticleFeatured(42, 'up')
 
     const last = router.lastCall()!
-    expect(last.url).toContain('/api/wiki/articles/featured?')
-    expect(last.url).toContain('department_id=5')
-    expect(last.init?.method).toBeUndefined()
+    expect(last.url).toBe('/api/staff/wiki/articles/42/featured-move')
+    expect(last.init?.method).toBe('POST')
+    expect(JSON.parse(last.init?.body as string)).toEqual({ direction: 'up' })
   })
 
   // ── 医护端文章接口 ────────────────────────────────────────────────
@@ -214,7 +214,7 @@ describe('wikiApi 接口契约', () => {
     expect(last.init?.method).toBe('DELETE')
   })
 
-  it('setArticleFeatured(articleId, rank) → POST 热门位接口且 body 正确', async () => {
+  it('setArticleFeatured(articleId, rank) → POST 置顶接口且 body 正确', async () => {
     const { setArticleFeatured } = await import('@/shared/api/wiki')
     await setArticleFeatured(15, 2)
 
