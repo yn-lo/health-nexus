@@ -31,6 +31,9 @@ type MessagePort interface {
 	// 当前用户消息已先于历史加载持久化，不排除会导致 LLM 上下文出现重复提问。
 	GetRecentHistory(ctx context.Context, convID uuid.UUID, turns int, excludeID *uuid.UUID) ([]*entity.Message, error)
 	FinalizeAssistant(ctx context.Context, id uuid.UUID, content, resultCode string, refs []entity.Reference) error
+	// SetAssistantPromptMeta 记录生成该答案时生效的系统提示词模板（ID/Version，0=默认人格）。
+	// 只用于事后复盘（"这条答案由哪版提示词生成"），失败不得阻断回答。
+	SetAssistantPromptMeta(ctx context.Context, id uuid.UUID, templateID int64, version int) error
 	// ListByTurn 按轮次列出本轮全部消息（幂等重放定位本轮结果）；无记录返回空切片。
 	ListByTurn(ctx context.Context, convID, turnID uuid.UUID) ([]*entity.Message, error)
 }

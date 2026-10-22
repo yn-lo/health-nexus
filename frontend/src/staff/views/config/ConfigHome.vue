@@ -2,7 +2,7 @@
 /**
  * 系统配置入口页 — 角色感知导航（兜底页，主入口已迁至工作台）
  * SUPER_ADMIN：全部配置项
- * DEPT_ADMIN：仅科室级配置（人员管理 / 提示词模板 / 科室设置）
+ * DEPT_ADMIN：仅科室级配置（人员管理 / RAG 参数）
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -79,14 +79,6 @@ const sections = computed<ConfigSection[]>(() => {
   routeName: 'staff-config-rag',
   variant: 'brand',
   },
-  {
-  key: 'prompts',
-  label: '系统提示词',
-  desc: 'AI 对话使用的 System Prompt',
-  icon: FileText,
-  routeName: 'staff-config-prompts',
-  variant: 'brand',
-  },
   ],
  }
  const all: ConfigSection[] = [people, ai]
@@ -98,6 +90,15 @@ const sections = computed<ConfigSection[]>(() => {
   desc: '科室层级 / 公开 / 启用',
   icon: Building2,
   routeName: 'staff-config-departments',
+  variant: 'brand',
+  })
+  // 系统提示词为全院级配置（全院唯一、影响每个患者的回答口径），仅超管可维护。
+  ai.entries.push({
+  key: 'prompts',
+  label: '系统提示词',
+  desc: 'AI 人格 / 口吻（固定规则由系统内置）',
+  icon: FileText,
+  routeName: 'staff-config-prompts',
   variant: 'brand',
   })
   ai.entries.unshift(

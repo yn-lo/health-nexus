@@ -87,6 +87,11 @@ func buildRouter(app *di.App) http.Handler {
 	r.Use(middleware.Recover)
 	r.Use(middleware.RequestLog)
 	r.Use(middleware.CORS(app.Infra.Cfg.CORS))
+	// 静态资源缓存策略：/assets/*（文件名含内容哈希）长期 immutable，SPA 入口 HTML no-cache。
+	// 必须排在 Compress 之前，保证 Cache-Control 在 WriteHeader 前写入。
+	r.Use(middleware.StaticCache)
+	// gzip 压缩：患者端首屏 JS+CSS 从 395KB 降到 ~137KB（见 middleware.Compress 白名单）。
+	r.Use(middleware.Compress)
 
 	// 健康检查
 	r.Get("/healthz", healthz(app.Infra))

@@ -314,13 +314,13 @@ func (h *ConfigHandler) CreatePromptTemplate(w http.ResponseWriter, r *http.Requ
 }
 
 // UpdatePromptTemplate PUT /api/staff/config/prompts/{id}（契约 §6.6.3）
-// 请求体 {content?, is_active?}；is_active 由 false→true 时同 type+department_id 下其他自动失活。
+// 请求体 {content?, is_active?}；is_active 由 false→true 时同 type 下其他版本自动失活。
 func (h *ConfigHandler) UpdatePromptTemplate(w http.ResponseWriter, r *http.Request) {
 	updateOne(w, r, h.svc.UpdatePromptTemplate)
 }
 
 // DeletePromptTemplate DELETE /api/staff/config/prompts/{id}（契约 §6.6.4）
-// 当前生效版本不可删除，返回 409。
+// 生效版本也可删除：删除后回落到代码内置默认人格 + 代码护栏，不存在「无提示词」状态。
 func (h *ConfigHandler) DeletePromptTemplate(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
@@ -335,9 +335,10 @@ func (h *ConfigHandler) DeletePromptTemplate(w http.ResponseWriter, r *http.Requ
 }
 
 // GetEffectivePrompt GET /api/staff/config/prompts/effective
-// 返回当前生效的系统提示词，不论来源（DB 或硬编码兜底）。
+// 返回当前生效的系统提示词全文（可配置人格 + 代码护栏）与来源信息。
+// 与 chat 域实时调用共用 ConfigService.EffectiveSystemPrompt，两边内容必然一致。
 func (h *ConfigHandler) GetEffectivePrompt(w http.ResponseWriter, r *http.Request) {
-	p, err := h.svc.GetEffectiveSystemPrompt(r.Context())
+	p, err := h.svc.EffectiveSystemPrompt(r.Context())
 	if err != nil {
 		response.WriteError(w, r, err)
 		return

@@ -14,7 +14,7 @@ import (
 	"health-nexus/internal/shared/pagination"
 )
 
-// PromptTemplateRepo 对应 prompt_templates 表。
+// PromptTemplateRepo 对应 prompt_templates 表（全院唯一，无科室维度）。
 type PromptTemplateRepo struct {
 	pool *pgxpool.Pool
 }
@@ -25,10 +25,9 @@ func NewPromptTemplateRepo(pool *pgxpool.Pool) *PromptTemplateRepo {
 }
 
 const promptTemplateColumns = `id, type, version, content, is_active,` +
-	` description, department_id, created_at, updated_at`
+	` description, created_at, updated_at`
 
 // List 按 type 和 is_active 过滤（type 空 / isActive nil 表示不过滤），返回分页结果。
-// department_id 不作为列表过滤条件（前端按 type 查询即可，科室覆盖由 service 层选择时优先）。
 func (r *PromptTemplateRepo) List(
 	ctx context.Context, promptType string, isActive *bool, p pagination.Params,
 ) ([]*entity.PromptTemplate, int64, error) {
@@ -70,13 +69,17 @@ func (r *PromptTemplateRepo) List(
 	return out, total, rows.Err()
 }
 
-// Get 按 ID 查询。未找到返回 ErrNotFound。
-func (r *PromptTemplateRepo) Get(ctx context.Context, id int64) (*entity.PromptTemplate, error) {
-	q := "SELECT " + promptTemplateColumns + " FROM prompt_templates WHERE id = $1"
-	row := r.pool.QueryRow(ctx, q, id)
-	t, err := scanPromptTemplate(row)
+// GetActive 返回指定 type 当前生效的模板。无生效版本返回 (nil, nil)——这是正常状态
+// （系统提示词未配置，运行时用代码内置默认人格），不是错误。
+// 选择逻辑与唯一索引 uq_prompt_templates_active_per_type 一一对应，只有这一条查询，
+// 管理端展示与运行时调用共用（不允许出现两套「哪个生效」的判断）。
+func (r *PromptTemplateRepo) GetActive(
+	ctx context.Context, promptType string,
+) (*entity.PromptTemplate, error) {
+	q := "SELECT " + promptTemplateColumns + " FROM prompt_templates WHERE type = $1 AND is_active = TRUE"
+	t, err := scanPromptTemplate(r.pool.QueryRow(ctx, q, promptType))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -84,13 +87,13 @@ func (r *PromptTemplateRepo) Get(ctx context.Context, id int64) (*entity.PromptT
 	return t, nil
 }
 
-// Create 插入新版本。Version 由 SQL 子查询自动递增（同 type + department_id 下 max+1）。
-// is_active=true 时先 UPDATE 失活同 type + department_id 范围其他 active 行，再 INSERT 新 active 行。
-// UNIQUE(type, version) 冲突由 service 层翻译为 409。
+// Create 插入新版本。Version 由 SQL 子查询自动递增（同 type 下 max+1）。
+// is_active=true 时先 UPDATE 失活同 type 其他 active 行，再 INSERT 新 active 行。
 //
 // 分两条独立语句而非单条 CTE：CTE 内 UPDATE 和 INSERT 共享同一 snapshot，
-// INSERT 时旧 active 行仍在 partial unique index uq_prompt_templates_active_per_type_dept 中，
-// 触发 23505。两条独立语句顺序执行可避开 snapshot 限制。
+// INSERT 时旧 active 行仍在 partial unique index uq_prompt_templates_active_per_type 中，触发 23505。
+// 两条独立语句顺序执行可避开 snapshot 限制。
+//
 // $1::varchar 显式标注类型：避免 PostgreSQL 在 `VALUES ($1)` 推断 varchar 与
 // `WHERE type = $1` 推断 text 之间产生 "inconsistent types deduced" 错误（SQLSTATE 42P08）。
 //
@@ -100,22 +103,19 @@ func (r *PromptTemplateRepo) Create(ctx context.Context, t *entity.PromptTemplat
 	if t.IsActive {
 		if _, err := r.pool.Exec(ctx,
 			`UPDATE prompt_templates SET is_active = FALSE, updated_at = now()
-			 WHERE type = $1
-			   AND COALESCE(department_id, 0) = COALESCE($2, 0)
-			   AND is_active = TRUE`,
-			t.Type, t.DepartmentID,
+			 WHERE type = $1 AND is_active = TRUE`,
+			t.Type,
 		); err != nil {
 			return fmt.Errorf("deactivate siblings: %w", err)
 		}
 	}
-	q := `INSERT INTO prompt_templates (type, version, content, is_active, description, department_id)
+	q := `INSERT INTO prompt_templates (type, version, content, is_active, description)
 		VALUES ($1,
-			(SELECT COALESCE(MAX(version), 0) + 1 FROM prompt_templates
-			 WHERE type = $1::varchar AND COALESCE(department_id, 0) = COALESCE($5, 0)),
-			$2, $3, $4, $5)
+			(SELECT COALESCE(MAX(version), 0) + 1 FROM prompt_templates WHERE type = $1::varchar),
+			$2, $3, $4)
 		RETURNING ` + promptTemplateColumns
 	tmp, err := scanPromptTemplate(r.pool.QueryRow(ctx, q,
-		t.Type, t.Content, t.IsActive, t.Description, t.DepartmentID,
+		t.Type, t.Content, t.IsActive, t.Description,
 	))
 	if err != nil {
 		return err
@@ -128,11 +128,11 @@ func (r *PromptTemplateRepo) Create(ctx context.Context, t *entity.PromptTemplat
 }
 
 // UpdateContentAndActive 更新 content 和/或 is_active。
-// is_active 由 false→true 时，同 type + department_id 下其他版本自动失活（契约 §6.6.3）。
+// is_active 由 false→true 时，同 type 下其他版本自动失活（契约 §6.6.3）。
 //
 // 激活路径分两条独立语句执行：先 UPDATE 失活兄弟，再 UPDATE 激活目标。
 //
-//	原 CTE 单语句 UPDATE 在 partial unique index uq_prompt_templates_active_per_type_dept 上
+//	原 CTE 单语句 UPDATE 在 partial unique index uq_prompt_templates_active_per_type 上
 //	触发 23505：单 UPDATE 内同时激活目标 + 失活旧 active 行，索引检查以 snapshot 为准，
 //	旧 active 行仍在索引中。
 //	content 为 nil 时 pgx 发送无类型 NULL，$2::text cast 仍报 "could not determine data type"
@@ -146,12 +146,11 @@ func (r *PromptTemplateRepo) UpdateContentAndActive(
 	activate := isActive != nil && *isActive
 
 	if activate {
-		// 第一步：失活同 type+department_id 范围的其他 active 行。
-		//   子查询读目标的 type+dept：目标不存在时子查询返回 NULL，WHERE 不匹配，0 行受影响（安全）。
+		// 第一步：失活同 type 的其他 active 行。
+		//   子查询读目标的 type：目标不存在时子查询返回 NULL，WHERE 不匹配，0 行受影响（安全）。
 		if _, err := r.pool.Exec(ctx,
 			`UPDATE prompt_templates SET is_active = FALSE, updated_at = now()
 			 WHERE type = (SELECT type FROM prompt_templates WHERE id = $1)
-			   AND COALESCE(department_id, 0) = COALESCE((SELECT department_id FROM prompt_templates WHERE id = $1), 0)
 			   AND is_active = TRUE
 			   AND id <> $1`,
 			id,
@@ -214,9 +213,9 @@ func (r *PromptTemplateRepo) UpdateContentAndActive(
 	return t, nil
 }
 
-// Delete 按 ID 删除任意状态的 prompt 模板。
-// 即使 is_active=true 也可删除——系统有硬编码 DefaultSystemPrompt 兜底，删除后自动回退。
-// 未找到行时返回 ErrNotFound。
+// Delete 按 ID 删除任意状态的 prompt 模板（含生效版本）。
+// 删除生效版本后运行时回落到代码内置默认人格 + 代码护栏，不会出现"无提示词"状态，
+// 因此不禁止删除。未找到行时返回 ErrNotFound。
 func (r *PromptTemplateRepo) Delete(ctx context.Context, id int64) error {
 	tag, err := r.pool.Exec(ctx,
 		"DELETE FROM prompt_templates WHERE id = $1", id)
@@ -229,23 +228,10 @@ func (r *PromptTemplateRepo) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// IsActive 返回指定 ID 的 is_active 状态。未找到返回 ErrNotFound。
-func (r *PromptTemplateRepo) IsActive(ctx context.Context, id int64) (bool, error) {
-	var isActive bool
-	err := r.pool.QueryRow(ctx, "SELECT is_active FROM prompt_templates WHERE id = $1", id).Scan(&isActive)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, ErrNotFound
-	}
-	if err != nil {
-		return false, fmt.Errorf("query is_active: %w", err)
-	}
-	return isActive, nil
-}
-
 func scanPromptTemplate(s postgres.Scanner) (*entity.PromptTemplate, error) {
 	t := &entity.PromptTemplate{}
 	err := s.Scan(
-		&t.ID, &t.Type, &t.Version, &t.Content, &t.IsActive, &t.Description, &t.DepartmentID,
+		&t.ID, &t.Type, &t.Version, &t.Content, &t.IsActive, &t.Description,
 		&t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {

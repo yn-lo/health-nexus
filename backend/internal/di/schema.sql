@@ -312,6 +312,12 @@ UPDATE conversations SET last_message_at = NULL
 WHERE last_message_at IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id);
 
+-- 消息级提示词溯源（幂等）：记录生成该答案时生效的系统提示词模板版本。
+-- 医疗场景复盘必须能回答「这条答案由哪一版提示词生成」——提示词变更后，历史答案的可解释性
+-- 只能靠这里，不能靠聊天日志。0 表示无 DB 模板（使用代码内置默认人格），0 行=历史数据。
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_template_id BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS prompt_template_version INT NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS crisis_events (
     id                BIGSERIAL   PRIMARY KEY,
     patient_id        BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -442,23 +448,39 @@ ALTER TABLE rag_configs DROP COLUMN IF EXISTS diversity_factor;
 ALTER TABLE rag_configs DROP COLUMN IF EXISTS ood_threshold;
 
 CREATE TABLE IF NOT EXISTS prompt_templates (
-    id            BIGSERIAL   PRIMARY KEY,
-    type          VARCHAR(30) NOT NULL,
-    version       INT         NOT NULL,
-    content       TEXT        NOT NULL,
-    is_active     BOOLEAN     NOT NULL DEFAULT FALSE,
-    description   TEXT        NOT NULL DEFAULT '',
-    department_id BIGINT      REFERENCES departments(id) ON DELETE SET NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id          BIGSERIAL   PRIMARY KEY,
+    type        VARCHAR(30) NOT NULL,
+    version     INT         NOT NULL,
+    content     TEXT        NOT NULL,
+    is_active   BOOLEAN     NOT NULL DEFAULT FALSE,
+    description TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT prompt_type_chk CHECK (type IN ('system')),
     UNIQUE (type, version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_prompt_templates_type ON prompt_templates (type);
-CREATE INDEX IF NOT EXISTS idx_prompt_templates_dept ON prompt_templates (department_id) WHERE department_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_active_per_type_dept
-    ON prompt_templates (type, COALESCE(department_id, 0)) WHERE is_active = TRUE;
+
+-- 增量同步（幂等）：移除已废弃的科室级覆盖能力。
+-- 科室级 prompt 的版本号（按 type+department 递增）与 (type, version) 全局唯一约束互相矛盾，
+-- 历史上除第一个模板外无法创建；运行时选择器也不按会话科室取模板，即实际上是
+-- 「任一科室模板作用于全院」。语义收敛为：全院统一提示词，科室宣教差异由知识库内容承载。
+-- 注意顺序：旧索引引用了 department_id，必须先删索引再删列。
+DROP INDEX IF EXISTS uq_prompt_templates_active_per_type_dept;
+DROP INDEX IF EXISTS idx_prompt_templates_dept;
+
+-- 去重（幂等）：旧模型允许跨科室多行 active，保留版本最高的一行，否则下方唯一索引建不起来。
+UPDATE prompt_templates p SET is_active = FALSE, updated_at = now()
+WHERE p.is_active = TRUE
+  AND EXISTS (SELECT 1 FROM prompt_templates q
+              WHERE q.type = p.type AND q.is_active = TRUE AND q.version > p.version);
+
+-- 同一 type 只能有一个生效版本（全院唯一，不区分科室）。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_active_per_type
+    ON prompt_templates (type) WHERE is_active = TRUE;
+
+ALTER TABLE prompt_templates DROP COLUMN IF EXISTS department_id;
 
 CREATE TABLE IF NOT EXISTS safety_messages (
     id          BIGSERIAL   PRIMARY KEY,

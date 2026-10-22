@@ -52,8 +52,14 @@ func (c *Client) completeJSONOne(
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 		{Role: openai.ChatMessageRoleUser, Content: mask.SanitizePII(userContent)},
 	}
-	// chatRequest：保留供应商配置的 response_format=json_object（结构化审查需要合法 JSON）。
+	// chatRequest：保留供应商配置的其它参数（temperature/top_p/max_tokens 会被下面覆盖）。
 	req := c.chatRequest(c.cfg.ChatModel, msgs)
+	// 本方法的唯一用途就是结构化判定/审核，强制 JSON 输出模式（不依赖 provider 配置里是否写了
+	// response_format）——漏配会退化为“从自由文本里抠 JSON”，模型多输出一句话就导致判定不可用，
+	// 患者侧表现为“未能完成安全审查”。供应商不支持时请求会报错，属于配置问题，应在连通性测试暴露。
+	req.ResponseFormat = &openai.ChatCompletionResponseFormat{
+		Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+	}
 	// 判定/审查任务锁定低温，保证结构化输出与风险判定的确定性。
 	req.Temperature = judgeTemperature
 	resp, err := c.chat.CreateChatCompletion(ctx, req)

@@ -189,6 +189,12 @@ func parseInt64Param(r *http.Request, key string) (int64, error) {
 //
 // 这样客户端路由（vue-router）接管后续导航，无需后端为每个前端路由注册规则。
 func serveSPA(w http.ResponseWriter, r *http.Request) {
+	// 根路径直接落到患者端入口：dist/index.html 只是 735B 的跳转页，命中它会多一次
+	// 文档级导航（HTML → JS replace → /chat → 再拉入口 HTML），等于白白多一个 RTT。
+	if r.URL.Path == "/" {
+		http.ServeFile(w, r, "web/chat.html")
+		return
+	}
 	if f, err := webFS.Open(r.URL.Path); err == nil {
 		f.Close()
 		staticFiles.ServeHTTP(w, r)

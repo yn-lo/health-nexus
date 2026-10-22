@@ -79,7 +79,7 @@ async function activate(t: PromptTemplate) {
 
 async function del(t: PromptTemplate) {
  const warn = t.is_active
- ? '此版本当前正在生效。删除后系统将自动使用内置默认提示词。'
+ ? '此版本当前正在生效。删除后自动回落到系统默认人格，固定规则不受影响。'
  : '删除后不可恢复。'
  try {
  await showConfirmDialog({
@@ -123,18 +123,27 @@ onMounted(() => {
  :class="effectivePrompt.source === 'default' ? 'ds-tag--primary ds-tag--plain' : 'ds-tag--success ds-tag--plain'"
  >
  <Database v-if="effectivePrompt.source === 'database'" :size="10" />
- {{ effectivePrompt.source === 'default' ? '系统默认' : '自定义' }}
+ {{ effectivePrompt.source === 'default' ? '系统默认' : `自定义 v${effectivePrompt.version}` }}
  </span>
  </div>
  <div class="p-[var(--spacer-16)]">
+ <template v-if="effectivePrompt">
+ <p class="mb-[var(--spacer-8)] text-body-xs text-text-tertiary">可配置部分（人格 / 口吻）</p>
  <div
- v-if="effectivePrompt"
- class="max-h-[30vh] overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] p-[var(--spacer-12)] text-body-sm text-text-secondary"
- >{{ effectivePrompt.content }}</div>
+ class="max-h-[24vh] overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] p-[var(--spacer-12)] text-body-sm text-text-secondary"
+ >{{ effectivePrompt.persona }}</div>
+ <p class="mt-[var(--spacer-12)] mb-[var(--spacer-8)] flex items-center gap-[var(--spacer-4)] text-body-xs text-text-tertiary">
+ <ShieldCheck :size="12" />
+ 固定规则（代码内置，不可修改）
+ </p>
+ <div
+ class="max-h-[18vh] overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] p-[var(--spacer-12)] text-body-xs text-text-tertiary"
+ >{{ effectivePrompt.guardrails }}</div>
+ </template>
  <div v-else class="py-[var(--spacer-12)] text-center text-body-sm text-text-tertiary">加载中…</div>
  </div>
  <div v-if="effectivePrompt?.source === 'default'" class="border-t border-[var(--border-neutral-l1)] px-[var(--spacer-16)] py-[var(--spacer-8)] text-body-xs text-text-tertiary">
- 此提示词由系统内置，不可删除。在数据库中创建自定义模板后，将自动覆盖此默认值。
+ 当前使用系统默认人格。创建自定义模板并设为生效后，只替换上方的「可配置部分」。
  </div>
  </div>
  </section>

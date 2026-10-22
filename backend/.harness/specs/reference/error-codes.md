@@ -181,8 +181,9 @@ owner: backend-team
 |--------|------|------|
 | `CONFIG_INVALID_PROMPT_TYPE` | 422 | type 无效 |
 | `CONFIG_CONTENT_REQUIRED` | 422 | content 不能为空 |
+| `CONFIG_CONTENT_TOO_LONG` | 422 | content 超过人格声明长度上限（4096 字） |
 | `CONFIG_EMPTY_UPDATE` | 422 | 至少需要一个字段：content 或 is_active |
-| `CONFIG_PROMPT_VERSION_CONFLICT` | 409 | 版本冲突，请重试 |
+| `CONFIG_PROMPT_VERSION_CONFLICT` | 409 | 版本号冲突，请重新提交 |
 | `CONFIG_PROMPT_NOT_FOUND` | 404 | Prompt 模板不存在 |
 
 ### 通用

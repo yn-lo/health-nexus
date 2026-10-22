@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -45,6 +46,12 @@ type ConfigService struct {
 	aesKey             []byte
 	redis              *goredis.Client
 	llmCfg             config.LLMConfig // config.yaml fallback，供 GetConfigStatus 判断
+
+	// 生效系统提示词进程内缓存（cache-aside）：读多写少，写入路径主动失效。
+	promptMu      sync.Mutex
+	promptCache   *EffectivePromptResponse
+	promptCacheAt time.Time
+	promptLoaded  bool
 }
 
 // NewConfigService 创建 ConfigService。

@@ -125,19 +125,19 @@ const routes = [
         path: 'profile/config/prompts',
         name: 'staff-config-prompts',
         component: () => import('@/staff/views/config/PromptTemplateConfig.vue'),
-        beforeEnter: adminRouteGuard,
+        beforeEnter: superAdminRouteGuard,
       },
       {
         path: 'profile/config/prompts/new',
         name: 'staff-config-prompt-create',
         component: () => import('@/staff/views/config/PromptTemplateDetail.vue'),
-        beforeEnter: adminRouteGuard,
+        beforeEnter: superAdminRouteGuard,
       },
       {
         path: 'profile/config/prompts/:id',
         name: 'staff-config-prompt-detail',
         component: () => import('@/staff/views/config/PromptTemplateDetail.vue'),
-        beforeEnter: adminRouteGuard,
+        beforeEnter: superAdminRouteGuard,
       },
       {
         path: 'profile/config/audit-logs',

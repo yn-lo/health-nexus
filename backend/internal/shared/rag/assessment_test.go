@@ -66,7 +66,7 @@ func TestAssessmentAction_Priority(t *testing.T) {
 			name: "信息不足先澄清",
 			in: Assessment{
 				Intent: IntentPatientEducation, EmergencyRisk: RiskNotDetected, SelfHarmRisk: RiskNotDetected,
-				ContextSufficient: false, MissingCritical: []string{"年龄"}, ClarificationQuestion: "请问年龄？",
+				ContextSufficient: false, ClarificationQuestion: "请问年龄？",
 			},
 			want: ActionClarify,
 		},

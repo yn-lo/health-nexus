@@ -62,11 +62,12 @@ func (r *MessageRepo) save(
 	}
 	row := postgres.Q(ctx, r.pool).QueryRow(ctx, sql, convID, argTurn, role, content, resultCode, refsJSON)
 	var scanTurn *uuid.UUID
-	// Scan 目标数必须与 RETURNING 列数（messageColumns 共 11 列）一致，
+	// Scan 目标数必须与 RETURNING 列数（messageColumns）一致，
 	// 缺列会让所有消息写入直接失败（P0：feedback 漏扫导致登录用户问答全挂）。
 	if err := row.Scan(
 		&m.ID, &m.ConversationID, &scanTurn, &m.Role, &m.Content,
 		&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback, &m.Seq,
+		&m.PromptTemplateID, &m.PromptTemplateVersion,
 	); err != nil {
 		return nil, fmt.Errorf("save message: %w", err)
 	}
@@ -103,6 +104,20 @@ func (r *MessageRepo) FinalizeAssistant(
 	_, err = postgres.Q(ctx, r.pool).Exec(ctx, sql, id, content, resultCode, refsJSON)
 	if err != nil {
 		return fmt.Errorf("finalize assistant: %w", err)
+	}
+	return nil
+}
+
+// SetAssistantPromptMeta 记录生成该答案的提示词模板（溯源：哪版提示词产出了这条答案）。
+// 在生成开始时对占位行写入一次，随消息一起被 FinalizeAssistant 保留（后者不覆盖这两列）。
+func (r *MessageRepo) SetAssistantPromptMeta(
+	ctx context.Context, id uuid.UUID, templateID int64, version int,
+) error {
+	const sql = `UPDATE messages
+	             SET prompt_template_id = $2, prompt_template_version = $3, updated_at = now()
+	             WHERE id = $1`
+	if _, err := postgres.Q(ctx, r.pool).Exec(ctx, sql, id, templateID, version); err != nil {
+		return fmt.Errorf("set assistant prompt meta: %w", err)
 	}
 	return nil
 }
@@ -195,7 +210,8 @@ func (r *MessageRepo) RecentFeedback(ctx context.Context, limit int, deptID int6
 
 // messageColumns 消息查询列（各查询 Scan 顺序一致）。
 const messageColumns = `id, conversation_id, turn_id, role, content, result_code,
-	referenced_chunks, created_at, updated_at, feedback, seq`
+	referenced_chunks, created_at, updated_at, feedback, seq,
+	prompt_template_id, prompt_template_version`
 
 // ListByConversation 列出会话消息，按 seq 降序（新→旧）。
 // before 为 nil 时从最新开始；limit 控制单页大小。
@@ -264,6 +280,7 @@ func (r *MessageRepo) queryMessages(ctx context.Context, sql string, args ...any
 		if err := rows.Scan(
 			&m.ID, &m.ConversationID, &turn, &m.Role, &m.Content,
 			&m.ResultCode, &refsBytes, &m.CreatedAt, &m.UpdatedAt, &m.Feedback, &m.Seq,
+			&m.PromptTemplateID, &m.PromptTemplateVersion,
 		); err != nil {
 			return nil, fmt.Errorf("scan message: %w", err)
 		}

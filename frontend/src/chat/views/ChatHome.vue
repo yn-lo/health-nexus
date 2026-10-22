@@ -9,7 +9,7 @@
  * - Accessible & Ethical -> 3px focus ring / 44px 触摸目标 / reduced-motion
  * 保留功能：科室选择、历史抽屉、推荐问题、SSE 触发
  */
-import { computed, ref, watch, type Component } from 'vue'
+import { computed, defineAsyncComponent, ref, watch, type Component } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import {
@@ -29,7 +29,6 @@ import ChatModeSwitcher from '@/chat/components/ChatModeSwitcher.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
-import KnowledgeList from '@/chat/views/KnowledgeList.vue'
 import { useBrandStore } from '@/stores/brand'
 
 const router = useRouter()
@@ -39,6 +38,9 @@ const assistantName = computed(() =>
   brand.value.org_name ? `${brand.value.org_name}智能助手` : '智能健康助手',
 )
 const { departments, selectedDepartmentId, activeDepartment, selectDepartment } = useDepartments({ initialDepartmentId: 0, includeAll: false })
+
+/** 知识库模式才渲染，异步加载避免首屏白拉 markdown-it（~98KB）。 */
+const KnowledgeList = defineAsyncComponent(() => import('@/chat/views/KnowledgeList.vue'))
 
 const { showToast } = useDsToast()
 /** 提示当前生效的知识库；科室未加载完成时静默，等 name watcher 首次就绪再提示 */

@@ -1705,23 +1705,43 @@ func TestConfigPrompts(t *testing.T) {
 		assertStatus(t, resp, http.StatusOK)
 	})
 
-	// 错误用例：删除 active 版本 → 409
-	t.Run("EP48_DeleteActive_409", func(t *testing.T) {
-		// seed 中的 system prompt 是 active，但不知道 ID；用 SQL 查询
-		if e2ePool == nil {
-			t.Skip("no e2ePool, skip")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		var id int64
-		err := e2ePool.QueryRow(ctx, `SELECT id FROM prompt_templates WHERE is_active = true AND type = 'system' LIMIT 1`).Scan(&id)
-		if err != nil {
-			t.Skipf("no active system prompt in DB: %v", err)
-		}
-		resp := doReq(t, "DELETE", fmt.Sprintf("/api/staff/config/prompts/%d", id), nil, adminToken)
+	// EP48b: 生效版本可删除，删除后自动回落到系统默认人格（代码护栏恒存）
+	t.Run("EP48b_DeleteActive_FallsBackToDefault", func(t *testing.T) {
+		body := jsonBody(t, map[string]any{
+			"type":      "system",
+			"content":   "E2E active persona",
+			"is_active": true,
+		})
+		resp := doReq(t, "POST", "/api/staff/config/prompts", body, adminToken)
 		defer drainAndClose(resp)
-		if resp.StatusCode != http.StatusConflict {
-			t.Errorf("expected 409 for delete active, got %d", resp.StatusCode)
+		assertStatus(t, resp, http.StatusCreated)
+		activeID, _ := parseJSON(t, resp)["id"].(float64)
+		if activeID == 0 {
+			t.Fatal("expected active prompt id")
+		}
+
+		// 生效中：effective 应指向该模板，且固定规则（guardrails）始终存在。
+		eff := doReq(t, "GET", "/api/staff/config/prompts/effective", nil, adminToken)
+		defer drainAndClose(eff)
+		assertStatus(t, eff, http.StatusOK)
+		m := parseJSON(t, eff)
+		if m["source"] != "database" {
+			t.Errorf("expected source=database, got %v", m["source"])
+		}
+		if g, _ := m["guardrails"].(string); g == "" {
+			t.Error("effective 响应必须包含代码护栏 guardrails")
+		}
+
+		// 删除生效版本 → 200，且 effective 回落系统默认人格（不是 409）。
+		del := doReq(t, "DELETE", fmt.Sprintf("/api/staff/config/prompts/%d", int64(activeID)), nil, adminToken)
+		defer drainAndClose(del)
+		assertStatus(t, del, http.StatusOK)
+
+		after := doReq(t, "GET", "/api/staff/config/prompts/effective", nil, adminToken)
+		defer drainAndClose(after)
+		assertStatus(t, after, http.StatusOK)
+		if m2 := parseJSON(t, after); m2["source"] != "default" {
+			t.Errorf("expected source=default after deleting active, got %v", m2["source"])
 		}
 	})
 }

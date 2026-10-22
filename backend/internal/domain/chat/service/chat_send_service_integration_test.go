@@ -190,7 +190,7 @@ func (m *mockConversationPort) Create(_ context.Context, patientID int64, locked
 		PatientID:    patientID,
 		LockedDeptID: lockedDeptID,
 	}
-	return m.conv, nil
+	return m.snapshot(), nil
 }
 
 func (m *mockConversationPort) GetByIDForPatient(_ context.Context, id uuid.UUID, patientID int64) (*entity.Conversation, error) {
@@ -199,7 +199,18 @@ func (m *mockConversationPort) GetByIDForPatient(_ context.Context, id uuid.UUID
 	if m.conv == nil || m.conv.ID != id || m.conv.PatientID != patientID {
 		return nil, nil
 	}
-	return m.conv, nil
+	return m.snapshot(), nil
+}
+
+// snapshot 返回会话副本：真实仓储每次查询都返回新扫描的结构体，
+// 而 dbSessionStore 会就地更新 convEntity（锁定科室），共享指针会让并发用例数据竞争。
+func (m *mockConversationPort) snapshot() *entity.Conversation {
+	cp := *m.conv
+	if m.conv.LockedDeptID != nil {
+		dept := *m.conv.LockedDeptID
+		cp.LockedDeptID = &dept
+	}
+	return &cp
 }
 
 func (m *mockConversationPort) LockDept(_ context.Context, id uuid.UUID, deptID int64) error {
@@ -236,6 +247,15 @@ type mockMessagePort struct {
 	messages []*entity.Message
 	// historyErr 非 nil 时 GetRecentHistory 返回该错误（模拟历史读取失败）。
 	historyErr error
+	// promptMeta 记录 SetAssistantPromptMeta 调用（提示词溯源断言）。
+	promptMeta []promptMetaRecord
+}
+
+// promptMetaRecord 一次提示词溯源写入。
+type promptMetaRecord struct {
+	id         uuid.UUID
+	templateID int64
+	version    int
 }
 
 func (m *mockMessagePort) SaveUserMessage(_ context.Context, convID, turnID uuid.UUID, content string) (*entity.Message, error) {
@@ -272,6 +292,16 @@ func (m *mockMessagePort) SaveAssistantPlaceholder(_ context.Context, convID, tu
 	}
 	m.messages = append(m.messages, msg)
 	return msg, nil
+}
+
+// SetAssistantPromptMeta 记录提示词溯源（测试断言用：本轮使用的模板版本）。
+func (m *mockMessagePort) SetAssistantPromptMeta(
+	_ context.Context, id uuid.UUID, templateID int64, version int,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.promptMeta = append(m.promptMeta, promptMetaRecord{id: id, templateID: templateID, version: version})
+	return nil
 }
 
 // ListByTurn 按轮次返回本轮消息（幂等重放用）。
@@ -635,7 +665,7 @@ func newTestChatSendService(
 		conv, msg, crisis, &noopCrisisNotifier{},
 		locker, tx, nil, // ring=nil -> 匿名退化为单轮（无历史）
 		nil, // turns=nil -> 不启用请求幂等（与修复前行为一致）
-		nil, // promptProvider=nil -> 降级为 defaultSystemPrompt
+		nil, // promptProvider=nil -> 降级为代码默认人格 + 代码护栏
 	)
 }
 
@@ -722,6 +752,14 @@ func TestStream_NormalRAGFlow(t *testing.T) {
 	}
 	if last.Content != want {
 		t.Errorf("最后一条消息 content = %q, want %q", last.Content, want)
+	}
+
+	// 验证提示词溯源：无 DB 模板时写入 0/0（使用代码内置默认人格），而不是不写。
+	if len(msg.promptMeta) != 1 {
+		t.Fatalf("期望 1 次提示词溯源写入，实际 %d", len(msg.promptMeta))
+	}
+	if msg.promptMeta[0].templateID != 0 || msg.promptMeta[0].version != 0 {
+		t.Errorf("无 DB 模板时溯源应为 0/0，实际 %+v", msg.promptMeta[0])
 	}
 
 	// 验证无危机事件

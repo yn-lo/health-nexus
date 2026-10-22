@@ -175,10 +175,11 @@ func newDataNonce() string {
 	return hex.EncodeToString(b[:])
 }
 
-// maxChunkBytes 检索切片拼接后的最大字节数（防超 LLM 上下文窗口）。
-// ponytail: 硬编码 32KB 上限，约 8K tokens（中文约 4 字/token），足够覆盖 TopK=5 的典型场景；
-// 超出截断并记录告警。升级路径：从 RAG 配置动态读取。
-const maxChunkBytes = 32 * 1024
+// maxContextRunes 检索切片拼接后的最大 rune 数（最后一道防线）。
+// 主预算由 chat 域按 token 计算（constants.TokenBudgetGenerate，含提示词/历史/切片）；
+// 此处只防御绕过预算的调用方。按 rune 而非字节截断，避免切碎多字节字符。
+// 32K rune ≈ 48KB ≈ 中文 20K tokens——正常情况下永远到不了，到不了即说明上游预算失效。
+const maxContextRunes = 32 * 1024
 
 // buildChatMessages 构造聊天请求消息序列：系统提示 + 参考资料（独立消息）+ 历史 + 当前问题。
 // 安全约束（P0 防 Prompt Injection）：检索切片不得拼入 system 消息——
@@ -202,9 +203,9 @@ func buildChatMessages(req ChatRequest) []openai.ChatCompletionMessage {
 		// 按 rune（而非字节）截断，避免切碎多字节字符（中文/emoji）产生无效 UTF-8，
 		// 否则 JSON 序列化会将其静默替换为 U+FFFD，损坏一个字符。
 		// 先截断正文再包裹边界，保证闭合标记 </资料 nonce> 不被截掉。
-		if runes := []rune(body); len(runes) > maxChunkBytes {
-			body = string(runes[:maxChunkBytes])
-			slog.Warn("llm: context chunks truncated, exceeded maxChunkBytes", "max", maxChunkBytes)
+		if runes := []rune(body); len(runes) > maxContextRunes {
+			body = string(runes[:maxContextRunes])
+			slog.Warn("llm: context chunks truncated, exceeded maxContextRunes", "max", maxContextRunes)
 		}
 		chunkText := retrievedDocsLabel(nonce) + body + dataBoundaryClose(nonce)
 		msgs = append(msgs, openai.ChatCompletionMessage{

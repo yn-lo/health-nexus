@@ -63,7 +63,6 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: getMpaInputs(),
-      external: ['mermaid'],
     },
   },
   server: {

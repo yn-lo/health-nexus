@@ -54,10 +54,13 @@ type BrandConfigPort interface {
 }
 
 // PromptTemplatePort Prompt 模板仓储能力。
+// GetActive 是「哪个版本生效」的唯一查询入口（唯一索引 uq_prompt_templates_active_per_type 与之对应），
+// 管理端展示与运行时调用共用同一结果，禁止在别处二次实现选择逻辑。
 type PromptTemplatePort interface {
 	List(
 		ctx context.Context, promptType string, isActive *bool, p pagination.Params,
 	) ([]*entity.PromptTemplate, int64, error)
+	GetActive(ctx context.Context, promptType string) (*entity.PromptTemplate, error)
 	Create(ctx context.Context, t *entity.PromptTemplate) error
 	UpdateContentAndActive(
 		ctx context.Context, id int64, content *string, isActive *bool,

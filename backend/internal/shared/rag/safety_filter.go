@@ -47,13 +47,21 @@ type SafetyRuleProvider interface {
 }
 
 // SystemPromptProvider 跨域：config 域适配器实现。
-// 提供当前生效的 RAG 系统提示词（从 prompt_templates 表 type='system' 且 is_active=true 读取）。
+// 提供当前生效的系统提示词**人格声明**（prompt_templates 表 type='system' 且 is_active=true）。
+// 护栏规则由 constants.SystemPromptGuardrails 提供，不经过本接口——不可配置的东西不进 DB。
 // ISP 原则：消费者（chat 域）定义接口，config 域不得反向依赖 chat 域。
 type SystemPromptProvider interface {
-	// GetSystemPrompt 返回当前生效的系统提示词。
-	// 实现应从 prompt_templates 表读取 is_active=true 的 SYSTEM 类型模板（全局/无科室优先）。
-	// 任何错误或无数据时返回空字符串 + nil，让调用方降级为硬编码默认提示词（D-HIGH-01 修复）。
-	GetSystemPrompt(ctx context.Context) (string, error)
+	// SystemPrompt 返回当前生效的人格声明与来源信息（供落库复盘）。
+	// 无 active 模板时返回零值选择（Persona 为空 + TemplateID=0），由调用方用默认人格兜底；
+	// 加载失败返回 error，调用方同样降级——但必须把 err 记入日志，不得静默当成「无配置」。
+	SystemPrompt(ctx context.Context) (SystemPromptSelection, error)
+}
+
+// SystemPromptSelection 生效系统提示词的来源标识（可追溯：哪版模板、是否兜底）。
+type SystemPromptSelection struct {
+	Persona    string // 可配置人格声明；空表示无 DB 配置（用 constants.SystemPromptPersona）
+	TemplateID int64  // 0 = 无 DB 模板
+	Version    int    // 0 = 无 DB 模板
 }
 
 // LLMSafetyChecker 已由统一的 Assessor（见 assessment.go）取代：

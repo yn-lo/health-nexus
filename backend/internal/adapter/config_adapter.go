@@ -9,16 +9,12 @@ import (
 
 	"health-nexus/internal/domain/config/entity"
 	configservice "health-nexus/internal/domain/config/service"
-	"health-nexus/internal/shared/constants"
-	"health-nexus/internal/shared/pagination"
 	"health-nexus/internal/shared/rag"
 )
 
 // sensitiveWordsCacheTTL 敏感词进程内缓存 TTL（D-MED-09 修复）。
 // 与 RAGConfig/SafetyMessages 的 Redis cache-aside TTL 对齐（5min）。
 const sensitiveWordsCacheTTL = 5 * time.Minute
-
-const fullScanPageSize = 100
 
 // ConfigSafetyRuleProvider 实现 rag.SafetyRuleProvider。
 // 从 config 域加载敏感词和安全话术，供 chat 域输入安全审查使用。
@@ -197,14 +193,10 @@ func (p *ConfigSafetyRuleProvider) loadMessage(ctx context.Context, msgType, def
 }
 
 // ConfigSystemPromptProvider 实现 rag.SystemPromptProvider。
-// 从 config 域加载 type='system' 且 is_active=true 的 PromptTemplate（全局/无科室优先）。
-// 进程内 5min 缓存（与敏感词/输出规则对齐），避免每消息查 DB + 打 Info 日志。
+// 只做一层转发：选择逻辑、缓存、写入失效全部在 ConfigService.EffectiveSystemPrompt，
+// 管理端 GET /prompts/effective 与 chat 实时调用走同一个方法，不存在「展示一套、生效一套」。
 type ConfigSystemPromptProvider struct {
 	svc *configservice.ConfigService
-
-	mu               sync.Mutex
-	cachedPrompt     string
-	cachedPromptTime time.Time
 }
 
 // NewConfigSystemPromptProvider 构造适配器。
@@ -212,43 +204,25 @@ func NewConfigSystemPromptProvider(svc *configservice.ConfigService) *ConfigSyst
 	return &ConfigSystemPromptProvider{svc: svc}
 }
 
-// GetSystemPrompt 返回当前生效的系统提示词。
-// 全局（DepartmentID==nil）优先；其次任一科室级 active 模板。
-// 5min 进程内缓存（TTL 与敏感词/输出规则一致）——系统提示词读取频率远高于其变更频率，
-// 避免每消息回源 DB。回源失败时降级返回过期缓存，活跃可改变更最多 5min 内生效。
-// ponytail: 无主动失效；若需 prompt 变更即时生效，可在 ConfigService 写模板时通知失效，
-// 与现有 5min TTL cache-aside 模型对齐，暂不引入通知机制。
-func (p *ConfigSystemPromptProvider) GetSystemPrompt(ctx context.Context) (string, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cachedPrompt != "" && time.Since(p.cachedPromptTime) < sensitiveWordsCacheTTL {
-		return p.cachedPrompt, nil
+// SystemPrompt 返回当前生效的人格声明与来源信息（TemplateID/Version 供落库复盘）。
+// 无 active 模板时 Persona 为空 -> 调用方用 constants.SystemPromptPersona 兜底；
+// 回源失败返回 error（调用方降级但必须留日志，不得静默当成「无配置」）。
+func (p *ConfigSystemPromptProvider) SystemPrompt(ctx context.Context) (rag.SystemPromptSelection, error) {
+	if p == nil || p.svc == nil {
+		return rag.SystemPromptSelection{}, nil
 	}
-	if content := p.loadSystemPrompt(ctx); content != "" {
-		p.cachedPrompt = content
-		p.cachedPromptTime = time.Now()
+	resp, err := p.svc.EffectiveSystemPrompt(ctx)
+	if err != nil {
+		return rag.SystemPromptSelection{}, err
 	}
-	// 无 active 或回源失败：有过期缓存则降级返回旧值，否则返回空让调用方用默认 prompt（D-HIGH-01）。
-	return p.cachedPrompt, nil
-}
-
-// loadSystemPrompt 回源 DB 加载当前生效的 system prompt，不存在或出错返回 ""。
-func (p *ConfigSystemPromptProvider) loadSystemPrompt(ctx context.Context) string {
-	isActive := true
-	list, _, err := p.svc.ListPromptTemplates(
-		ctx, constants.PromptTypeSystem, &isActive,
-		pagination.Params{Page: 1, PageSize: fullScanPageSize},
-	)
-	if err != nil || len(list) == 0 {
-		return ""
+	sel := rag.SystemPromptSelection{Persona: resp.Persona}
+	if resp.TemplateID != nil {
+		sel.TemplateID = *resp.TemplateID
 	}
-	// 全局（DepartmentID == nil）优先；否则取首个科室级 active 模板。
-	for _, t := range list {
-		if t.DepartmentID == nil {
-			return t.Content
-		}
+	if resp.Version != nil {
+		sel.Version = *resp.Version
 	}
-	return list[0].Content
+	return sel, nil
 }
 
 // 编译期断言。

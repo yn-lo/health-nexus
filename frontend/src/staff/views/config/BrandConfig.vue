@@ -12,7 +12,7 @@ import { configApi, wikiApi, BRAND_LIMITS } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import { useBrandStore } from '@/stores/brand'
 import type { BrandConfig as BrandConfigData, BrandConfigUpdateRequest } from '@/shared'
-import logoFallback from '@/assets/images/hn_logo.png'
+import logoFallback from '@/assets/images/hn_logo.webp'
 
 const router = useRouter()
 const { showSuccessToast, showFailToast } = useDsToast()

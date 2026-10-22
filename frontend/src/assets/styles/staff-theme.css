@@ -4,7 +4,7 @@
    - 品牌：直接复用项目 --bg-brand 靛蓝，移除此前的电光蓝 #0052FF
    - 表面/墨色/边框/阴影：不再覆盖，回落到项目默认中性浅色 token
    - 移除深空暗底、径向渐变、强光晕，配色克制、少杂色
-   仅保留字体(可选)与少量玻璃态/激活态/语义动效增强。
+   仅保留少量玻璃态/激活态/语义动效增强。字体不覆写，沿用 tokens.css 的系统字体栈。
 
    仅由 src/staff/main.ts 在 main.css 之后引入，chat 端不加载。
    机制：
@@ -12,13 +12,7 @@
      2. 组件增强 —— 非 layer、最后加载，优先于 @layer components
    豁免：scripts/style-guard.mjs ALLOWED_HEX_FILES 白名单
    ═══════════════════════════════════════════════════════════════ */
-
-@import '@fontsource-variable/space-grotesk';
-
 :root {
-  /* ── 字体：Space Grotesk 负责标题/数字展示，CJK 自动回落 MiSans ── */
-  --font-family-heading: 'Space Grotesk Variable', 'MiSans', 'SF Pro', 'PingFang SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-family-metric: 'Space Grotesk Variable', 'Inter', 'MiSans', 'SF Pro Text', 'PingFang SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   /* ── 主题专属令牌：主强调 = 项目品牌靛蓝，无额外颜色 ── */
   --ai-accent: #6366F1;

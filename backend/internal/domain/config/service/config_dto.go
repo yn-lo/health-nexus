@@ -260,13 +260,13 @@ func toBrandConfigResponse(c *entity.BrandConfig) BrandConfigResponse {
 
 // ============ Prompt Template DTOs ============
 
-// CreatePromptTemplateRequest 创建 Prompt 模板请求。Version 由 service 层自动递增。
+// CreatePromptTemplateRequest 创建 Prompt 模板请求。Version 由 repo 自动递增。
+// Content 只承载可配置的人格/口吻；医疗红线与格式护栏由代码独占，传什么都不会覆盖。
 type CreatePromptTemplateRequest struct {
-	Type         string `json:"type"`
-	Content      string `json:"content"`
-	IsActive     *bool  `json:"is_active,omitempty"`
-	Description  string `json:"description,omitempty"`
-	DepartmentID *int64 `json:"department_id,omitempty"`
+	Type        string `json:"type"`
+	Content     string `json:"content"`
+	IsActive    *bool  `json:"is_active,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // UpdatePromptTemplateRequest 更新 Prompt 模板请求（契约 §6.6.3）。
@@ -277,15 +277,14 @@ type UpdatePromptTemplateRequest struct {
 
 // PromptTemplateResponse Prompt 模板响应。
 type PromptTemplateResponse struct {
-	ID           int64     `json:"id"`
-	Type         string    `json:"type"`
-	Version      int       `json:"version"`
-	Content      string    `json:"content"`
-	IsActive     bool      `json:"is_active"`
-	Description  string    `json:"description"`
-	DepartmentID *int64    `json:"department_id"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Type        string    `json:"type"`
+	Version     int       `json:"version"`
+	Content     string    `json:"content"`
+	IsActive    bool      `json:"is_active"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toPromptTemplateResponse(p *entity.PromptTemplate) PromptTemplateResponse {
@@ -293,23 +292,27 @@ func toPromptTemplateResponse(p *entity.PromptTemplate) PromptTemplateResponse {
 		return PromptTemplateResponse{}
 	}
 	return PromptTemplateResponse{
-		ID:           p.ID,
-		Type:         p.Type,
-		Version:      p.Version,
-		Content:      p.Content,
-		IsActive:     p.IsActive,
-		Description:  p.Description,
-		DepartmentID: p.DepartmentID,
-		CreatedAt:    p.CreatedAt,
-		UpdatedAt:    p.UpdatedAt,
+		ID:          p.ID,
+		Type:        p.Type,
+		Version:     p.Version,
+		Content:     p.Content,
+		IsActive:    p.IsActive,
+		Description: p.Description,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
 	}
 }
 
-// EffectivePromptResponse 当前生效的系统提示词响应。
-// DB 中有 active system prompt 时返回 DB 内容；否则返回硬编码兜底 DefaultSystemPrompt。
+// EffectivePromptResponse 当前生效的系统提示词。
+// Content 是真正下发给 LLM 的全文（Persona + Guardrails），
+// Guardrails 为代码独占的只读规则段——前端只能展示，不能编辑回写。
 type EffectivePromptResponse struct {
-	Content string `json:"content"`
-	Source  string `json:"source"` // "database" 或 "default"
+	Content    string `json:"content"`
+	Persona    string `json:"persona"`     // 可配置部分（DB 内容或默认人格）
+	Guardrails string `json:"guardrails"`  // 代码独占规则（只读）
+	Source     string `json:"source"`      // "database" 或 "default"
+	TemplateID *int64 `json:"template_id"` // nil = 无 DB 模板
+	Version    *int   `json:"version"`     // nil = 无 DB 模板
 }
 
 // ============ Safety Message DTOs ============

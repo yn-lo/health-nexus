@@ -36,6 +36,13 @@ func TestExtractJSONObject(t *testing.T) {
 		{name: "前后带说明", raw: "好的，结果如下：{\"intent\":\"other\"} 完毕", wantOK: true},
 		{name: "无对象", raw: "抱歉我不能回答", wantOK: false},
 		{name: "空字符串", raw: "", wantOK: false},
+		// 括号配平：字符串内的括号/转义不得干扰边界判定。
+		{name: "字符串内含右括号", raw: `{"reason":"资料{1}已引用}"}`, wantOK: true},
+		{name: "字符串内含转义引号", raw: `{"reason":"他说\"不行\""}`, wantOK: true},
+		// 模型多输出一个对象时取第一个完整对象，而不是首尾拼接。
+		{name: "多个对象取第一个", raw: `{"a":1}{"b":2}`, wantOK: true},
+		{name: "尾部说明含括号", raw: `{"a":1} 说明：见 {附录}`, wantOK: true},
+		{name: "未闭环", raw: `{"a":1`, wantOK: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,5 +149,16 @@ func TestLLMOutputReviewer_Unavailable(t *testing.T) {
 	_, err := r.ReviewAnswer(context.Background(), "问题", "答案", nil)
 	if !errors.Is(err, rag.ErrOutputReviewUnavailable) {
 		t.Errorf("错误应包装 ErrOutputReviewUnavailable，实际 %v", err)
+	}
+}
+
+// TestExtractJSONObject_FirstObject 多对象输出时必须返回第一个**完整**对象（原实现取首尾会切坏）。
+func TestExtractJSONObject_FirstObject(t *testing.T) {
+	got, err := extractJSONObject(`{"a":1}{"b":2}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(got) != `{"a":1}` {
+		t.Errorf(`期望 {"a":1}，实际 %s`, got)
 	}
 }

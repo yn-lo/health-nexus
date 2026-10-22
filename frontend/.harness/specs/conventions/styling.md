@@ -39,7 +39,7 @@
 
 - **令牌覆写**：运行时覆写 `:root` 语义令牌——电光蓝品牌色、玻璃拟态半透明表面（`--bg-base-default`）、冷调边框与阴影、250ms 微交互；并新增主题专属令牌 `--ai-gradient`、`--ai-gradient-soft`、`--glass-blur`、`--ease-spring`
 - **组件增强**：对 `.ds-*` 组件做渐变 / 磨玻璃 / 光晕增强，业务组件不新增控件级样式
-- **字体**：展示字体 Space Grotesk 通过 `@fontsource-variable/space-grotesk` 本地引入（禁止 CDN），覆写 `--font-family-heading` / `--font-family-metric`
+- **字体**：纯系统字体栈，不引入任何 webfont（禁止 CDN，也禁止自托管 CJK webfont——全量中文字体体积过大）。字体令牌统一定义在 `tokens.css` 的 `--font-family-*`
 - **豁免**：作为令牌定义文件列入 `scripts/style-guard.mjs` 的 `ALLOWED_HEX_FILES` 白名单
 
 ## Tailwind 4 陷阱与规范

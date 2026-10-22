@@ -35,7 +35,7 @@ cmd/server/main.go
 
 ```
 POST /api/auth/login
-  → middleware: RequestID → Recover → RequestLog → CORS
+  → middleware: RequestID → Recover → RequestLog → CORS → StaticCache → Compress
   → AuthHandler.UnifiedLogin
        ├─ decodeJSON(r, &req)           严格模式，空体→422，格式错→422，1MB 限制
        ├─ AuthService.UnifiedLogin(ctx, username, password)
@@ -81,7 +81,7 @@ POST /api/chat/stream  {message, conversation_id, selected_dept_id?}
        │    ├─ assessor.AssessAndRewrite(...)     统一理解与审查（意图/风险/缺信息/检索改写，结构化 JSON）
        │    │    └─ 后端按固定优先级分流：危机/急症/拒答/受限/澄清/检索；审查不可用 → 受限兜底
        │    ├─ knowledgeSearcher.Search(ctx, q)    纯向量(pgvector ANN) 检索 + SimilarityThreshold 过滤 + 可选 rerank
-       │    ├─ promptProvider.GetSystemPrompt(ctx)  系统提示词（DB 配置 → 硬编码兜底）
+       │    ├─ promptProvider.SystemPrompt(ctx)   系统提示词（DB 人格 + 代码护栏，无配置回落默认人格）
        │    ├─ llmClient.Stream(ctx, msgs, chunks) SSE 流式生成
        │    ├─ outputSafety.Validate(assistant)    输出安全审查（replace/append；diagnosisRe 豁免「诊断为准」）
        │    └─ repo 持久化 conversation + message + referenced_chunks（事务）

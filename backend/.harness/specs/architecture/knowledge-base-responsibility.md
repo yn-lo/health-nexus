@@ -40,7 +40,7 @@ owner: backend-team
   - 发起引用申请（`pending`）→ 经审批（`approved`）→ 该科室可见并**对该内容负责**。
   - 未纳入（无 approved 引用）→ 检索不可见，不承担任何责任。
 - 参考资料之间若表述冲突，生成侧**必须并列说明差异**，不得静默择一
-  （`DefaultSystemPrompt` 第 9 条）。
+  （`constants.SystemPromptGuardrails` 第 9 条，代码独占、不可配置）。
 - 匿名用户看到的内容仅作一般性宣教，不构成科室级承诺（匿名不落库、不转交医护）。
 
 ## 4. 引用流程

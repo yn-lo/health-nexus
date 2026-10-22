@@ -47,7 +47,6 @@ const (
 	assessmentMaxQueryRunes   = 500
 	assessmentMaxEvidence     = 10
 	assessmentMaxEvidenceRune = 200
-	assessmentMaxMissing      = 10
 	assessmentMaxQuestionRune = 200
 )
 
@@ -68,9 +67,7 @@ type Assessment struct {
 	MedicationChange      bool     `json:"medication_change_request"`
 	OutOfDomain           bool     `json:"out_of_domain"`
 	ContextSufficient     bool     `json:"context_sufficient"`
-	MissingCritical       []string `json:"missing_critical_information"`
 	StandaloneQuery       string   `json:"standalone_query"`
-	MustPreserve          []string `json:"must_preserve_constraints"`
 	ClarificationQuestion string   `json:"clarification_question"`
 	RiskEvidence          []string `json:"risk_evidence"`
 	// RecommendedAction 模型建议动作：仅用于日志与冲突观测，最终动作由 Action() 决定。
@@ -140,9 +137,6 @@ func (a Assessment) Validate() error {
 	}
 	if utf8.RuneCountInString(a.ClarificationQuestion) > assessmentMaxQuestionRune {
 		return fmt.Errorf("%w: clarification_question too long", ErrAssessmentInvalid)
-	}
-	if len(a.MissingCritical) > assessmentMaxMissing {
-		return fmt.Errorf("%w: too many missing_critical_information", ErrAssessmentInvalid)
 	}
 	if len(a.RiskEvidence) > assessmentMaxEvidence {
 		return fmt.Errorf("%w: too many risk_evidence", ErrAssessmentInvalid)

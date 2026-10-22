@@ -182,9 +182,9 @@ const showToc = ref(false)
  <!-- 字体族 -->
  <p class="mb-[var(--spacer-8)] text-body-sm text-text-tertiary">字体族</p>
  <div class="mb-[var(--spacer-16)] flex flex-col gap-[var(--spacer-8)] rounded-[var(--radius-card-large)] bg-[var(--bg-white)] p-[var(--spacer-16)] border border-[var(--border-neutral-l1)]">
- <p class="text-body-base" style="font-family: var(--font-family-default)">font-family-default — SF Pro Text / PingFang SC</p>
- <p class="text-body-base" style="font-family: var(--font-family-heading)">font-family-heading — SF Pro / PingFang SC</p>
- <p class="text-body-base" style="font-family: var(--font-family-metric)">font-family-metric — Inter / SF Pro Text <span class="tabular-nums">0123456789</span></p>
+ <p class="text-body-base" style="font-family: var(--font-family-default)">font-family-default — 系统字体栈（苹方 / HarmonyOS Sans）</p>
+ <p class="text-body-base" style="font-family: var(--font-family-heading)">font-family-heading — 同 default</p>
+ <p class="text-body-base" style="font-family: var(--font-family-metric)">font-family-metric — 同 default <span class="tabular-nums">0123456789</span></p>
  </div>
 
  <!-- Heading 层级 -->

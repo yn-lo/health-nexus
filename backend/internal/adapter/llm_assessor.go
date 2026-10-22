@@ -38,9 +38,7 @@ const assessSystemPrompt = `你是医院健康宣教平台的"理解与审查"�
 - medication_change_request: true/false（要求加量、减量、停药、换药或自行调整用药）
 - out_of_domain: true/false（问题是否与本院业务完全无关：医学内容或院内服务内容都算相关）
 - context_sufficient: true/false（现有信息是否足以回答"当前这个请求"）
-- missing_critical_information: 字符串数组，缺少哪些关键信息；没有则空数组
 - standalone_query: 字符串，用于知识库检索的独立问题
-- must_preserve_constraints: 字符串数组，改写时必须保留的限定条件
 - clarification_question: 字符串或 null，需要澄清时给出的一个具体问题
 - risk_evidence: 字符串数组，触发风险判定的患者原话片段（附类别），最多 5 条
 - recommended_action: retrieve | clarify | restricted | emergency | crisis | reject
@@ -64,8 +62,7 @@ const assessSystemPrompt = `你是医院健康宣教平台的"理解与审查"�
    （如"术后注意什么""饮食注意什么""出院注意什么"）视为信息充分，直接给出检索改写并置
    context_sufficient=true，**不要**因未说明具体病种/术式而追问。仍需追问的场景仅限信息缺失会
    显著影响本次回答的（如个体化用药、症状鉴别）。若"当前科室"为未指定，则维持第 4 条判定。
-8. 若「对话历史」中你上一条回复是在向患者追问（澄清），且患者本轮输入就是对该追问的回答，
-   则视为信息已足够：直接给出检索改写并置 context_sufficient=true，不要再次追问同一问题。`
+   多轮澄清的回环处理由后端负责（上一轮已在追问时不再追问），你只需按本轮输入如实判定。`
 
 // LLMAssessor 统一理解与审查的 LLM 实现（rag.Assessor）。
 // client 为动态解析函数：每次调用取当前 swappable Chat 快照，管理员切换模型后自动跟随。
@@ -165,16 +162,45 @@ func buildAssessUserContent(message, deptName string, history []rag.AssessTurn) 
 	return b.String()
 }
 
-// extractJSONObject 从模型输出中截取第一个 JSON 对象。
-// 兼容三类常见输出：纯 JSON、```json 围栏、前后带说明文字。找不到对象即视为不可用。
+// extractJSONObject 从模型输出中截取第一个**完整的** JSON 对象。
+// 兼容三类常见输出：纯 JSON、```json 围栏、前后带说明文字。
+// 用括号配平扫描（跳过字符串内的括号与转义），而不是 "第一个 { 到最后一个 }"——
+// 后者在模型输出多个对象或尾部说明文字含 "}" 时会切出非法 JSON，
+// 结果是判定失败 -> 保守降级，患者看到"未能完成安全审查"。
 func extractJSONObject(raw string) ([]byte, error) {
 	s := strings.TrimSpace(raw)
 	start := strings.Index(s, "{")
-	end := strings.LastIndex(s, "}")
-	if start < 0 || end <= start {
+	if start < 0 {
 		return nil, errors.New("no json object in output")
 	}
-	return []byte(s[start : end+1]), nil
+	depth := 0
+	inString, escaped := false, false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return []byte(s[start : i+1]), nil
+			}
+		}
+	}
+	return nil, errors.New("unterminated json object in output")
 }
 
 // 编译期断言：LLMAssessor 实现 rag.Assessor。

@@ -7,7 +7,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { configApi } from '@/shared'
 import type { BrandConfig } from '@/shared/types/config'
-import logoFallback from '@/assets/images/hn_logo.png'
+// Logo 兜底图：WebP 192×192（最大显示 80px 容器 × 70%，含 3x 屏余量），2.3KB。
+import logoFallback from '@/assets/images/hn_logo.webp'
 
 /** 品牌兜底默认值——与后端 entity.DefaultBrandConfig 对齐；接口不可达时避免空白品牌。 */
 const DEFAULT_BRAND: BrandConfig = {

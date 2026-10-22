@@ -57,6 +57,9 @@ type SessionStore interface {
 	FinalizeAssistant(
 		ctx context.Context, id, turnID uuid.UUID, content, resultCode string, refs []entity.Reference,
 	) error
+	// SetAssistantPromptMeta 记录生成该答案时生效的系统提示词模板（ID/Version）。
+	// 0/0 表示无 DB 模板（使用代码内置默认人格）。只用于事后复盘，失败不得阻断回答。
+	SetAssistantPromptMeta(ctx context.Context, id uuid.UUID, templateID int64, version int) error
 	// TurnByID 按轮次取本轮消息（幂等重放用）；无记录返回 (nil, nil)。
 	TurnByID(ctx context.Context, turnID uuid.UUID) (*TurnMessages, error)
 	// PersistCrisis 命中危机时的持久化 + 医护通知。认证实现落库并通知；匿名实现为空操作。
@@ -171,6 +174,13 @@ func (d *dbSessionStore) FinalizeAssistant(
 	ctx context.Context, id, _ uuid.UUID, content, resultCode string, refs []entity.Reference,
 ) error {
 	return d.msg.FinalizeAssistant(ctx, id, content, resultCode, refs)
+}
+
+// SetAssistantPromptMeta DB 实现：写入占位行的提示词溯源列。
+func (d *dbSessionStore) SetAssistantPromptMeta(
+	ctx context.Context, id uuid.UUID, templateID int64, version int,
+) error {
+	return d.msg.SetAssistantPromptMeta(ctx, id, templateID, version)
 }
 
 // TurnByID 按轮次取本轮消息（幂等重放定位结果）。
@@ -373,6 +383,14 @@ func (m *memSessionStore) FinalizeAssistant(
 		ReferencedChunks: refs,
 		CreatedAt:        time.Now(),
 	})
+}
+
+// SetAssistantPromptMeta 匿名实现：空操作。
+// 匿名会话不落库、不承担科室级承诺，没有复盘需求；溯源只对认证会话有价值。
+func (m *memSessionStore) SetAssistantPromptMeta(
+	context.Context, uuid.UUID, int64, int,
+) error {
+	return nil
 }
 
 // PersistCrisis 匿名实现：不汇报不记录，返回零值 ID（链路上已下发心理援助热线）。

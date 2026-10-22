@@ -215,15 +215,15 @@ export interface SafetyMessagesUpdateRequest {
 /** Prompt 模板类型。仅 system 类型在运行时被注入 LLM；安全话术由 safety_messages 管理。 */
 export type PromptTemplateType = 'system';
 
-/** Prompt 模板响应 */
+/** Prompt 模板响应（全院唯一，无科室维度） */
 export interface PromptTemplate {
   id: number;
   type: PromptTemplateType;
   version: number;
+  /** 只承载可配置的人格/口吻；医疗红线与格式护栏由后端代码独占并追加 */
   content: string;
   is_active: boolean;
   description: string;
-  department_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -234,7 +234,6 @@ export interface PromptTemplateCreateRequest {
   content: string;
   is_active?: boolean;
   description?: string;
-  department_id?: number | null;
 }
 
 /** 更新 Prompt 模板请求 */
@@ -245,8 +244,16 @@ export interface PromptTemplateUpdateRequest {
 
 /** 当前生效的系统提示词响应 */
 export interface EffectivePromptResponse {
+  /** 实际下发给模型的全文（persona + guardrails） */
   content: string;
+  /** 可配置部分（DB 内容或系统默认人格） */
+  persona: string;
+  /** 代码独占的只读规则段，前端只能展示 */
+  guardrails: string;
   source: 'database' | 'default';
+  /** 生效模板 ID / 版本；null 表示使用系统默认人格 */
+  template_id: number | null;
+  version: number | null;
 }
 
 // ===== 6.1.5 AI 提供商连通性测试结果 =====

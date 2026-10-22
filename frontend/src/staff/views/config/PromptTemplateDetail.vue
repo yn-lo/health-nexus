@@ -1,19 +1,22 @@
 <script setup lang="ts">
 /**
  * Prompt 模板详情 — 新建 / 预览 / 同页编辑（三态复用）
- * 路由：profile/config/prompts/new → 新建（无 id，直接编辑态）
+ * 路由：profile/config/prompts/new → 新建（无 id，直接编辑态，以当前生效人格预填）
  * profile/config/prompts/:id → 查看/编辑（有 id，先加载再预览）
  * API: configApi.listPromptTemplates（后端无单条 GET，按 id 客户端过滤）
  * configApi.createPromptTemplate/updatePromptTemplate/deletePromptTemplate
- * 行为：is_active=true 时同 type+department 下其他自动失活；生效版本不可删除（409）
- * 激活唯一入口：预览态「设为生效版本」按钮（带确认弹窗）；编辑内容不改变生效状态
+ *
+ * 内容边界：模板只承载「可配置人格/口吻」，医疗红线、[资料N] 引用与手机端格式
+ * 由后端代码独占并追加（见 configApi.getEffectivePrompt 的 guardrails），此处只提示不可编辑。
+ * 行为：is_active=true 时同类型其他版本自动失活；删除生效版本自动回落到系统默认人格。
+ * 激活唯一入口：预览态「设为生效版本」按钮（带确认弹窗）；编辑内容不改变生效状态。
  */
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { FileText, Pencil, Trash2, CheckCircle2, Building2, History, Clock, ChevronDown, TriangleAlert } from '@lucide/vue'
+import { FileText, Pencil, Trash2, CheckCircle2, History, Clock, ShieldCheck, TriangleAlert } from '@lucide/vue'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader, LoadingState } from '@/shared/components'
-import { configApi, errmsg, useDepartmentOptions, DEPARTMENT_GLOBAL, fmtDateTime } from '@/shared'
+import { configApi, errmsg, fmtDateTime } from '@/shared'
 import type { PromptTemplate, PromptTemplateCreateRequest } from '@/shared'
 
 const router = useRouter()
@@ -38,21 +41,26 @@ function typeDisplay(t: { type: string }): string {
  return typeLabel[t.type] ?? t.type
 }
 
-const { options: departmentOptions, load: loadDepartments } = useDepartmentOptions(DEPARTMENT_GLOBAL)
-
-const departmentLabel = computed(() => {
- if (!template.value?.department_id) return '全局默认'
- const hit = departmentOptions.value.find((d) => d.id === template.value?.department_id)
- return hit?.label ?? `科室 #${template.value.department_id}`
-})
+// 固定规则（代码独占）：新建时展示，提示管理员这段规则会由系统自动追加。
+const guardrails = ref('')
 
 const form = ref<PromptTemplateCreateRequest>({
  type: 'system',
  content: '',
  is_active: false,
  description: '',
- department_id: null,
 })
+
+async function loadEffective() {
+ try {
+  const e = await configApi.getEffectivePrompt()
+  guardrails.value = e.guardrails
+  // 新建态：以当前生效人格为起点（修改口吻即可，不必抄写规则）。
+  if (isCreate.value && !form.value.content) form.value.content = e.persona
+ } catch {
+  // 静默失败：预填只是便利，不影响手工填写。
+ }
+}
 
 async function load() {
  if (isCreate.value) return
@@ -75,7 +83,6 @@ function startEdit() {
  content: template.value.content,
  is_active: template.value.is_active,
  description: template.value.description,
- department_id: template.value.department_id,
  }
  mode.value = 'edit'
 }
@@ -162,8 +169,8 @@ async function remove() {
 }
 
 onMounted(() => {
+ loadEffective()
  load()
- loadDepartments()
 })
 </script>
 
@@ -192,7 +199,7 @@ onMounted(() => {
  生效中
  </span>
  <span v-else class="ds-tag ds-tag--default ds-tag--plain">未生效</span>
- <span class="ds-tag ds-tag--primary ds-tag--plain">{{ departmentLabel }}</span>
+ <span class="ds-tag ds-tag--primary ds-tag--plain">全院统一</span>
  </div>
  </div>
  </div>
@@ -224,20 +231,12 @@ onMounted(() => {
  <span class="text-body-sm text-text-secondary">描述</span>
  <input v-model="form.description" class="ds-input" placeholder="模板说明">
  </div>
- <div v-if="isCreate" class="mt-[var(--spacer-12)] flex flex-col gap-[var(--spacer-4)]">
- <span class="text-body-sm text-text-secondary">所属科室</span>
- <div class="relative">
- <select
- v-model="form.department_id"
- class="ds-select"
- >
- <option v-for="d in departmentOptions" :key="d.id ?? 'global'" :value="d.id">
- {{ d.label }}
- </option>
- </select>
- <ChevronDown class="pointer-events-none absolute right-[var(--spacer-12)] top-1/2 h-4 w-4 -translate-y-1/2 text-icon-tertiary" />
- </div>
- <p class="text-body-xs text-text-tertiary">为指定科室创建专属模板；留空表示全局默认</p>
+ <div v-if="guardrails" class="mt-[var(--spacer-12)] rounded-[var(--radius-8)] bg-[var(--bg-overlay-l1)] p-[var(--spacer-12)]">
+ <p class="mb-[var(--spacer-4)] flex items-center gap-[var(--spacer-4)] text-body-xs text-text-secondary">
+ <ShieldCheck :size="12" />
+ 保存后系统自动追加以下固定规则（代码内置，不可编辑）
+ </p>
+ <p class="max-h-[18vh] overflow-y-auto whitespace-pre-wrap break-words text-body-xs text-text-tertiary">{{ guardrails }}</p>
  </div>
  <div v-if="isCreate" class="mt-[var(--spacer-12)] flex items-center justify-between border-t border-[var(--border-neutral-l1)] pt-[var(--spacer-12)]">
  <span class="text-body-sm text-text-secondary">创建后立即生效（同类型其他模板将自动失活）</span>
@@ -258,15 +257,6 @@ onMounted(() => {
  <section class="px-[var(--spacer-16)] pt-[var(--spacer-12)]">
  <h2 class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">模板信息</h2>
  <div class="ds-list rounded-[var(--radius-card-large)] bg-[var(--bg-base-default)] overflow-hidden">
- <div class="ds-list-item ds-list-item--divider">
- <span class="ds-list-item__icon">
- <Building2 :size="20" class="text-icon-secondary" />
- </span>
- <div class="ds-list-item__content">
- <span class="ds-list-item__title">所属科室</span>
- <span class="ds-list-item__meta">{{ departmentLabel }}</span>
- </div>
- </div>
  <div class="ds-list-item ds-list-item--divider">
  <span class="ds-list-item__icon">
  <History :size="20" class="text-icon-secondary" />
@@ -298,9 +288,9 @@ onMounted(() => {
  <span>已设为生效版本，同类型其他版本已自动失活</span>
  </div>
  <button v-if="!template.is_active" type="button" class="ds-btn ds-btn--primary ds-btn--block" @click="activate"><CheckCircle2 :size="16" /> 设为生效版本</button>
- <button type="button" class="ds-btn ds-btn--danger-outline ds-btn--block" :disabled="template.is_active" @click="remove"><Trash2 :size="16" /> 删除模板</button>
- <p v-if="template.is_active && !justActivated" class="text-center text-body-xs text-text-tertiary">
- 生效版本不可删除，请先激活其他版本
+ <button type="button" class="ds-btn ds-btn--danger-outline ds-btn--block" @click="remove"><Trash2 :size="16" /> 删除模板</button>
+ <p v-if="template.is_active" class="text-center text-body-xs text-text-tertiary">
+ 删除生效版本会回落到系统默认人格，固定规则不受影响
  </p>
  </section>
  </template>

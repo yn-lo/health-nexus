@@ -12,7 +12,9 @@ COPY frontend/ .
 RUN npm run build
 
 # ---- 后端构建阶段 ----
-FROM golang:1.25-alpine AS builder
+# 与 go.mod 的 toolchain 保持一致：镜像自带的 Go 不低于 go1.26.10 时，构建期不会再
+# 联网下载工具链（go.mod 声明 go 1.25.7 为语言版本，工具链取镜像内最新 1.26.x）。
+FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git
 
 WORKDIR /src

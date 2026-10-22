@@ -59,10 +59,10 @@
   --icon-size-32: 32px;
   --icon-size-48: 48px;
 
-  /* ── font families ─────────────────────────────────────── */
-  --font-family-default: "MiSans", "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-family-heading: "MiSans", "SF Pro", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-family-metric: "Inter", "MiSans", "SF Pro Text", "PingFang SC", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* ── font families：纯系统字体栈，零下载（国产机 HarmonyOS Sans / MiSans / OPPO Sans，iOS 苹方，Win 雅黑）── */
+  --font-family-default: system-ui, -apple-system, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "OPPO Sans", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+  --font-family-heading: var(--font-family-default);
+  --font-family-metric: var(--font-family-default);
 
   --font-weight-default: 400;
   --font-weight-code: 450;

@@ -18,13 +18,12 @@
     "dead-code": "knip"
   },
   "dependencies": {
-    "@fontsource-variable/space-grotesk": "^5.3.0",
     "@lucide/vue": "^1.23.0",
     "@tiptap/extension-image": "3.31.3",
     "@tiptap/extension-text-align": "3.31.3",
     "@tiptap/starter-kit": "3.31.3",
     "@tiptap/vue-3": "3.31.3",
-    "markdown-it": "^15.0.2",
+    "markdown-it": "^15.0.3",
     "ofetch": "latest",
     "pinia": "^2",
     "vue": "^3.5.44",
@@ -43,7 +42,7 @@
     "tailwindcss": "^4",
     "typescript": "latest",
     "typescript-eslint": "latest",
-    "vite": "^6",
+    "vite": "^6.4.5",
     "vitest": "^4.1.11",
     "vue-eslint-parser": "latest",
     "vue-tsc": "latest"

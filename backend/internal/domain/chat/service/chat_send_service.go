@@ -99,7 +99,7 @@ type ChatSendService struct {
 	outputReviewer rag.OutputReviewer // 高风险答案的生成后语义审核（可为 nil：跳过并告警）
 	knowledge      rag.KnowledgeSearcher
 	llm            llm.Streamer
-	promptProvider rag.SystemPromptProvider // 可为 nil：降级为 defaultSystemPrompt
+	promptProvider rag.SystemPromptProvider // 可为 nil：降级为代码默认人格
 	conv           ConversationPort
 	msg            MessagePort
 	crisis         CrisisPort
@@ -164,7 +164,7 @@ type CrisisNotifier interface {
 // 跨域依赖（dept/knowledge/safetyIn/safetyOut/assessor/outputReviewer/promptProvider）通过 interface 注入。
 // assessor 可为 nil：视为审查不可用，每轮按"无法判断"降级（受限兜底），不会放行为安全。
 // outputReviewer 可为 nil：高风险答案跳过语义审核并记录告警（不阻断普通宣教）。
-// promptProvider 可为 nil：降级为 defaultSystemPrompt（保持修复前行为，便于测试与渐进接入）。
+// promptProvider 可为 nil：降级为代码默认人格（便于测试；生产必有 provider）。
 // turns 可为 nil：不启用请求幂等（重复提交会重复生成，行为与修复前一致）。
 func NewChatSendService(
 	dept rag.DepartmentResolver,
@@ -1188,8 +1188,13 @@ func (s *ChatSendService) stageRAG(
 	// 阶段 2.1~2.4：历史裁剪 + 检索（检索失败/空结果在内部降级为拒答）。
 	// 复用 Stream 一次性读取的历史快照（先于本轮用户消息落库，天然不含当前轮，无需再排除）。
 	// 检索用统一审查给出的独立问题（assessment.StandaloneQuery）；生成用患者原话（originalQuery）。
+	// 系统提示词先于检索确定：生成侧 token 预算需要扣除提示词占用（prompt 体积不可控）。
+	systemPrompt, promptSel := s.buildSystemPrompt(ctx)
+	s.recordPromptSource(ctx, sess, st, promptSel)
+
 	s.writeStage(ctx, out, StageRetrieving)
-	originalQuery, history, chunks, err := s.prepareRAGContext(ctx, in, sess, out, st, assessment, snapshot)
+	originalQuery, history, chunks, err := s.prepareRAGContext(
+		ctx, in, sess, out, st, assessment, snapshot, systemPrompt)
 	if err != nil {
 		if errors.Is(err, errRejectionHandled) {
 			return nil // finalizeRejection 已写终态并推送 result + done，无需继续
@@ -1220,7 +1225,7 @@ func (s *ChatSendService) stageRAG(
 	slog.InfoContext(ctx, "chat: LLM stream started",
 		"history_turns", len(history)/2, "chunks", len(chunks), "deferred", st.deferred)
 	startTime := time.Now()
-	if err := s.streamLLMTokens(ctx, s.buildSystemPrompt(ctx), originalQuery, history, chunks, out, st); err != nil {
+	if err := s.streamLLMTokens(ctx, systemPrompt, originalQuery, history, chunks, out, st); err != nil {
 		return err
 	}
 
@@ -1326,15 +1331,17 @@ func (s *ChatSendService) handleEmptyStream(
 	return out.Write(EventDone, donePayload())
 }
 
-// prepareRAGContext 阶段 2.1~2.4：裁剪历史快照、按统一审查给出的独立问题检索。
+// prepareRAGContext 阶段 2.1~2.4：裁剪历史快照与检索切片、按统一审查给出的独立问题检索。
 // snapshot 为 Stream 一次性读取的历史快照（先于本轮用户消息落库，天然不含当前轮），
 // 此处直接复用而非二次读取——避免"审查用历史 A、生成用历史 B"的时序漂移，也减少一次 IO。
 // 检索问题来自 assessment.StandaloneQuery（审查阶段已保留否定/时间/人群等限定），
 // 生成侧仍用患者原话（in.Message）——改写偏差不污染答案。
+// systemPrompt 参与生成侧 token 预算（提示词 + 切片 + 历史 共享同一预算）。
 // 检索失败或无结果时降级为拒答（finalizeRejection），返回其错误供 stageRAG 直接透传。
 func (s *ChatSendService) prepareRAGContext(
 	ctx context.Context, in StreamInput, sess *Session,
 	out SSEWriter, st *ragStreamState, assessment rag.Assessment, snapshot []*entity.Message,
+	systemPrompt string,
 ) (originalQuery string, history []*entity.Message, chunks []rag.Chunk, err error) {
 	// 阶段 2.1：历史消息（最近 N 轮，复用本轮快照）
 	history = snapshot
@@ -1344,7 +1351,7 @@ func (s *ChatSendService) prepareRAGContext(
 	// ponytail: 近似 token 估算见 estimateTokens；上限——中文重场景估算偏低，极端情况下突破实际 LLM 上下文窗口，
 	// 由 LLM 服务端报 context_length_exceeded 错误兜底（已在 streamErr 路径处理为 CHAT_LLM_UNAVAILABLE）。
 	beforeTrim := len(history)
-	history = trimHistoryForTokens(history, in.Message, constants.TokenBudgetGenerate)
+	history = trimHistoryForTokens(history, in.Message, generationBudget(systemPrompt, in.Message))
 	if beforeTrim != len(history) {
 		slog.InfoContext(ctx, "chat: history trimmed for generation",
 			"turns_before", beforeTrim/2, "turns_after", len(history)/2)
@@ -1384,6 +1391,18 @@ func (s *ChatSendService) prepareRAGContext(
 	// 生成侧 [资料N]、审核侧证据、落库 references、SSE references 事件均基于该归并结果，
 	// 与前端"参考来源"列表（按 article_id 去重）语义一致，避免"列表 1 条、正文却引用 [资料3]"。
 	chunks = groupChunksByArticle(chunks)
+
+	// 阶段 2.3b：切片纳入同一 token 预算（历史已裁剪完，剩余预算给切片）。
+	// 之前切片不受预算约束：TopK×chunk_size 调大后，5 条 2000 字切片的 prompt 必然超窗，
+	// 只能靠上游 context_length_exceeded 报错兜底（患者侧表现为"AI 服务暂不可用"）。
+	// 切片按相似度降序，超预算时丢弃尾部（相关度最低）——只损失补充信息，不丢主线答案。
+	chunkBudget := generationBudget(systemPrompt, in.Message) - estimateHistoryTokens(history, in.Message)
+	before := len(chunks)
+	chunks = trimChunksForTokens(chunks, chunkBudget)
+	if len(chunks) != before {
+		slog.InfoContext(ctx, "chat: chunks trimmed for generation",
+			"before", before, "after", len(chunks), "budget", chunkBudget)
+	}
 
 	// 阶段 2.4：无检索结果拒答（REQ-CHAT-003）。
 	// 0 命中分两种话术，用审查的 out_of_domain 分流：
@@ -1724,21 +1743,45 @@ func (s *ChatSendService) finalizeRejection(
 	return errRejectionHandled
 }
 
-// defaultSystemPrompt 已移至 constants.DefaultSystemPrompt。
-
-// buildSystemPrompt 构造 system prompt（含安全约束 + 参考资料标识）。
-// promptProvider 非 nil 且返回非空 prompt 时使用配置版本；否则降级为 defaultSystemPrompt。
-// ponytail: provider 出错或返回空时静默降级——config 域故障不应导致 chat 流程不可用，折中。
-// 升级路径：若需区分"无配置"与"配置加载失败"，可让 provider 返回 sentinel error。
-func (s *ChatSendService) buildSystemPrompt(ctx context.Context) string {
-	if s.promptProvider != nil {
-		if prompt, err := s.promptProvider.GetSystemPrompt(ctx); err == nil && prompt != "" {
-			slog.InfoContext(ctx, "chat: system prompt source=db")
-			return prompt
-		}
+// recordPromptSource 将本轮使用的提示词模板版本写入 assistant 消息（远程均可复盘）。
+// 写入失败只告警：溯源信息缺失不得阻断回答（主流程优先）。
+func (s *ChatSendService) recordPromptSource(
+	ctx context.Context, sess *Session, st *ragStreamState, sel rag.SystemPromptSelection,
+) {
+	if err := sess.store.SetAssistantPromptMeta(ctx, st.aiMsgID, sel.TemplateID, sel.Version); err != nil {
+		slog.WarnContext(ctx, "chat: record prompt version failed",
+			"template_id", sel.TemplateID, "version", sel.Version, "err", err)
 	}
-	slog.InfoContext(ctx, "chat: system prompt source=default")
-	return constants.DefaultSystemPrompt
+}
+
+// buildSystemPrompt 构造完整的 system prompt：可配置人格（DB）+ 代码独占护栏。
+// 返回的 SystemPromptSelection 携带模板 ID / 版本，由 recordPromptSource 落库。
+//
+// 分层是硬约束：护栏（医疗红线 / [资料N] 引用 / 手机端格式）永远由
+// constants.SystemPromptGuardrails 追加，管理员只能在人格段内改口吻。
+// config 域故障时降级为默认人格 + 护栏（答不完全不如服务不可用更安全），但失败必留日志
+// ——不得静默当成「无配置」，否则提示词配错会长期无人发现。
+func (s *ChatSendService) buildSystemPrompt(ctx context.Context) (string, rag.SystemPromptSelection) {
+	if s.promptProvider != nil {
+		sel, err := s.promptProvider.SystemPrompt(ctx)
+		if err != nil {
+			slog.WarnContext(ctx, "chat: load system prompt failed, falling back to default persona", "err", err)
+			return constants.ComposeSystemPrompt(""), rag.SystemPromptSelection{}
+		}
+		slog.InfoContext(ctx, "chat: system prompt loaded",
+			"source", promptSource(sel), "template_id", sel.TemplateID, "version", sel.Version)
+		return constants.ComposeSystemPrompt(sel.Persona), sel
+	}
+	slog.InfoContext(ctx, "chat: system prompt loaded", "source", "default")
+	return constants.ComposeSystemPrompt(""), rag.SystemPromptSelection{}
+}
+
+// promptSource 提示词来源标识（日志/复盘用）。
+func promptSource(sel rag.SystemPromptSelection) string {
+	if sel.TemplateID > 0 {
+		return "database"
+	}
+	return "default"
 }
 
 // estimateTokens 估算文本的 token 数。
@@ -1785,6 +1828,35 @@ func trimHistoryForTokens(history []*entity.Message, currentQuery string, budget
 		history = history[2:]
 	}
 	return history
+}
+
+// minGenerationBudget 生成侧可压缩到的预算下限（token）。
+// 提示词本身已占满预算时，仍需给切片/历史留余地，否则会退化成一问一答无资料的"裸生成"。
+const minGenerationBudget = 2000
+
+// generationBudget 返回「历史 + 切片」可用的 token 预算：总预算扣除提示词与当前问题。
+// 提示词体积不可控（管理员可配 4K 字人格 + 代码护栏），必须从预算里扣，不能只看历史与切片。
+func generationBudget(systemPrompt, currentQuery string) int {
+	budget := constants.TokenBudgetGenerate - estimateTokens(systemPrompt) - estimateTokens(currentQuery)
+	if budget < minGenerationBudget {
+		return minGenerationBudget
+	}
+	return budget
+}
+
+// trimChunksForTokens 按 token 预算从尾部（相似度最低）丢弃检索切片。
+// 至少保留 1 条：切片是答案的唯一依据，全部丢掉会让模型无资料可依。
+// 单条切片超预算时仍保留该条，由 platform/llm 的硬上限（maxContextRunes）作最后防线。
+func trimChunksForTokens(chunks []rag.Chunk, budget int) []rag.Chunk {
+	total := 0
+	for _, c := range chunks {
+		total += estimateTokens(c.Content)
+	}
+	for len(chunks) > 1 && total > budget {
+		total -= estimateTokens(chunks[len(chunks)-1].Content)
+		chunks = chunks[:len(chunks)-1]
+	}
+	return chunks
 }
 
 // truncateTitle 取前 N 个 rune 作为标题（REQ-CHAT-018）。

@@ -26,6 +26,12 @@ type Message struct {
 	// 消息 seq 严格递增，保证"先问题后回答"的稳定定序（created_at 在同事务内相同）。
 	// json:"-"：不进入匿名环序列化与对外 DTO（前端契约不感知）。
 	Seq int64 `json:"-"`
+	// PromptTemplateID / PromptTemplateVersion 生成该答案时生效的系统提示词模板版本
+	// （0/0 = 无 DB 模板，使用代码内置默认人格）。仅用于事后复盘：
+	// 提示词变更后，"这条答案由哪版提示词生成"只能靠这两列回答。
+	// json:"-"：内部溯源字段，不进入匿名环序列化与对外 DTO。
+	PromptTemplateID      int64 `json:"-"`
+	PromptTemplateVersion int   `json:"-"`
 }
 
 // Reference 引用切片，存储在 messages.referenced_chunks JSONB。

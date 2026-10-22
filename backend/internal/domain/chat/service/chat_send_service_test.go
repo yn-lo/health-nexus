@@ -4,6 +4,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -536,6 +538,123 @@ func TestGroupChunksByArticle(t *testing.T) {
 		}
 		if got[0].ChunkID != "y" || got[1].ArticleID != "A" {
 			t.Errorf("顺序/内容不符: %+v", got)
+		}
+	})
+}
+
+// ============================================================================
+// 生成侧 token 预算：提示词 + 切片 + 历史 共享同一预算（REQ-CHAT-006-A）
+// ============================================================================
+
+func TestGenerationBudget(t *testing.T) {
+	t.Run("扣除提示词与问题", func(t *testing.T) {
+		prompt := string(make([]rune, 1000)) // '\x00' → 500 token
+		query := "test"                      // 1 token
+		got := generationBudget(prompt, query)
+		if want := constants.TokenBudgetGenerate - 501; got != want {
+			t.Errorf("期望 %d，实际 %d", want, got)
+		}
+	})
+
+	t.Run("提示词过长时不低于下限", func(t *testing.T) {
+		// 40000 rune ≈ 20000 token > 预算 → 必须收敛到下限而不是负数
+		got := generationBudget(string(make([]rune, 40000)), "test")
+		if got != minGenerationBudget {
+			t.Errorf("期望下限 %d，实际 %d", minGenerationBudget, got)
+		}
+	})
+}
+
+func TestTrimChunksForTokens(t *testing.T) {
+	// chunk 内容用 '\x00'（0.5 token/rune）：400 rune ≈ 200 token
+	mk := func(id string, runes int) rag.Chunk {
+		return rag.Chunk{ChunkID: id, Content: string(make([]rune, runes))}
+	}
+
+	t.Run("超预算从尾部丢弃低相关切片", func(t *testing.T) {
+		chunks := []rag.Chunk{mk("1", 400), mk("2", 400), mk("3", 400)} // 共 600 token
+		got := trimChunksForTokens(chunks, 450)
+		if len(got) != 2 {
+			t.Fatalf("期望保留 2 条，实际 %d", len(got))
+		}
+		if got[0].ChunkID != "1" || got[1].ChunkID != "2" {
+			t.Errorf("应从尾部丢弃，实际保留 %s,%s", got[0].ChunkID, got[1].ChunkID)
+		}
+	})
+
+	t.Run("至少保留一条（单条超预算也不丢空）", func(t *testing.T) {
+		chunks := []rag.Chunk{mk("1", 4000)}
+		got := trimChunksForTokens(chunks, 10)
+		if len(got) != 1 {
+			t.Errorf("切片是答案唯一依据，不得清空，实际 %d 条", len(got))
+		}
+	})
+
+	t.Run("预算充足不裁剪", func(t *testing.T) {
+		chunks := []rag.Chunk{mk("1", 40), mk("2", 40)}
+		got := trimChunksForTokens(chunks, 1000)
+		if len(got) != 2 {
+			t.Errorf("期望 2 条，实际 %d", len(got))
+		}
+	})
+}
+
+// ============================================================================
+// 系统提示词分层：可配置人格 + 代码独占护栏
+// ============================================================================
+
+// fakePromptProvider 固定返回预设选择（或错误），用于验证分层与降级。
+type fakePromptProvider struct {
+	sel rag.SystemPromptSelection
+	err error
+}
+
+func (f fakePromptProvider) SystemPrompt(context.Context) (rag.SystemPromptSelection, error) {
+	return f.sel, f.err
+}
+
+func TestBuildSystemPrompt(t *testing.T) {
+	t.Run("provider为nil_默认人格加护栏", func(t *testing.T) {
+		s := &ChatSendService{}
+		got, sel := s.buildSystemPrompt(context.Background())
+		if !strings.Contains(got, constants.SystemPromptPersona) {
+			t.Error("应包含默认人格")
+		}
+		if !strings.Contains(got, constants.SystemPromptGuardrails) {
+			t.Error("必须包含代码护栏")
+		}
+		if sel.TemplateID != 0 || sel.Version != 0 {
+			t.Errorf("无 DB 模板时来源应为零值，实际 %+v", sel)
+		}
+	})
+
+	t.Run("DB人格_替换默认人格但保留护栏并可溯源", func(t *testing.T) {
+		s := &ChatSendService{promptProvider: fakePromptProvider{
+			sel: rag.SystemPromptSelection{Persona: "你是中医科宣教助手。", TemplateID: 12, Version: 5},
+		}}
+		got, sel := s.buildSystemPrompt(context.Background())
+		if !strings.HasPrefix(got, "你是中医科宣教助手。") {
+			t.Errorf("应以 DB 人格开头，实际: %s", got)
+		}
+		if strings.Contains(got, constants.SystemPromptPersona) {
+			t.Error("DB 人格应替换默认人格")
+		}
+		if !strings.Contains(got, constants.SystemPromptGuardrails) {
+			t.Error("DB 人格不得覆盖代码护栏")
+		}
+		if sel.TemplateID != 12 || sel.Version != 5 {
+			t.Errorf("溯源信息丢失: %+v", sel)
+		}
+	})
+
+	t.Run("provider故障_降级默认人格而非无护栏", func(t *testing.T) {
+		s := &ChatSendService{promptProvider: fakePromptProvider{err: errors.New("config down")}}
+		got, sel := s.buildSystemPrompt(context.Background())
+		if !strings.Contains(got, constants.SystemPromptGuardrails) {
+			t.Error("加载失败也必须保留代码护栏")
+		}
+		if sel.TemplateID != 0 {
+			t.Errorf("降级路径不应声称有 DB 模板: %+v", sel)
 		}
 	})
 }

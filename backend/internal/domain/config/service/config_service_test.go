@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -454,6 +455,24 @@ func (m *mockPromptTemplateRepo) List(ctx context.Context, promptType string, is
 		result = append(result, t)
 	}
 	return result, int64(len(result)), nil
+}
+
+func (m *mockPromptTemplateRepo) GetActive(ctx context.Context, promptType string) (*entity.PromptTemplate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
+	var hit *entity.PromptTemplate
+	for _, t := range m.items {
+		if t.Type != promptType || !t.IsActive {
+			continue
+		}
+		if hit == nil || t.Version > hit.Version {
+			hit = t
+		}
+	}
+	return hit, nil
 }
 
 func (m *mockPromptTemplateRepo) Create(ctx context.Context, t *entity.PromptTemplate) error {
@@ -1863,6 +1882,100 @@ func TestDeletePromptTemplate(t *testing.T) {
 		err := svc.DeletePromptTemplate(ctxWithOperator(), 999)
 		assertAppErrCodeNotFound(t, err, "CONFIG_PROMPT_NOT_FOUND")
 	})
+}
+
+// TestEffectiveSystemPrompt 生效提示词选择：管理端展示与运行时共用同一方法，
+// 因此这里既验证「无配置回落默认人格」，也验证「有配置时护栏必须同时存在」与「写入后缓存立即失效」。
+func TestEffectiveSystemPrompt(t *testing.T) {
+	t.Run("no_active_falls_back_to_default_persona", func(t *testing.T) {
+		repo := newMockPromptTemplateRepo()
+		svc := newTestService(nil, nil, nil, nil, repo, nil, nil)
+
+		resp, err := svc.EffectiveSystemPrompt(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.Source != PromptSourceDefault {
+			t.Errorf("expected source=default, got %s", resp.Source)
+		}
+		if resp.TemplateID != nil || resp.Version != nil {
+			t.Error("无 DB 模板时 template_id/version 必须为 nil")
+		}
+		if resp.Persona != constants.SystemPromptPersona {
+			t.Errorf("expected default persona, got %s", resp.Persona)
+		}
+		if !strings.Contains(resp.Content, constants.SystemPromptGuardrails) {
+			t.Error("生效内容必须包含代码护栏")
+		}
+	})
+
+	t.Run("active_template_overrides_persona_but_keeps_guardrails", func(t *testing.T) {
+		repo := newMockPromptTemplateRepo()
+		repo.items[7] = &entity.PromptTemplate{
+			ID: 7, Type: constants.PromptTypeSystem, Version: 3, Content: "你是心内科宣教助手。", IsActive: true,
+		}
+		svc := newTestService(nil, nil, nil, nil, repo, nil, nil)
+
+		resp, err := svc.EffectiveSystemPrompt(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.Source != PromptSourceDatabase {
+			t.Errorf("expected source=database, got %s", resp.Source)
+		}
+		if resp.TemplateID == nil || *resp.TemplateID != 7 {
+			t.Errorf("expected template_id=7, got %v", resp.TemplateID)
+		}
+		if resp.Version == nil || *resp.Version != 3 {
+			t.Errorf("expected version=3, got %v", resp.Version)
+		}
+		if resp.Persona != "你是心内科宣教助手。" {
+			t.Errorf("expected DB persona, got %s", resp.Persona)
+		}
+		if !strings.Contains(resp.Content, constants.SystemPromptGuardrails) {
+			t.Error("DB 内容不得覆盖代码护栏——生效内容必须包含护栏")
+		}
+	})
+
+	t.Run("cache_invalidated_on_write", func(t *testing.T) {
+		repo := newMockPromptTemplateRepo()
+		svc := newTestService(nil, nil, nil, nil, repo, nil, nil)
+
+		// 首次读：无配置（缓存命中路径为 loaded 状态即使内容为空）。
+		first, err := svc.EffectiveSystemPrompt(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if first.Source != PromptSourceDefault {
+			t.Fatalf("expected default, got %s", first.Source)
+		}
+
+		// 写入并激活：缓存应失效，下一次读立即可见。
+		if _, err := svc.CreatePromptTemplate(ctxWithOperator(), CreatePromptTemplateRequest{
+			Type: constants.PromptTypeSystem, Content: "你是新人格。", IsActive: boolPtr(true),
+		}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		second, err := svc.EffectiveSystemPrompt(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if second.Source != PromptSourceDatabase || second.Persona != "你是新人格。" {
+			t.Errorf("expected 写入后立即可见，got source=%s persona=%s", second.Source, second.Persona)
+		}
+	})
+}
+
+// TestPromptContentTooLong 可配置人格长度上限：超限拒收，避免挤占生成侧上下文预算。
+func TestPromptContentTooLong(t *testing.T) {
+	repo := newMockPromptTemplateRepo()
+	svc := newTestService(nil, nil, nil, nil, repo, nil, nil)
+
+	_, err := svc.CreatePromptTemplate(ctxWithOperator(), CreatePromptTemplateRequest{
+		Type:    constants.PromptTypeSystem,
+		Content: strings.Repeat("护", constants.MaxSystemPromptPersonaRunes+1),
+	})
+	assertAppErrCode(t, err, "CONFIG_CONTENT_TOO_LONG")
 }
 
 // ============================================================================

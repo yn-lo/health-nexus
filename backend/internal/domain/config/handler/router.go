@@ -18,9 +18,12 @@ func (h *ConfigHandler) RegisterPublicRoutes(r chi.Router) {
 // 执行顺序：JWTAuth → RequireAdmin → DataIsolation。
 //
 // 权限边界（与前端 superAdminRouteGuard / adminRouteGuard 一致，P1）：
-//   - 全局安全配置（AI Provider、敏感词、安全规则、安全话术、品牌配置、审计日志）影响全院，
-//     仅超级管理员可读写——科室管理员调用返回 403，不得只靠前端路由限制；
-//   - 科室级/运营配置（RAG、Prompt 模板、邀请码等）由科室管理员维护，保持 RequireAdmin。
+//   - 全局安全配置（AI Provider、敏感词、安全规则、安全话术、品牌配置、审计日志、
+//     **系统提示词**）影响全院，仅超级管理员可读写——科室管理员调用返回 403，
+//     不得只靠前端路由限制；
+//   - 科室级/运营配置（RAG 参数等）由科室管理员维护，保持 RequireAdmin。
+//
+// 系统提示词属于全局安全配置：全院唯一、无科室维度，改动直接影响每个患者的回答口径。
 func (h *ConfigHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/staff/config", func(r chi.Router) {
 		r.Use(middleware.DataIsolation())
@@ -63,18 +66,18 @@ func (h *ConfigHandler) RegisterRoutes(r chi.Router) {
 
 			// 配置审计日志（1 个，REQ-CONFIG-010）
 			r.Get("/audit-logs", h.ListAuditLogs)
+
+			// 系统提示词（5 个，含 effective 只读查询），全局唯一、影响全院回答口径。
+			r.Get("/prompts/effective", h.GetEffectivePrompt)
+			r.Get("/prompts", h.ListPromptTemplates)
+			r.Post("/prompts", h.CreatePromptTemplate)
+			r.Put("/prompts/{id}", h.UpdatePromptTemplate)
+			r.Delete("/prompts/{id}", h.DeletePromptTemplate)
 		})
 
 		// 科室级/运营配置：科室管理员可维护（RequireAdmin）。
 		// RAG 配置（2 个）
 		r.Get("/rag", h.GetRAGConfig)
 		r.Put("/rag", h.UpdateRAGConfig)
-
-		// Prompt 模板（5 个，含 effective 只读查询）
-		r.Get("/prompts/effective", h.GetEffectivePrompt)
-		r.Get("/prompts", h.ListPromptTemplates)
-		r.Post("/prompts", h.CreatePromptTemplate)
-		r.Put("/prompts/{id}", h.UpdatePromptTemplate)
-		r.Delete("/prompts/{id}", h.DeletePromptTemplate)
 	})
 }
