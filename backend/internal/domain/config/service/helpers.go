@@ -96,6 +96,17 @@ func validateAIProviderFields(providerType, name, apiURL, modelName, apiKey stri
 	return nil
 }
 
+// maxProviderPriority 故障转移优先级上限（0 为主用，数值越大越靠后）。
+const maxProviderPriority = 1000
+
+// validateProviderPriority 校验故障转移优先级范围。
+func validateProviderPriority(p int) error {
+	if p < 0 || p > maxProviderPriority {
+		return apperrors.Validation("CONFIG_INVALID_PRIORITY", "priority 必须在 0~1000 之间")
+	}
+	return nil
+}
+
 func validateSafetyRuleFields(name, category, pattern, action, replacement string) error {
 	if name == "" {
 		return apperrors.Validation("CONFIG_NAME_REQUIRED", "name 不能为空")

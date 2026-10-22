@@ -18,6 +18,7 @@ type CreateAIProviderRequest struct {
 	APIKey       string         `json:"api_key"`
 	ModelName    string         `json:"model_name"`
 	Dimension    *int           `json:"dimension,omitempty"`
+	Priority     int            `json:"priority"` // 故障转移优先级：同类型下数值越小越优先，0 为主用
 	Params       map[string]any `json:"params,omitempty"`
 	IsActive     *bool          `json:"is_active,omitempty"`
 	IsFullURL    bool           `json:"is_full_url,omitempty"` // true 时后端原样使用 api_base，不自动拼接 /v1
@@ -30,6 +31,7 @@ type UpdateAIProviderRequest struct {
 	APIKey    *string         `json:"api_key,omitempty"` // 明文传入，service 层加密
 	ModelName *string         `json:"model_name,omitempty"`
 	Dimension *int            `json:"dimension,omitempty"`
+	Priority  *int            `json:"priority,omitempty"`
 	Params    *map[string]any `json:"params,omitempty"`
 	IsActive  *bool           `json:"is_active,omitempty"`
 	IsFullURL *bool           `json:"is_full_url,omitempty"`
@@ -44,6 +46,7 @@ type AIProviderResponse struct {
 	APIKey       string         `json:"api_key"` // 掩码
 	ModelName    string         `json:"model_name"`
 	Dimension    *int           `json:"dimension"`
+	Priority     int            `json:"priority"`
 	Params       map[string]any `json:"params"`
 	IsActive     bool           `json:"is_active"`
 	IsFullURL    bool           `json:"is_full_url"`
@@ -67,6 +70,7 @@ func toAIProviderResponse(p *entity.AIProvider) AIProviderResponse {
 		APIKey:       p.APIKeyMasked,
 		ModelName:    p.ModelName,
 		Dimension:    p.Dimension,
+		Priority:     p.Priority,
 		Params:       params,
 		IsActive:     p.IsActive,
 		IsFullURL:    p.IsFullURL,

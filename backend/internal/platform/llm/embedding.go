@@ -36,23 +36,40 @@ type EmbedderWithModel interface {
 	EmbedWithModel(ctx context.Context, texts []string) (embeddings [][]float32, model string, err error)
 }
 
-// EmbedWithModel 用当前客户端快照一次完成向量生成与模型名读取（*Client）。
-// Model 名来自 c.cfg.EmbeddingModel，与实际请求使用的模型必然一致（同一 c）。
+// EmbedWithModel 通过主备链生成向量，并返回**实际生成向量**的模型名（同一客户端快照内完成）。
+// 备用客户端必须与主用同模型同维度（由装配层保证），否则向量空间不一致会污染检索。
 func (c *Client) EmbedWithModel(
 	ctx context.Context, texts []string,
 ) (embeddings [][]float32, model string, err error) {
-	embeddings, err = c.Embed(ctx, texts)
+	type result struct {
+		embeddings [][]float32
+		model      string
+	}
+	r, err := withFailover(ctx, c, func(cc *Client) (result, error) {
+		embs, err := cc.embedOne(ctx, texts)
+		if err != nil {
+			return result{}, err
+		}
+		return result{embeddings: embs, model: cc.EmbeddingModel()}, nil
+	})
 	if err != nil {
 		return nil, "", err
 	}
-	return embeddings, c.EmbeddingModel(), nil
+	return r.embeddings, r.model, nil
 }
 
-// Embed 批量生成向量，每批最多 100 个文本，返回与输入顺序一致的向量切片。
+// Embed 批量生成向量，主 provider 失败时按优先级切换备用（向量模型必须一致）。
+func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return withFailover(ctx, c, func(cc *Client) ([][]float32, error) {
+		return cc.embedOne(ctx, texts)
+	})
+}
+
+// embedOne 用本客户端批量生成向量，每批最多 100 个文本，返回与输入顺序一致的向量切片。
 // 出站前对输入文本做 PII 脱敏：写库（知识库切片）与检索（患者问题）共用本方法、
 // 无法区分用途，故统一处理。知识库切片几乎不含长数字，误伤可忽略；
 // 且写库与检索两侧同样脱敏，向量空间保持一致。
-func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+func (c *Client) embedOne(ctx context.Context, texts []string) ([][]float32, error) {
 	if c.chat == nil {
 		return nil, ErrNotConfigured
 	}

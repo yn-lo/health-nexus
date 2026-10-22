@@ -46,16 +46,23 @@ type rerankAPIItem struct {
 	RelevanceScore float64 `json:"relevance_score"`
 }
 
-// Rerank 调用 /v1/rerank 端点对文档按相关性重排。
+// Rerank 调用 /v1/rerank 端点对文档按相关性重排，主 provider 失败时切换备用。
 // 支持 SiliconFlow、Jina 等提供原生 rerank API 的供应商。
 // 返回按相关性降序排列的结果，每个结果包含索引和分数。
 // query 承载患者检索问题，出站前做 PII 脱敏；documents 为院内知识库切片，不含患者身份信息，不处理。
 func (c *Client) Rerank(ctx context.Context, query string, documents []string, topK int) ([]RerankResult, error) {
-	if c.chat == nil {
-		return nil, ErrNotConfigured
-	}
 	if len(documents) == 0 {
 		return nil, nil
+	}
+	return withFailover(ctx, c, func(cc *Client) ([]RerankResult, error) {
+		return cc.rerankOne(ctx, query, documents, topK)
+	})
+}
+
+// rerankOne 用本客户端完成一次重排调用。
+func (c *Client) rerankOne(ctx context.Context, query string, documents []string, topK int) ([]RerankResult, error) {
+	if c.chat == nil {
+		return nil, ErrNotConfigured
 	}
 	if topK <= 0 || topK > len(documents) {
 		topK = len(documents)
@@ -98,7 +105,7 @@ func (c *Client) Rerank(ctx context.Context, query string, documents []string, t
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("rerank: HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, &apiStatusError{Code: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var apiResp rerankAPIResponse

@@ -13,6 +13,8 @@ type AIProvider struct {
 	APIKeyMasked    string
 	ModelName       string
 	Dimension       *int
+	// Priority 故障转移优先级：同 provider_type 下数值越小越优先（0 主用，1/2... 备用）。
+	Priority int
 	// Parameters 供应商扩展参数（temperature / top_p / max_tokens / response_format）。
 	// NewClientFromProvider 构造时注入 llm.Client，chat completion 请求按 key 注入对应字段。
 	Parameters   map[string]any

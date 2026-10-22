@@ -327,33 +327,9 @@
   border-color: var(--status-success-default);
 }
 
-/* ── ds-list-item--compact 紧凑块状列表项（管理列表：压缩内边距与分隔留白） ── */
+/* ── ds-list-item--compact 紧凑列表项（管理/会话列表：压缩横向内边距） ── */
 .ds-list-item--compact {
   padding: var(--spacer-12);
-}
-
-.ds-list-item--compact .ds-list-item__head {
-  margin-bottom: var(--spacer-4);
-}
-
-.ds-list-item--compact .ds-list-item__icon {
-  width: var(--spacer-32);
-  height: var(--spacer-32);
-}
-
-.ds-list-item--compact .ds-list-item__summary {
-  margin-top: 0;
-  -webkit-line-clamp: 1;
-}
-
-.ds-list-item--compact .ds-list-item__meta {
-  margin-top: var(--spacer-4);
-}
-
-.ds-list-item--compact .ds-list-item__footer {
-  margin-top: var(--spacer-8);
-  padding-top: var(--spacer-8);
-  border-top: 0;
 }
 
 .ds-list-item__head {

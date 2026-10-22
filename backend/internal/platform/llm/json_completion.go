@@ -27,7 +27,17 @@ const judgeTemperature = 0.1
 // 超时优先取调用方传入值；<=0 时使用客户端自身配置的超时（由 HTTP 层兜底）。
 // 未配置（API Key 缺失）时返回 ErrNotConfigured，调用方按不可用降级。
 // userContent 承载患者来源文本（统一审查 / 答案审核的输入），出站前做 PII 脱敏。
+// 单次失败按"同 provider 重试 + 主备切换"策略处理（判定不可用会直接影响安全审查，必须有冗余）。
 func (c *Client) CompleteJSON(
+	ctx context.Context, systemPrompt, userContent string, timeout time.Duration,
+) (string, error) {
+	return withFailover(ctx, c, func(cc *Client) (string, error) {
+		return cc.completeJSONOne(ctx, systemPrompt, userContent, timeout)
+	})
+}
+
+// completeJSONOne 用本客户端完成一次结构化输出调用。
+func (c *Client) completeJSONOne(
 	ctx context.Context, systemPrompt, userContent string, timeout time.Duration,
 ) (string, error) {
 	if c == nil || c.chat == nil {

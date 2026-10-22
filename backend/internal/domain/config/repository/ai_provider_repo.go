@@ -27,7 +27,7 @@ func NewAIProviderRepo(pool *pgxpool.Pool) *AIProviderRepo {
 var ErrNotFound = errors.New("record not found")
 
 const aiProviderColumns = `id, name, provider_type, api_url, is_full_url, api_key_encrypted, api_key_masked,
-	model_name, dimension, parameters, is_active, created_at, updated_at`
+	model_name, dimension, priority, parameters, is_active, created_at, updated_at`
 
 // List 按 provider_type 和 is_active 过滤。providerType 空表示不过滤；isActive nil 表示不过滤。
 func (r *AIProviderRepo) List(ctx context.Context, providerType string, isActive *bool) ([]*entity.AIProvider, error) {
@@ -41,7 +41,8 @@ func (r *AIProviderRepo) List(ctx context.Context, providerType string, isActive
 		args = append(args, *isActive)
 		q += " AND is_active = $" + fmt.Sprintf("%d", len(args))
 	}
-	q += " ORDER BY created_at DESC"
+	// 按故障转移优先级排序：数值越小越优先；相同优先级保持"新建优先"的历史语义。
+	q += " ORDER BY priority ASC, created_at DESC"
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -78,12 +79,12 @@ func (r *AIProviderRepo) Get(ctx context.Context, id int64) (*entity.AIProvider,
 func (r *AIProviderRepo) Create(ctx context.Context, p *entity.AIProvider) error {
 	q := `INSERT INTO ai_providers
 		(name, provider_type, api_url, is_full_url, api_key_encrypted, api_key_masked,
-		 model_name, dimension, parameters, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 model_name, dimension, priority, parameters, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.ProviderType, p.APIURL, p.IsFullURL, p.APIKeyEncrypted, p.APIKeyMasked,
-		p.ModelName, p.Dimension, p.Parameters, p.IsActive,
+		p.ModelName, p.Dimension, p.Priority, p.Parameters, p.IsActive,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -91,12 +92,12 @@ func (r *AIProviderRepo) Create(ctx context.Context, p *entity.AIProvider) error
 func (r *AIProviderRepo) Update(ctx context.Context, p *entity.AIProvider) error {
 	q := `UPDATE ai_providers SET
 		name = $2, provider_type = $3, api_url = $4, is_full_url = $5, api_key_encrypted = $6, api_key_masked = $7,
-		model_name = $8, dimension = $9, parameters = $10, is_active = $11, updated_at = now()
+		model_name = $8, dimension = $9, priority = $10, parameters = $11, is_active = $12, updated_at = now()
 		WHERE id = $1
 		RETURNING created_at, updated_at`
 	tag, err := r.pool.Exec(ctx, q,
 		p.ID, p.Name, p.ProviderType, p.APIURL, p.IsFullURL, p.APIKeyEncrypted, p.APIKeyMasked,
-		p.ModelName, p.Dimension, p.Parameters, p.IsActive,
+		p.ModelName, p.Dimension, p.Priority, p.Parameters, p.IsActive,
 	)
 	if err != nil {
 		return fmt.Errorf("update ai_provider: %w", err)
@@ -203,7 +204,7 @@ func scanAIProvider(s postgres.Scanner) (*entity.AIProvider, error) {
 	p := &entity.AIProvider{}
 	err := s.Scan(
 		&p.ID, &p.Name, &p.ProviderType, &p.APIURL, &p.IsFullURL, &p.APIKeyEncrypted, &p.APIKeyMasked,
-		&p.ModelName, &p.Dimension, &p.Parameters, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
+		&p.ModelName, &p.Dimension, &p.Priority, &p.Parameters, &p.IsActive, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan ai_provider: %w", err)

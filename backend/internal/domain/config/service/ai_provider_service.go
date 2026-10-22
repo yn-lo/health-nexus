@@ -57,6 +57,9 @@ func (s *ConfigService) CreateAIProvider(
 	if err := validateAIProviderFields(req.ProviderType, req.Name, req.APIBase, req.ModelName, req.APIKey); err != nil {
 		return nil, err
 	}
+	if err := validateProviderPriority(req.Priority); err != nil {
+		return nil, err
+	}
 	// 方案 C：embedding provider 必须提供 dimension（向量维度，bge-m3=1024, text-embedding-3-small=1536 等）。
 	if req.ProviderType == constants.ProviderTypeEmbedding && (req.Dimension == nil || *req.Dimension <= 0) {
 		return nil, apperrors.Validation("CONFIG_EMBEDDING_DIM_REQUIRED",
@@ -89,6 +92,7 @@ func (s *ConfigService) CreateAIProvider(
 		APIKeyMasked:    MaskAPIKey(req.APIKey),
 		ModelName:       req.ModelName,
 		Dimension:       req.Dimension,
+		Priority:        req.Priority,
 		Parameters:      params,
 		IsActive:        isActive,
 	}
@@ -131,6 +135,9 @@ func (s *ConfigService) UpdateAIProvider(
 		existing.ProviderType, existing.Name, existing.APIURL,
 		existing.ModelName, apiKeyForValidation,
 	); err != nil {
+		return nil, err
+	}
+	if err := validateProviderPriority(existing.Priority); err != nil {
 		return nil, err
 	}
 	if err := s.aiProviderRepo.Update(ctx, existing); err != nil {
@@ -183,6 +190,9 @@ func (s *ConfigService) applyAIProviderPatch(
 	}
 	if req.Dimension != nil {
 		existing.Dimension = req.Dimension
+	}
+	if req.Priority != nil {
+		existing.Priority = *req.Priority
 	}
 	if req.Params != nil {
 		existing.Parameters = *req.Params

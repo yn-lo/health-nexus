@@ -333,7 +333,10 @@ func (r *ArticleRepo) ListForStaff(
 	LEFT JOIN departments d ON d.id = a.department_id
 	LEFT JOIN users u ON u.id = a.author_id
 	WHERE %s
-	ORDER BY a.created_at DESC
+	ORDER BY CASE WHEN a.featured_rank > 0 THEN 0 ELSE 1 END,
+		CASE WHEN a.featured_rank > 0 THEN a.department_id ELSE 0 END,
+		a.featured_rank,
+		a.created_at DESC
 	LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args))
 	rows, err := postgres.Q(ctx, r.pool).Query(ctx, listSQL, args...)
 	if err != nil {

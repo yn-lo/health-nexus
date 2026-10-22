@@ -375,6 +375,9 @@ CREATE TABLE IF NOT EXISTS ai_providers (
 -- 对已有库的增量同步：补齐 is_full_url（幂等）。
 ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS is_full_url BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- 故障转移优先级：同 provider_type 下数值越小越优先（0 为主，1/2... 为备用）；相同值时按 created_at DESC。
+ALTER TABLE ai_providers ADD COLUMN IF NOT EXISTS priority INT NOT NULL DEFAULT 0;
+
 -- 下线 rewrite provider：独立查询改写模型已并入统一理解与审查（Assessor）。
 -- 先清理存量数据再收紧 CHECK 约束（顺序不可颠倒，否则约束校验失败）。
 DELETE FROM ai_providers WHERE provider_type = 'rewrite';
@@ -382,6 +385,8 @@ ALTER TABLE ai_providers DROP CONSTRAINT IF EXISTS ai_providers_type_chk;
 ALTER TABLE ai_providers ADD CONSTRAINT ai_providers_type_chk CHECK (provider_type IN ('llm','embedding','rerank'));
 
 CREATE INDEX IF NOT EXISTS idx_ai_providers_type_active ON ai_providers (provider_type, is_active);
+-- 主备链查询：按类型取启用 provider 并按优先级排序。
+CREATE INDEX IF NOT EXISTS idx_ai_providers_type_active_priority ON ai_providers (provider_type, is_active, priority);
 
 CREATE TABLE IF NOT EXISTS sensitive_words (
     id          BIGSERIAL   PRIMARY KEY,

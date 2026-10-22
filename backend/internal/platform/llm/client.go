@@ -28,6 +28,11 @@ type Client struct {
 	cfg        config.LLMConfig
 	params     map[string]any
 	httpClient *http.Client // 用于 Rerank() 直接调 /v1/rerank（go-openai 不暴露 HTTPClient）
+
+	// fallbacks 同能力的备用客户端（按优先级排列，不含自身），由 NewFailoverClient 设置。
+	fallbacks []*Client
+	// breaker 本客户端的熔断状态（每 provider 独立）。
+	breaker circuitBreaker
 }
 
 // HTTP transport 超时加固参数（newOpenAIClient 用）。

@@ -37,6 +37,7 @@ const form = ref<AIProviderCreateRequest>({
  api_key: '',
  model_name: '',
  dimension: undefined,
+ priority: 0,
  params: {},
  is_active: true,
  is_full_url: false,
@@ -78,6 +79,7 @@ async function load() {
  api_key: '',
  model_name: p.model_name,
  dimension: p.dimension ?? undefined,
+ priority: p.priority ?? 0,
  params: { ...p.params },
  is_active: p.is_active,
  is_full_url: p.is_full_url,
@@ -134,6 +136,7 @@ async function submit() {
  api_base: form.value.api_base,
  model_name: form.value.model_name,
  dimension: form.value.dimension,
+ priority: form.value.priority,
  params: form.value.params,
  is_active: form.value.is_active,
  is_full_url: form.value.is_full_url,
@@ -266,6 +269,29 @@ onMounted(() => {
  </div>
  </div>
 
+ <!-- 生效方式：主备链位置与启用开关 -->
+ <div>
+ <h3 class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">生效方式</h3>
+ <div class="flex flex-col gap-[var(--spacer-20)]">
+ <div class="flex flex-col gap-[var(--spacer-4)]">
+ <span class="text-body-sm text-text-secondary">主备链位置</span>
+ <input v-model.number="form.priority" type="number" min="0" max="1000" class="ds-input" placeholder="0">
+ <p class="text-body-xs text-text-tertiary">0 为主用，1/2/3… 为备用顺序。同类 provider 按此顺序组成主备链，主用失败时自动切换；回答已开始输出后不再切换。</p>
+ <p v-if="form.provider_type === 'embedding'" class="text-body-xs text-text-tertiary">Embedding 备用必须与主用同模型、同维度，否则不会参与切换。</p>
+ </div>
+ <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
+ <div class="flex flex-col">
+ <span class="text-body-base text-text">启用</span>
+ <span class="text-body-xs text-text-tertiary">关闭后不参与任何链路</span>
+ </div>
+ <label class="ds-switch">
+ <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
+ <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
+ </label>
+ </div>
+ </div>
+ </div>
+
  <!-- 高级配置 -->
  <div>
  <h3 class="text-body-sm font-medium text-text-secondary mb-[var(--spacer-8)] pl-[var(--spacer-12)] border-l-2 border-[var(--border-brand)]">高级配置</h3>
@@ -303,13 +329,6 @@ onMounted(() => {
  <p v-else class="text-body-xs text-text-tertiary">可选，供应商扩展参数</p>
  </div>
  </template>
- <div class="flex items-center justify-between px-[var(--spacer-16)] py-[var(--spacer-8)]">
- <span class="text-body-base text-text">启用</span>
- <label class="ds-switch">
- <input type="checkbox" class="ds-switch__input" v-model="form.is_active">
- <span class="ds-switch__track"><span class="ds-switch__thumb" /></span>
- </label>
- </div>
  </div>
  </div>
  </section>

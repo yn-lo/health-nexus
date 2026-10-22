@@ -49,10 +49,10 @@ type Streamer interface {
 	StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error)
 }
 
-// StreamChat 流式生成聊天回复。
+// streamChatOne 用**本客户端**完成一次流式生成（不含主备切换，failover.go 负责编排）。
 // 成功建立流后返回只读 channel；token 片段、错误与结束信号均通过 channel 传递。
 // 流正常结束发送 Done=true；context 取消时直接关闭 channel，不向消费者投递错误。
-func (c *Client) StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
+func (c *Client) streamChatOne(ctx context.Context, req ChatRequest) (<-chan StreamChunk, error) {
 	if c.chat == nil {
 		return nil, ErrNotConfigured
 	}

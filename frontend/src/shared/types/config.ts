@@ -14,6 +14,8 @@ export interface AIProvider {
   api_key: string;
   model_name: string;
   dimension: number | null;
+  /** 故障转移优先级：同类型下数值越小越优先，0 为主用 */
+  priority: number;
   params: Record<string, unknown>;
   is_active: boolean;
   is_full_url: boolean;
@@ -29,6 +31,7 @@ export interface AIProviderCreateRequest {
   api_key: string;
   model_name: string;
   dimension?: number;
+  priority?: number;
   params?: Record<string, unknown>;
   is_active?: boolean;
   is_full_url?: boolean;
@@ -41,6 +44,7 @@ export interface AIProviderUpdateRequest {
   api_key?: string;
   model_name?: string;
   dimension?: number;
+  priority?: number;
   params?: Record<string, unknown>;
   is_active?: boolean;
   is_full_url?: boolean;
