@@ -12,15 +12,13 @@ import type {
   ReferenceApplyRequest,
   ReferenceListParams,
 } from '../types/wiki';
+import type { Paginated } from '../types/base';
 
 // ===== 公共接口（匿名可访问） =====
 
 /** 获取已发布文章列表（契约 §4.1） */
 export function listArticles(params?: ArticleListParams) {
-  return apiClient<{ items: ArticlePublic[]; total: number; page: number; page_size: number }>(
-    '/wiki/articles',
-    { params },
-  );
+  return apiClient<Paginated<ArticlePublic>>('/wiki/articles', { params });
 }
 
 /** 获取文章详情（契约 §4.2） */
@@ -37,10 +35,7 @@ export function createArticle(data: ArticleCreateRequest) {
 
 /** 获取我的文章列表（契约 §4.4，含草稿/待审核等所有状态） */
 export function listMyArticles(params?: ArticleStaffListParams) {
-  return apiClient<{ items: ArticleStaff[]; total: number; page: number; page_size: number }>(
-    '/staff/wiki/articles',
-    { params },
-  );
+  return apiClient<Paginated<ArticleStaff>>('/staff/wiki/articles', { params });
 }
 
 /** 获取单篇文章详情（含正文，用于编辑回填） */
@@ -141,18 +136,12 @@ export function applyReference(data: ReferenceApplyRequest) {
 
 /** 引用授权列表（契约 §5.2，分页） */
 export function listReferences(params?: ReferenceListParams) {
-  return apiClient<{ items: ArticleReference[]; total: number; page: number; page_size: number }>(
-    '/staff/wiki/references',
-    { params },
-  );
+  return apiClient<Paginated<ArticleReference>>('/staff/wiki/references', { params });
 }
 
 /** 可引用的公开文章列表（其他科室的 allow_reference=true 文章） */
 export function listReferenceableArticles(params?: { page?: number; page_size?: number }) {
-  return apiClient<{ items: ArticlePublic[]; total: number; page: number; page_size: number }>(
-    '/staff/wiki/references/articles',
-    { params },
-  );
+  return apiClient<Paginated<ArticlePublic>>('/staff/wiki/references/articles', { params });
 }
 
 /** 审核通过引用申请（契约 §5.3） */

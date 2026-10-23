@@ -28,7 +28,7 @@ const internalRoot = "internal"
 // layerInfo 描述一个 .go 文件所属的层与域。
 type layerInfo struct {
 	file    string // 相对模块根的路径（用于错误输出）
-	layer   string // handler / service / repository / entity / platform / shared / middleware / adapter / di / config / rag / unknown
+	layer   string // handler / service / repository / entity / tasks / platform / shared / middleware / adapter / di / config / unknown
 	domain  string // 域名（auth/base/chat/config/wiki），非域层为空
 	imports []string
 }
@@ -54,11 +54,11 @@ func classify(dir string) (layer, domain string) {
 			return "service", domain
 		case "handler":
 			return "handler", domain
-		case "rag":
-			return "rag", domain // chat 域的 RAG 组件，按 service 规则约束
 		default:
 			return "domain-other", domain
 		}
+	case "tasks":
+		return "tasks", ""
 	case "platform":
 		return "platform", ""
 	case "shared":
@@ -248,7 +248,7 @@ func checkOne(f layerInfo, imp string) []violation {
 			}
 		}
 
-	case "service", "rag":
+	case "service":
 		// AC-ARCH-03: service 不得 import net/http（保持 HTTP 无关）
 		if imp == "net/http" {
 			add("AC-ARCH-03", "service 不得 import net/http",
@@ -357,6 +357,18 @@ func checkOne(f layerInfo, imp string) []violation {
 			add("AC-ARCH-14", "adapter 不得依赖 handler",
 				"adapter 仅桥接数据/业务层，不接触协议层；参见 .harness/specs/conventions/di.md")
 		}
+
+	case "tasks":
+		// AC-ARCH-17: tasks 是应用层用例（asynq 任务编排），不得接触 HTTP/装配层。
+		// 允许依赖 domain 的 service/repository/entity、platform、shared、adapter。
+		if isDomainImport(suffix, "") && sublayerOfImport(suffix) == "handler" {
+			add("AC-ARCH-17", "tasks 不得依赖 handler",
+				"任务用例编排 service/repository，协议适配留在 handler；参见 .harness/specs/architecture/boundaries.md")
+		}
+		if strings.HasPrefix(suffix, "middleware") || strings.HasPrefix(suffix, "di") {
+			add("AC-ARCH-17", "tasks 不得依赖 "+suffix,
+				"tasks 由 cmd/worker 与 di 装配，不反向依赖装配层或 HTTP 中间件")
+		}
 	}
 	return vs
 }
@@ -420,7 +432,7 @@ func TestArch_ServiceMustNotImportNetHTTP(t *testing.T) {
 	files := collectFiles(t)
 	var vs []violation
 	for _, f := range files {
-		if f.layer != "service" && f.layer != "rag" && f.layer != "repository" && f.layer != "entity" {
+		if f.layer != "service" && f.layer != "repository" && f.layer != "entity" {
 			continue
 		}
 		for _, imp := range f.imports {
@@ -447,7 +459,7 @@ func TestArch_NoReverseDependencies(t *testing.T) {
 			}
 			sl := sublayerOfImport(suffix)
 			switch f.layer {
-			case "service", "rag":
+			case "service":
 				if sl == "handler" {
 					vs = append(vs, violation{file: f.file, badImport: imp,
 						reason: "service 不得依赖 handler（反向依赖）", fix: "依赖方向 handler → service 单向"})
@@ -564,6 +576,35 @@ func TestArch_MiddlewareMustNotImportPlatform(t *testing.T) {
 	reportViolations(t, vs)
 }
 
+// TestArch_TasksMustNotDependOnProtocol AC-ARCH-17: tasks 应用层不得 import
+// handler / middleware / di（任务用例只编排 domain + platform）。
+func TestArch_TasksMustNotDependOnProtocol(t *testing.T) {
+	files := collectFiles(t)
+	var vs []violation
+	for _, f := range files {
+		if f.layer != "tasks" {
+			continue
+		}
+		for _, imp := range f.imports {
+			suffix := internalImport(imp)
+			if suffix == "" {
+				continue
+			}
+			if isDomainImport(suffix, "") && sublayerOfImport(suffix) == "handler" {
+				vs = append(vs, violation{file: f.file, badImport: imp,
+					reason: "tasks 不得依赖 handler（AC-ARCH-17）",
+					fix:    "任务用例编排 service/repository，协议适配留在 handler"})
+			}
+			if strings.HasPrefix(suffix, "middleware") || strings.HasPrefix(suffix, "di") {
+				vs = append(vs, violation{file: f.file, badImport: imp,
+					reason: "tasks 不得依赖 " + suffix + "（AC-ARCH-17）",
+					fix:    "tasks 由 cmd/worker 与 di 装配，不反向依赖"})
+			}
+		}
+	}
+	reportViolations(t, vs)
+}
+
 // TestArch_NoUnlayeredFiles AC-ARCH-16: 源文件必须落入已定义层。
 // 兜底检查 unknown / domain-root / domain-other，防止把违规代码塞进
 // 非标准子目录以躲避其他层规则的检查。
@@ -577,7 +618,7 @@ func TestArch_NoUnlayeredFiles(t *testing.T) {
 				rule:   "AC-ARCH-16",
 				file:   f.file,
 				reason: "文件落入无约束层 " + f.layer + "，层规则不覆盖",
-				fix:    "移入标准子层（entity/repository/service/handler/rag）或合法顶层（platform/shared/middleware/adapter/di/config）"})
+				fix:    "移入标准子层（entity/repository/service/handler）或合法顶层（tasks/platform/shared/middleware/adapter/di/config）"})
 		}
 	}
 	reportViolations(t, vs)

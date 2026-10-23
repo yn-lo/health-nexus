@@ -3,6 +3,8 @@
  * 见 backend/internal/domain/chat/service/conversation_service.go
  */
 
+import type { MessageFeedback } from '@/shared/constants/feedback'
+
 /** 会话 — 对齐后端 ConversationResponse（契约 §3.2~3.5） */
 export interface Conversation {
   id: string;
@@ -49,8 +51,8 @@ export interface Message {
   result_code: string | null;
   /** AI 回答引用的知识切片；user 消息为空数组 */
   references: Reference[];
-  /** 患者反馈 — up=点赞 / down=点踩 / null=未反馈 */
-  feedback?: 'up' | 'down' | null;
+  /** 患者反馈 — 三态：solved/partial/unsolved；null=未反馈 */
+  feedback?: MessageFeedback | null;
   created_at: string;
 }
 

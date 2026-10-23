@@ -1043,6 +1043,7 @@ describe('AC-ARCH-FE-* 架构约束', () => {
     // 白名单：允许使用 v-html 的组件（markdown 渲染等已审计场景）
     const VHTML_ALLOWLIST = [
       'chat/views/ArticleDetail.vue', // markdown-it 渲染文章正文
+      'chat/components/MessageContent.vue', // markdown-it 渲染问答正文，输出经 sanitizeHtml 白名单过滤
     ]
 
     for (const file of vueFiles) {

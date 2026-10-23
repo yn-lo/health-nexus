@@ -10,12 +10,12 @@ owner: backend-team
 
 health-nexus 采用**按域分层 + 依赖反转**架构。核心目的：
 
-1. **Service 是唯一的事务边界和业务编排点**——业务规则只此一处，可被多个 handler/worker 复用
+1. **Service 是域内唯一的事务边界与业务规则归属**——域内规则只此一处，可被 handler 与 tasks 复用
 2. **Handler 只做协议适配**——解析请求、调用 service、组装响应，不承载业务语义
 3. **Repository 只做数据映射**——SQL 与实体转换，不承载业务逻辑，未找到返回 `(nil, nil)` 由 service 决策
 4. **Entity 是纯数据**——不依赖任何框架，可被任意层引用
 5. **Platform 是基础设施**——技术细节封装，不感知业务
-6. **Domain 不直接依赖 Platform**——通过 service 定义的消费者接口（Ports）反转依赖，由 di 层注入实现
+6. **Domain 不直接依赖 Platform 的“实现细节”**——数据访问、缓存、锁、限流等能力由 service 定义消费者接口（Ports）注入；纯函数库（crypto）与 platform 已提供的接口类型（llm.Streamer/Embedder）直接使用（AC-ARCH 允许 service → platform）
 
 这样分层的收益：业务逻辑可独立测试（注入 mock 接口）、技术栈可替换（换 ORM 不影响 service）、域间解耦（通过 adapter 桥接而非直接 import）。
 
@@ -23,13 +23,12 @@ health-nexus 采用**按域分层 + 依赖反转**架构。核心目的：
 
 ```
 cmd ──► di ──► adapter ──► domain.{auth,base,chat,config,wiki}
-                  │              │
-                  │              ├─► handler ──► service ──► repository ──► entity
-                  │              │      │            │            │
-                  │              │      │            └─► platform（经接口注入）
-                  │              │      └─► shared / middleware
-                  │              └─► shared
-                  └─► platform / shared
+  │               │              │
+  └──► tasks ─────┘              ├─► handler ──► service ──► repository ──► entity
+                                 │      │            │            │
+                                 │      │            └─► platform（经接口注入）
+                                 │      └─► shared / middleware
+                                 └─► shared
 ```
 
 **所有箭头单向，禁止反向依赖。** 具体规则由约束层代码强制执行，参见 `internal/harness/arch/arch_test.go`。
@@ -51,6 +50,9 @@ HTTP 协议边界：解析 JSON 请求体（严格模式 `DisallowUnknownFields`
 ### adapter（跨域适配层）
 当域 A 需要域 B 的能力时，由 adapter 桥接（如 chat 域需要 base 域的科室解析 → `adapter.NewBaseDepartmentResolver`）。adapter 可 import 多个 domain，是循环依赖的破除点。adapter 不含业务逻辑，仅做接口适配。
 
+### tasks（应用层 / 任务用例）
+`internal/tasks/` 承载 asynq 任务用例：文章向量化、复审/危机通知落库、超时升级、outbox 补投。任务 payload 与 asynq 绑定属于进程边界；**业务编排集中在此**，`cmd/worker` 只负责依赖装配与生命周期。tasks 可依赖任意域的 service/repository/entity 与 platform；**禁止 import handler、middleware、di**（AC-ARCH-17）。域内业务规则仍必须留在 service——tasks 只做“取任务 → 调用域能力 → 幂等落库”的编排，不重复实现规则。
+
 ### platform（基础设施层）
 技术细节封装：postgres 连接池/事务、redis 客户端/锁、asynq 客户端、llm 客户端、crypto、logger。**禁止反向 import domain**（AC-ARCH-09）。平台若需被 domain 使用，由 service 定义接口、di 注入实现。
 
@@ -70,6 +72,7 @@ HTTP 中间件：JWT 认证、CORS、限流、请求日志、数据隔离、恢�
 > - **代码风格**（行数/函数长度/错误处理/死代码）→ `.golangci.yml`（funlen/lll/errcheck/staticcheck）
 > - **安全**（gosec G304/G306 等）→ `.golangci.yml`（AC-SEC）
 > - **无约束层兜底**（AC-ARCH-16）→ 任何源文件必须落入已定义层，`unknown` / `domain-root` / `domain-other` 直接报错，防止文件塞进非标准目录躲避层规则
+> - **tasks 应用层边界**（AC-ARCH-17）→ tasks 不得依赖 handler / middleware / di
 
 ## 棕地陷阱（不要复制）
 

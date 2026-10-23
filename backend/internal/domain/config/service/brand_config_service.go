@@ -16,8 +16,8 @@ import (
 // 单例配置走 cache-aside——先查 Redis，miss 回源 DB 并回填（TTL 5min）。
 // Redis 不可用或反序列化失败时静默回源 DB（ponytail：缓存降级不影响正确性）。
 func (s *ConfigService) GetBrandConfig(ctx context.Context) (*BrandConfigResponse, error) {
-	if s.redis != nil {
-		if data, err := s.redis.Get(ctx, cacheKeyBrandConfig).Bytes(); err == nil {
+	if s.cache != nil {
+		if data, err := s.cache.Get(ctx, cacheKeyBrandConfig); err == nil {
 			var c entity.BrandConfig
 			if json.Unmarshal(data, &c) == nil {
 				resp := toBrandConfigResponse(&c)
@@ -37,9 +37,9 @@ func (s *ConfigService) GetBrandConfig(ctx context.Context) (*BrandConfigRespons
 		}
 		c = &def
 	}
-	if s.redis != nil {
+	if s.cache != nil {
 		if data, mErr := json.Marshal(c); mErr == nil {
-			s.redis.Set(ctx, cacheKeyBrandConfig, data, cacheTTL)
+			_ = s.cache.Set(ctx, cacheKeyBrandConfig, data, cacheTTL)
 		}
 	}
 	resp := toBrandConfigResponse(c)

@@ -113,42 +113,4 @@ defineExpose({ setText, inputText })
  </div>
 </template>
 
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* ── 自动增高 textarea ───────────────────────────────────── */
-.ai-textarea {
- max-height: 40vh;
- padding: 0;
- overflow-y: auto;
-}
 
-/* ── 发送按钮 hover/press（44px 最小触摸目标） ────────── */
-.ai-send-btn {
-  width: var(--ds-control-height-md);
-  height: var(--ds-control-height-md);
-  transition: transform var(--micro-duration) var(--micro-ease),
-  background-color var(--micro-duration) var(--micro-ease),
-  box-shadow var(--micro-duration) var(--micro-ease);
-}
-.ai-send-btn:hover:not(:disabled) {
- transform: scale(var(--hover-scale-strong));
-}
-.ai-send-btn:active:not(:disabled) {
- transform: scale(var(--press-scale));
-}
-.ai-send-btn:disabled {
- box-shadow: none;
- cursor: not-allowed;
-}
-.ai-send-btn svg {
- padding: 1px;
-}
-
-@media (prefers-reduced-motion: reduce) {
- .ai-send-btn {
- transition: none;
- }
- .ai-send-btn:hover:not(:disabled) {
- transform: none;
- }
-}
-</style>

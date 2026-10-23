@@ -18,8 +18,8 @@ import (
 // FIX-6: 单例配置走 cache-aside——先查 Redis，miss 回源 DB 并回填（TTL 5min）。
 // Redis 不可用或反序列化失败时静默回源 DB（ponytail：缓存降级不影响正确性）。
 func (s *ConfigService) GetRAGConfig(ctx context.Context) (*RAGConfigResponse, error) {
-	if s.redis != nil {
-		if data, err := s.redis.Get(ctx, cacheKeyRAGConfig).Bytes(); err == nil {
+	if s.cache != nil {
+		if data, err := s.cache.Get(ctx, cacheKeyRAGConfig); err == nil {
 			var c entity.RAGConfig
 			if json.Unmarshal(data, &c) == nil {
 				resp := toRAGConfigResponse(&c)
@@ -41,9 +41,9 @@ func (s *ConfigService) GetRAGConfig(ctx context.Context) (*RAGConfigResponse, e
 		}
 		c = &def
 	}
-	if s.redis != nil {
+	if s.cache != nil {
 		if data, mErr := json.Marshal(c); mErr == nil {
-			s.redis.Set(ctx, cacheKeyRAGConfig, data, cacheTTL)
+			_ = s.cache.Set(ctx, cacheKeyRAGConfig, data, cacheTTL)
 		}
 	}
 	// 阈值过高会把相关切片全部裁掉，导致"有知识也答不出"（bge-m3 相关命中实测约 0.68）。

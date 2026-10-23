@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"health-nexus/internal/adapter"
@@ -47,7 +46,7 @@ type App struct {
 	Base          *basehandler.DepartmentHandler
 	Notifications *basehandler.NotificationHandler
 	Wiki          *wikihandler.Router
-	Chat          http.Handler
+	Chat          *chathandler.Router
 	Config        *confighandler.ConfigHandler
 }
 
@@ -200,6 +199,12 @@ func buildConfigDomain(
 	}
 	aesKey := sha256.Sum256([]byte(cfg.Security.EncryptionKey))
 
+	configSvc := NewConfigService(infra, aesKey[:], cfg.LLM)
+	return confighandler.NewConfigHandler(configSvc), configSvc, aesKey[:], nil
+}
+
+// NewConfigService 装配 config 域服务（server 与 worker 共用，避免两处依赖清单漂移）。
+func NewConfigService(infra *Infrastructure, aesKey []byte, llmCfg config.LLMConfig) *configservice.ConfigService {
 	aiProviderRepo := configrepo.NewAIProviderRepo(infra.Pool)
 	sensitiveWordRepo := configrepo.NewSensitiveWordRepo(infra.Pool)
 	safetyRuleRepo := configrepo.NewSafetyRuleRepo(infra.Pool)
@@ -209,13 +214,16 @@ func buildConfigDomain(
 	brandConfigRepo := configrepo.NewBrandConfigRepo(infra.Pool)
 	configAuditLogRepo := configrepo.NewConfigAuditLogRepo(infra.Pool)
 
-	configSvc := configservice.NewConfigServiceWithLLM(
+	var configCache *redis.Cache
+	if infra.Redis != nil {
+		configCache = redis.NewCache(infra.Redis)
+	}
+	return configservice.NewConfigServiceWithLLM(
 		aiProviderRepo, sensitiveWordRepo, safetyRuleRepo,
 		ragConfigRepo, promptTemplateRepo, safetyMessageRepo,
 		brandConfigRepo, configAuditLogRepo, infra.TxMgr,
-		aesKey[:], infra.Redis, cfg.LLM,
+		aesKey, configCache, llmCfg,
 	)
-	return confighandler.NewConfigHandler(configSvc), configSvc, aesKey[:], nil
 }
 
 func buildWikiRouter(
@@ -256,7 +264,7 @@ func buildChatRouter(
 	deptRepo *baserepo.DepartmentRepo,
 	configSvc *configservice.ConfigService,
 	chunkRepo *wikirepo.ChunkRepo,
-) (http.Handler, error) {
+) (*chathandler.Router, error) {
 	conversationRepo := chatrepo.NewConversationRepo(infra.Pool)
 	messageRepo := chatrepo.NewMessageRepo(infra.Pool)
 	crisisRepo := chatrepo.NewCrisisRepo(infra.Pool)

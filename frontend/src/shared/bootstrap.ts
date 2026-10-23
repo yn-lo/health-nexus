@@ -5,7 +5,7 @@
 import type { App } from 'vue'
 import { createPinia } from 'pinia'
 import type { Router } from 'vue-router'
-import { setupAuthGuards } from '@/router/guards'
+import { setupAuthGuards } from '@/shared/utils/route-guard'
 import { useBrandStore } from '@/stores/brand'
 
 interface BootstrapOptions {

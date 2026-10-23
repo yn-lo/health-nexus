@@ -1,41 +1,28 @@
 <script setup lang="ts">
 /**
- * ChatConversation 对话页 - AI-Native UI 风格（重构后）
- *
- * 视觉重塑：
- *   - 顶部统一 ChatHeader（frosted variant + 返回 + 标题 + 历史）
- *   - 用户消息：品牌色实心气泡 + 白色文本（右对齐，更强的对话对比）
- *   - AI 消息：灰底气泡 + 名称/时间层级 + 编号引用卡 + 反馈栏（左对齐）
- *   - 消息按角色分组：连续同角色收拢间距，跨角色留白更大
- *   - 15px/24px 阅读字号 + 分组呼吸感（message gap 提升至 20px）
- *   - 3 点输入指示器（pulse）+ 流式光标
- * 保留功能：useSSEChat、useDepartments、ChatHistoryDrawer、反馈三态（解决了/部分解决/未解决）
+ * ChatConversation 对话页 - AI-Native UI（消息渲染/反馈/流式展示已拆为组件）
+ * 本文件只保留：路由与会话生命周期、SSE 编排、滚动、匿名本地快照。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  Copy,
-  Sparkles,
-} from '@lucide/vue'
 import { useDepartments } from '@/chat/composables/useDepartments'
 import { useSSEChat } from '@/chat/composables/useSSEChat'
 import { useChatMode } from '@/chat/composables/useChatMode'
-import { useChatStore, loadAnonMessages, saveAnonMessages, upsertAnonSession, type AnonSessionMeta } from '@/stores/chat'
+import { useMessageFeedback } from '@/chat/composables/useMessageFeedback'
+import { useChatStore, loadAnonMessages, saveAnonSessionSnapshot } from '@/stores/chat'
+import { isAuthenticated } from '@/shared/api/client'
 import { DisclaimerFooter } from '@/shared/components'
 import { useDsToast, useDsDialog } from '@/shared/composables'
+import { type MessageFeedback } from '@/shared/constants/feedback'
+import type { Message } from '@/shared/types/chat'
 import ChatHeader from '@/chat/components/ChatHeader.vue'
 import ChatModeSwitcher from '@/chat/components/ChatModeSwitcher.vue'
 import ChatInputBar from '@/chat/components/ChatInputBar.vue'
 import ChatHistoryDrawer from '@/chat/components/ChatHistoryDrawer.vue'
+import ChatMessage from '@/chat/components/ChatMessage.vue'
+import ChatStreamingMessage from '@/chat/components/ChatStreamingMessage.vue'
 import DeptPickerPopup from '@/chat/components/DeptPickerPopup.vue'
-import KnowledgeList from '@/chat/views/KnowledgeList.vue'
-import MarkdownIt from 'markdown-it'
-import { sanitizeHtml } from '@/shared/utils/sanitize-html'
-import { citedRefs } from '@/shared/utils/citations'
-import { submitMessageFeedback } from '@/shared/api/chat'
-import { errmsg, getAccessToken } from '@/shared/api/client'
-import { FEEDBACK_OPTIONS, type MessageFeedback } from '@/shared/constants/feedback'
-import type { Message, Reference } from '@/shared/types/chat'
+import KnowledgeBrowser from '@/chat/components/KnowledgeBrowser.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -43,79 +30,12 @@ const chatStore = useChatStore()
 const { showToast, showFailToast } = useDsToast()
 const { showDialog } = useDsDialog()
 
-const md = new MarkdownIt({ html: false, breaks: true, linkify: true })
-
-/** 引用标记 `[资料N]`：N 对应"参考来源"（按 article_id 去重后）第 N 篇文章 */
-const CITE_RE = /\[资料\s*(\d+)\]/g
-/** 文章 ID 属性白名单（仅字母/数字/_/-），避免拼接进 HTML 属性时被注入 */
-const SAFE_ARTICLE_ID = /^[A-Za-z0-9_-]+$/
-
-/**
- * 渲染 markdown 为 HTML（经白名单消毒，防 XSS），并把 `[资料N]` 美化为可点击角标。
- * 角标在消毒**之后**注入：消毒器会剥掉 class，故样式化只能发生在此之后；
- * 注入内容仅数字编号与经白名单校验的文章 ID，无注入面。
- */
-function renderMd(text: string, refs: Reference[] = []): string {
-  const html = sanitizeHtml(md.render(text))
-  if (!html.includes('[资料')) return html
-  // 引用单位 = 文章：正文 [资料N] 的 N 指向本轮 references 第 N 条（后端已按文章归并）。
-  // 角标序号 = 该文章在"被引用文章"列表中的位置（1 起），与下方卡片序号一致；
-  // 未被正文引用的候选文章不展示，故角标可能被重新编号（如 [资料3] → 1）。
-  const cited = citedRefs(text, refs)
-  const posByArticle = new Map<number, number>()
-  cited.forEach((r, i) => posByArticle.set(r.article_id, i + 1))
-  return html.replace(CITE_RE, (_m, n: string) => {
-    const raw = refs[Number(n) - 1]?.article_id
-    if (raw !== undefined) {
-      const article = String(raw)
-      if (SAFE_ARTICLE_ID.test(article)) {
-        const label = posByArticle.get(raw) ?? n
-        return `<sup class="cite-chip" data-cite-article="${article}" role="button">${label}</sup>`
-      }
-    }
-    return `<sup class="cite-chip cite-chip--plain">${n}</sup>`
-  })
-}
-
-/** 点击引用角标：滚动到同一消息内对应的参考来源卡片并高亮一闪。 */
-function onCiteClick(e: MouseEvent) {
-  const chip = (e.target as HTMLElement | null)?.closest('[data-cite-article]') as HTMLElement | null
-  const articleId = chip?.dataset.citeArticle
-  if (!chip || !articleId) return
-  const card = chip.closest('.chat-row')?.querySelector(`[data-article-id="${articleId}"]`) as HTMLElement | null
-  if (!card) return
-  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  card.classList.add('ref-card--flash')
-  window.setTimeout(() => card.classList.remove('ref-card--flash'), 1200)
-}
-
-/** 消息时间：今天显示 HH:mm，否则显示 MM-DD HH:mm */
-function formatTime(iso: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const now = new Date()
-  const sameDay = d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (sameDay) return hm
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hm}`
-}
-
-/** 与下一条消息同角色 → 收拢间距（分组呼吸感） */
-function isGroupedWithNext(idx: number): boolean {
-  const next = chatStore.messages[idx + 1]
-  const cur = chatStore.messages[idx]
-  if (!cur || !next) return false
-  return cur.role === next.role
-}
-
 const inputBarRef = ref<InstanceType<typeof ChatInputBar> | null>(null)
 const messageListRef = ref<HTMLDivElement>()
 const inputBarHeight = ref(120)
 let inputBarObserver: ResizeObserver | null = null
 const showHistory = ref(false)
 const showDeptPicker = ref(false)
-const feedbackMap = ref<Record<string, string>>({})
 /** 本轮用户消息的本地乐观 ID：result 事件到达后替换为服务端权威 ID（反馈等操作据此定位真实消息） */
 let pendingUserLocalId = ''
 
@@ -146,37 +66,17 @@ const STAGE_LABELS: Record<string, string> = {
   reviewing: '正在核对内容',
 }
 const thinkingLabel = computed(() => STAGE_LABELS[stage.value] ?? '正在思考')
+
 // 匿名用户（无 access token）：走 /api/public/chat/stream，上下文存服务端 Redis 12h，
 // 前端无公开消息拉取/反馈端点——消息本地回显（localStorage），隐藏反馈入口，避免 401 与无效反馈。
-const isAnon = !getAccessToken()
+const isAnon = computed(() => !isAuthenticated.value)
+const { feedbackMap, canFeedback, syncFromMessages, submit: submitFeedback } = useMessageFeedback(isAnon)
 
 /** 匿名会话：将当前消息列表持久化到 localStorage（key 绑定会话 id），刷新后回显 */
 function persistAnonMessages() {
-  if (!isAnon) return
+  if (!isAnon.value) return
   const convId = sseConversationId.value || conversationId.value
-  if (convId) {
-    saveAnonMessages(convId, chatStore.messages)
-    upsertAnonSession(buildAnonSessionMeta(convId, chatStore.messages))
-  }
-}
-
-/** 由消息列表构建匿名会话索引元信息（标题=首条用户消息，活跃时间=最后一条消息时间） */
-function buildAnonSessionMeta(convId: string, list: Message[]): AnonSessionMeta {
-  const firstUser = list.find((m) => m.role === 'user')
-  const last = list[list.length - 1]
-  return {
-    id: convId,
-    title: truncateTitle(firstUser?.content ?? ''),
-    created_at: list[0]?.created_at ?? new Date().toISOString(),
-    last_message_at: last?.created_at ?? new Date().toISOString(),
-  }
-}
-
-/** 截断会话标题到 24 字符（对齐后端 truncateTitle 语义） */
-function truncateTitle(title: string): string {
-  const t = title.trim().replace(/\s+/g, ' ')
-  if (!t) return '新对话'
-  return t.length > 24 ? t.slice(0, 24) + '…' : t
+  if (convId) saveAnonSessionSnapshot(convId, chatStore.messages)
 }
 
 function openHistory() {
@@ -249,22 +149,12 @@ function scrollToBottom(force = false) {
   })
 }
 
-function syncFeedbackFromMessages() {
-  const map: Record<string, string> = {}
-  for (const msg of chatStore.messages) {
-    if (msg.feedback) map[msg.id] = msg.feedback
-  }
-  const oldMap = feedbackMap.value
-  for (const [oldId, val] of Object.entries(oldMap)) {
-    if (map[oldId]) continue
-    if (!oldId.startsWith('local-')) {
-      map[oldId] = val
-      continue
-    }
-    const stillInStore = chatStore.messages.some((m) => m.id === oldId)
-    if (stillInStore) map[oldId] = val
-  }
-  feedbackMap.value = map
+/** 与下一条消息同角色 → 收拢间距（分组呼吸感） */
+function isGroupedWithNext(idx: number): boolean {
+  const next = chatStore.messages[idx + 1]
+  const cur = chatStore.messages[idx]
+  if (!cur || !next) return false
+  return cur.role === next.role
 }
 
 function sendMessage(text: string) {
@@ -305,21 +195,8 @@ function goToArticle(articleId: number) {
   router.push({ name: 'wiki-article', params: { id: articleId } })
 }
 
-/** 是否可提交反馈：需服务端已持久化该消息（本地乐观消息无真实 ID，提交会 404） */
-function canFeedback(msg: Message): boolean {
-  return !isAnon && !msg.id.startsWith('local-')
-}
-
-async function onFeedback(msg: Message, value: MessageFeedback) {
-  if (feedbackMap.value[msg.id] || !canFeedback(msg)) return
-  feedbackMap.value[msg.id] = value
-  try {
-    await submitMessageFeedback(msg.id, value)
-    showToast('感谢您的反馈')
-  } catch (e) {
-    delete feedbackMap.value[msg.id]
-    showFailToast(errmsg(e, '反馈提交失败'))
-  }
+function onFeedback(msg: Message, value: MessageFeedback) {
+  void submitFeedback(msg, value)
 }
 
 /** 打开已有会话：先恢复会话详情（含锁定科室）再拉取消息。
@@ -340,7 +217,7 @@ async function openConversation(id: string, jumpToBottom = false) {
     if (conv.locked_dept_id != null) selectDepartment(conv.locked_dept_id)
     await chatStore.fetchMessages(id, epoch)
     if (!chatStore.isCurrentLoad(epoch)) return
-    syncFeedbackFromMessages()
+    syncFromMessages(chatStore.messages)
     scrollToBottom(jumpToBottom)
   } catch {
     if (chatStore.isCurrentLoad(epoch)) {
@@ -361,7 +238,7 @@ watch(conversationId, (newId) => {
   sseConversationId.value = newId
   sseOptions.conversationId = newId
   if (!newId) return
-  if (isAnon) {
+  if (isAnon.value) {
     // 匿名：无公开拉取端点，从 localStorage 回显本地缓存（服务端 Redis 上下文此时不展示给用户）
     chatStore.messages = loadAnonMessages(newId)
     scrollToBottom()
@@ -462,7 +339,7 @@ onMounted(async () => {
   }
 
   if (!conversationId.value) return
-  if (isAnon) {
+  if (isAnon.value) {
     // 匿名：无公开拉取端点，从 localStorage 回显本地缓存
     chatStore.messages = loadAnonMessages(conversationId.value)
     scrollToBottom(true)
@@ -486,7 +363,7 @@ onUnmounted(() => {
     </ChatHeader>
 
     <!-- 消息列表 - AI-Native：分组留白 + 15px 阅读字号 -->
-    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }" @click="onCiteClick">
+    <main v-if="activeMode === 'chat'" ref="messageListRef" class="flex-1 overflow-y-auto px-[var(--spacer-16)] py-[var(--spacer-20)] no-scrollbar" :style="{ paddingBottom: `${inputBarHeight}px` }">
       <div class="flex flex-col">
         <!-- 向上分页：仅在还有更早记录时展示（匿名无公开拉取端点，不展示） -->
         <div v-if="!isAnon && chatStore.hasMoreMessages" class="load-earlier flex justify-center">
@@ -499,155 +376,36 @@ onUnmounted(() => {
             {{ chatStore.loading ? '加载中…' : '加载更早消息' }}
           </button>
         </div>
-        <template v-for="(msg, idx) in chatStore.messages" :key="msg.id">
-          <!-- 用户消息 - 品牌浅色气泡 + 时间（右对齐） -->
-          <div
-            v-if="msg.role === 'user'"
-            class="chat-row chat-row--user"
-            :class="{ 'chat-row--grouped': isGroupedWithNext(idx) }"
-          >
-            <div class="chat-row__content chat-row__content--user">
-              <div class="ds-bubble ds-bubble--user">
-                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content)"></div>
-              </div>
-              <span class="chat-time">{{ formatTime(msg.created_at) }}</span>
-            </div>
-          </div>
 
-          <!-- AI 消息 - 灰底气泡 + 名称层级 + 引用 + 反馈 -->
-          <div
-            v-else-if="msg.role === 'assistant'"
-            class="chat-row chat-row--ai"
-            :class="{ 'chat-row--grouped': isGroupedWithNext(idx) }"
-          >
-            <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
-              <Sparkles :size="14" />
-            </div>
-            <div class="flex-1 min-w-0 chat-row__content">
-              <div class="chat-assistant-name">
-                <span class="font-medium text-text">健康助手</span>
-                <span class="chat-time">{{ formatTime(msg.created_at) }}</span>
-                <!-- 结果码来自服务端权威结果：截断的回答标注不完整，刷新后仍然可见 -->
-                <span v-if="msg.result_code === 'PARTIAL'" class="chat-incomplete">回答不完整</span>
-              </div>
-              <div class="ds-bubble ds-bubble--ai">
-                <div class="m-0 break-words markdown-content" v-html="renderMd(msg.content, msg.references)"></div>
-              </div>
+        <ChatMessage
+          v-for="(msg, idx) in chatStore.messages"
+          :key="msg.id"
+          :message="msg"
+          :feedback="feedbackMap[msg.id]"
+          :can-feedback="canFeedback(msg)"
+          :grouped="isGroupedWithNext(idx)"
+          @feedback="onFeedback(msg, $event)"
+          @copy="copyMessage"
+          @open-article="goToArticle"
+        />
 
-              <!-- 引用来源（仅正文实际引用的文章；未引用的候选不展示） -->
-              <div v-if="citedRefs(msg.content, msg.references).length" class="mt-[var(--spacer-12)]">
-                <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
-                <div class="flex flex-col gap-[var(--spacer-6)]">
-                  <div
-                    v-for="(ref, refIdx) in citedRefs(msg.content, msg.references)"
-                    :key="ref.article_id"
-                    :data-article-id="String(ref.article_id)"
-                    class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
-                    @click="goToArticle(ref.article_id)"
-                  >
-                    <span class="ref-card__idx">{{ refIdx + 1 }}</span>
-                    <p class="flex-1 min-w-0 text-body-sm text-text-secondary m-0 leading-snug line-clamp-2">
-                      {{ ref.article_title }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 反馈栏（匿名/未同步消息无服务端持久化，仅保留复制）：
-                   三态靠左、"/" 分隔；复制按钮 ml-auto 固定最右 -->
-              <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
-                <div v-if="canFeedback(msg)" class="flex items-center gap-[var(--spacer-4)]">
-                  <template v-for="(opt, idx) in FEEDBACK_OPTIONS" :key="opt.value">
-                    <span v-if="idx > 0" class="text-body-xs text-icon-tertiary select-none" aria-hidden="true">/</span>
-                    <button
-                      type="button"
-                      class="feedback-pill text-body-xs"
-                      :class="feedbackMap[msg.id] === opt.value
-                        ? 'bg-[var(--bg-brand-light)] text-text-brand'
-                        : 'text-icon-tertiary'"
-                      :aria-pressed="feedbackMap[msg.id] === opt.value"
-                      :aria-label="opt.label"
-                      @click="onFeedback(msg, opt.value)"
-                    >
-                      {{ opt.label }}
-                    </button>
-                  </template>
-                </div>
-                <button
-                  class="feedback-btn ml-auto flex items-center justify-center text-icon-tertiary"
-                  aria-label="复制内容"
-                  @click="copyMessage(msg.content)"
-                >
-                  <Copy :size="15" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- 思考中指示器 - 3-dot pulse + 名称 -->
-        <div v-if="isThinking" class="chat-row chat-row--ai">
-          <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
-            <Sparkles :size="14" />
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="chat-assistant-name">
-              <span class="font-medium text-text">健康助手</span>
-              <span class="chat-time">{{ thinkingLabel }}</span>
-            </div>
-            <div class="ds-bubble ds-bubble--ai">
-              <div class="flex items-center gap-[var(--spacer-6)]">
-                <span class="thinking-dot" />
-                <span class="thinking-dot" />
-                <span class="thinking-dot" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 流式输出中的 AI 消息 -->
-        <div v-if="isStreaming && currentContent" class="chat-row chat-row--ai">
-          <div class="ds-avatar ds-avatar--brand mt-[var(--spacer-4)]">
-            <Sparkles :size="14" />
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="chat-assistant-name">
-              <span class="font-medium text-text">健康助手</span>
-              <span class="chat-time">正在生成</span>
-            </div>
-            <div class="ds-bubble ds-bubble--ai">
-              <div class="m-0 break-words markdown-content" v-html="renderMd(currentContent, references) + '<span class=\'streaming-cursor\'></span>'"></div>
-            </div>
-            <!-- 流式中的引用来源（仅正文已引用的文章） -->
-            <div v-if="citedRefs(currentContent, references).length" class="mt-[var(--spacer-12)]">
-              <p class="text-body-xs text-text-tertiary m-0 mb-[var(--spacer-6)]">参考来源</p>
-              <div class="flex flex-col gap-[var(--spacer-6)]">
-                <div
-                  v-for="(ref, refIdx) in citedRefs(currentContent, references)"
-                  :key="ref.article_id"
-                  :data-article-id="String(ref.article_id)"
-                  class="ref-card group flex items-center gap-[var(--spacer-10)] rounded-[var(--radius-12)] bg-[var(--bg-overlay-l1)] px-[var(--spacer-12)] py-[var(--spacer-8)] ring-1 ring-[var(--border-neutral-l1)] transition-all active:scale-[0.98]"
-                  @click="goToArticle(ref.article_id)"
-                >
-                  <span class="ref-card__idx">{{ refIdx + 1 }}</span>
-                  <p class="flex-1 min-w-0 text-body-sm text-text-secondary m-0 leading-snug line-clamp-2">
-                    {{ ref.article_title }}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <!-- 流式中仅保留复制按钮（右对齐，与完成后的反馈栏位置一致） -->
-            <div class="feedback-bar flex items-center mt-[var(--spacer-10)]">
-              <button
-                class="feedback-btn ml-auto flex items-center justify-center text-icon-tertiary"
-                aria-label="复制内容"
-                @click="copyMessage(currentContent)"
-              >
-                <Copy :size="15" />
-              </button>
-            </div>
-          </div>
-        </div>
+        <!-- 思考中 / 流式输出 -->
+        <ChatStreamingMessage
+          v-if="isThinking"
+          thinking
+          content=""
+          :label="thinkingLabel"
+          @copy="copyMessage"
+          @open-article="goToArticle"
+        />
+        <ChatStreamingMessage
+          v-else-if="isStreaming && currentContent"
+          :content="currentContent"
+          :references="references"
+          label="正在生成"
+          @copy="copyMessage"
+          @open-article="goToArticle"
+        />
 
         <!-- 免责声明 -->
         <DisclaimerFooter />
@@ -655,7 +413,7 @@ onUnmounted(() => {
     </main>
 
     <!-- 知识库模式 -->
-    <KnowledgeList v-if="activeMode === 'knowledge'" embedded />
+    <KnowledgeBrowser v-if="activeMode === 'knowledge'" embedded />
 
     <!-- 独立提示（紧急就医 / 超时）：不进入答案正文，可关闭 -->
     <div v-if="notices.length" class="chat-notice" :style="{ bottom: `${inputBarHeight}px` }" role="status">
@@ -700,404 +458,3 @@ onUnmounted(() => {
     />
   </div>
 </template>
-
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-/* ── AI-Native 3-dot pulse（模板默认 8px） ─────────────── */
-.thinking-dot {
-  width: var(--typing-dot-size);
-  height: var(--typing-dot-size);
-  border-radius: var(--radius-full);
-  background: var(--ai-accent);
-  animation: thinking-pulse 1.4s ease-in-out infinite;
-}
-.thinking-dot:nth-child(2) {
-  animation-delay: 0.16s;
-}
-.thinking-dot:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-@keyframes thinking-pulse {
-  0%, 80%, 100% {
-    transform: scale(0.6);
-    opacity: 0.5;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* ── AI-Native 流式光标 ───────────────────────────────── */
-.streaming-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 14px;
-  background: var(--ai-accent);
-  vertical-align: text-bottom;
-  animation: cursor-blink 1s step-end infinite;
-}
-
-@keyframes cursor-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
-/* ── 消息行：跨角色分组留白 + 同角色收拢 ───────────────── */
-.ai-message,
-.chat-row {
-  animation: message-fade-in 200ms var(--micro-ease) both;
-}
-
-.chat-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacer-10);
-  margin-bottom: var(--message-gap);
-}
-.chat-row:last-child {
-  margin-bottom: 0;
-}
-/* 与下一条同角色 → 收拢间距（分组呼吸感） */
-.chat-row--grouped {
-  margin-bottom: var(--spacer-10);
-}
-
-/* 用户消息：右对齐，气泡后跟时间 */
-.chat-row--user {
-  justify-content: flex-end;
-}
-.chat-row__content--user {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--spacer-4);
-  /* 用户气泡宽度预算：落在整行上而非随内容塌缩的列上，使 88% 真正生效 */
-  width: auto;
-  flex: 0 1 auto;
-  max-width: 88%;
-}
-
-/* 气泡填满内容列，让 88% 的限宽由列承接 */
-.chat-row__content--user .ds-bubble {
-  max-width: 100%;
-}
-
-/* AI 消息名称 + 时间层级 */
-.chat-assistant-name {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacer-6);
-  margin-bottom: var(--spacer-4);
-}
-.chat-assistant-name .chat-time {
-  font-size: var(--body-xs-font-size);
-  color: var(--text-tertiary);
-}
-
-.chat-time {
-  font-size: var(--body-xs-font-size);
-  color: var(--text-tertiary);
-  line-height: 1.2;
-}
-
-@keyframes message-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ── Micro-interactions：反馈栏 ─────────────────────────── */
-.feedback-bar {
-  gap: var(--spacer-4);
-  /* 与 .ds-bubble 的 max-width: 88% 同源，使 ml-auto 的复制按钮与气泡右缘对齐
-     ponytail: 升级路径——components.css 抽出 --bubble-max-width 令牌后引用之 */
-  max-width: 88%;
-}
-
-/* ── Micro-interactions：反馈按钮 hover/press ───────────── */
-.feedback-btn {
-  width: 36px;
-  height: 36px;
-}
-/* 反馈按钮 / 三态胶囊共用的圆角与过渡 */
-.feedback-pill,
-.feedback-btn {
-  border-radius: var(--radius-full);
-  transition: transform var(--micro-duration) var(--micro-ease),
-              background-color var(--micro-duration) var(--micro-ease),
-              color var(--micro-duration) var(--micro-ease);
-}
-.feedback-btn:hover {
-  background: var(--bg-overlay-l1);
-}
-.feedback-btn:active {
-  transform: scale(var(--press-scale));
-}
-
-/* ── 反馈三态文字胶囊（选中态高亮由模板类切换） ─────────── */
-.feedback-pill {
-  height: 28px;
-  padding: 0 var(--spacer-10);
-}
-.feedback-pill:hover {
-  background: var(--bg-overlay-l1);
-}
-.feedback-pill:active {
-  transform: scale(var(--press-scale));
-}
-
-/* ── 引用来源卡片：编号徽章 + 触感按压 ─────────────────── */
-.ref-card__idx {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-8);
-  background: var(--bg-brand-light);
-  color: var(--text-brand);
-  font-size: var(--body-xs-font-size);
-  font-weight: 600;
-}
-
-/* ── 引用角标 `[资料N]`：正文内可点击小徽章 ─────────────── */
-.markdown-content :deep(.cite-chip) {
-  display: inline-block;
-  min-width: 14px;
-  padding: 0 3px;
-  margin: 0 1px;
-  border-radius: var(--radius-8);
-  background: var(--bg-brand-light);
-  color: var(--text-brand);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 15px;
-  text-align: center;
-  vertical-align: 2px;
-  cursor: pointer;
-  user-select: none;
-  transition: transform var(--micro-duration) var(--micro-ease);
-}
-.markdown-content :deep(.cite-chip:active) {
-  transform: scale(0.92);
-}
-/* 编号越界、无法定位来源时降级为纯展示角标 */
-.markdown-content :deep(.cite-chip--plain) {
-  cursor: default;
-  opacity: 0.75;
-}
-
-/* ── 点击引用角标后，来源卡片高亮一闪 ───────────────────── */
-.ref-card--flash {
-  animation: ref-flash 1.2s var(--micro-ease);
-}
-@keyframes ref-flash {
-  0%,
-  55% {
-    background-color: var(--bg-brand-light);
-  }
-  100% {
-    background-color: var(--bg-overlay-l1);
-  }
-}
-
-/* ── 胶囊输入栏 focus 光晕 ─────────────────────────────── */
-.input-capsule {
-  transition: border-color var(--micro-duration) var(--micro-ease),
-              box-shadow var(--micro-duration) var(--micro-ease);
-}
-.input-capsule:focus-within {
-  border-color: var(--border-brand);
-  box-shadow: 0 0 0 var(--focus-ring-width) var(--hero-glow-color-soft);
-}
-
-/* ── 固定底部输入栏 ─────────────────────────────────────── */
-.chat-conversation-input-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 20;
-}
-
-/* ── 向上分页入口 ───────────────────────────────────────── */
-.load-earlier {
-  padding-bottom: var(--spacer-12);
-}
-.load-earlier__btn {
-  transition: transform var(--micro-duration) var(--micro-ease);
-}
-.load-earlier__btn:active {
-  transform: scale(var(--press-scale));
-}
-.load-earlier__btn:disabled {
-  opacity: 0.6;
-}
-
-/* ── 独立提示（紧急就医 / 超时）：固定于输入栏之上 ───────── */
-.chat-notice {
-  position: fixed;
-  left: 0;
-  right: 0;
-  z-index: 19;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacer-6);
-  padding: var(--spacer-8) var(--spacer-16);
-  pointer-events: none;
-}
-.chat-notice__item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--spacer-8);
-  padding: var(--spacer-10) var(--spacer-12);
-  border-radius: var(--radius-12);
-  font-size: var(--body-xs-font-size);
-  line-height: 1.5;
-  pointer-events: auto;
-}
-.chat-notice__item--emergency {
-  background: var(--status-error-surface-l1);
-  color: var(--status-error-default);
-  border: 1px solid var(--status-error-surface-l3);
-}
-.chat-notice__item--timeout {
-  background: var(--bg-overlay-l1);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-neutral-l1);
-}
-.chat-notice__text {
-  flex: 1;
-  min-width: 0;
-}
-.chat-notice__close {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 16px;
-  line-height: 1;
-  opacity: 0.7;
-}
-
-/* ── 结果码标记：截断回答 ───────────────────────────────── */
-.chat-incomplete {
-  padding: 0 var(--spacer-6);
-  border-radius: var(--radius-8);
-  background: var(--bg-overlay-l1);
-  color: var(--text-tertiary);
-  font-size: var(--body-xs-font-size);
-}
-
-/* ── A11y：减弱动效偏好 ─────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .thinking-dot,
-  .streaming-cursor,
-  .ai-message,
-  .chat-row,
-  .ref-card--flash {
-    animation: none;
-  }
-  .feedback-btn {
-    transition: none;
-  }
-  .feedback-btn:active {
-    transform: none;
-  }
-}
-/* ── Markdown 内容：紧凑可读排版 ────────────────────────────
- * 关键修复：覆盖 .ds-bubble 继承的 white-space: pre-wrap。
- * markdown-it 输出的 HTML 在块级标签间存在源码换行，pre-wrap 会
- * 把这些换行渲染成可见空行，导致嵌套列表出现过大间距。
- * ─────────────────────────────────────────────────────────── */
-/* 阅读字号：用户/AI 气泡统一 15px/24px（比默认 body-sm 更舒适） */
-.chat-row .ds-bubble {
-  font-size: 15px;
-  line-height: 24px;
-}
-.chat-row .markdown-content {
-  font-size: 15px;
-  line-height: 24px;
-}
-.markdown-content {
-  white-space: normal;
-}
-.markdown-content :deep(p) {
-  margin: 0 0 0.4em;
-}
-.markdown-content :deep(p:last-child) {
-  margin-bottom: 0;
-}
-.markdown-content :deep(p + p) {
-  margin-top: 0.2em;
-}
-.markdown-content :deep(ol),
-.markdown-content :deep(ul) {
-  margin: 0.3em 0;
-  padding-left: 1.3em;
-}
-.markdown-content :deep(ol:last-child),
-.markdown-content :deep(ul:last-child) {
-  margin-bottom: 0;
-}
-.markdown-content :deep(li) {
-  margin: 0.15em 0;
-}
-.markdown-content :deep(li > p) {
-  margin: 0 0 0.25em;
-}
-.markdown-content :deep(li > p:last-child) {
-  margin-bottom: 0;
-}
-/* 嵌套列表收紧（防御性：prompt 已禁止嵌套，此处兜底旧数据） */
-.markdown-content :deep(li ul),
-.markdown-content :deep(li ol) {
-  margin: 0.2em 0;
-  padding-left: 0.8em;
-}
-/* 二层以上嵌套几乎不缩进，避免窄屏溢出 */
-.markdown-content :deep(li li ul),
-.markdown-content :deep(li li ol) {
-  padding-left: 0.4em;
-}
-.markdown-content :deep(strong) {
-  font-weight: 600;
-}
-.markdown-content :deep(a) {
-  color: var(--ai-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.markdown-content :deep(code) {
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  background: var(--bg-overlay-l1);
-  font-size: 0.9em;
-}
-.markdown-content :deep(pre) {
-  margin: 0.4em 0;
-  padding: 0.6em 0.75em;
-  border-radius: var(--radius-8);
-  background: var(--bg-overlay-l1);
-  overflow-x: auto;
-}
-.markdown-content :deep(pre code) {
-  padding: 0;
-  background: transparent;
-}
-.markdown-content :deep(blockquote) {
-  margin: 0.4em 0;
-  padding-left: 0.75em;
-  border-left: 2px solid var(--ai-bubble-border);
-  color: var(--text-secondary);
-}
-</style>

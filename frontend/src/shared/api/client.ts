@@ -1,3 +1,4 @@
+import { ref } from 'vue';
 import { ofetch, type FetchOptions } from 'ofetch';
 import type { TokenResponse, TokenUser } from '../types/auth';
 
@@ -21,6 +22,16 @@ const REFRESH_KEY = 'hn_refresh_token';
 const USER_KEY = 'hn_user';
 /** 匿名设备标识存储 key */
 const DEVICE_ID_KEY = 'hn_device_id';
+
+/**
+ * 认证态（响应式）— 供 UI/组合式函数判断当前是否登录。
+ * 令牌本身仍以 localStorage 为准，setTokens/clearTokens 是唯一写入入口。
+ */
+export const isAuthenticated = ref(false);
+
+function syncAuthState(): void {
+  isAuthenticated.value = !!localStorage.getItem(TOKEN_KEY);
+}
 
 /** 获取 access token */
 export function getAccessToken(): string | null {
@@ -46,6 +57,7 @@ export function getDeviceId(): string {
 export function setTokens(access: string, refresh: string): void {
   localStorage.setItem(TOKEN_KEY, access);
   localStorage.setItem(REFRESH_KEY, refresh);
+  syncAuthState();
 }
 
 /** 读取持久化的用户信息（页面刷新后 route-guard 据此判断角色） */
@@ -69,7 +81,11 @@ export function clearTokens(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(USER_KEY);
+  syncAuthState();
 }
+
+// 模块加载时同步一次：页面刷新后 localStorage 可能已有令牌
+syncAuthState();
 
 /** 统一登录页路径（chat SPA 下的 /login，所有端共享） */
 const LOGIN_PATH = '/login';

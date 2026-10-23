@@ -1,5 +1,4 @@
-import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import type { NavigationGuardNext, Router, RouteLocationNormalized } from 'vue-router'
 import { getAccessToken, getUserStored } from '@/shared/api/client'
 import {
   ADMIN_ROLES,
@@ -20,14 +19,12 @@ function hasRole(userRole: UserRole, allowedRoles: UserRole[]): boolean {
 }
 
 /**
- * 获取用户角色 - 优先读 Pinia store，回退到 localStorage 持久化值
- * 用户信息在登录时已持久化（stores/auth.ts），页面刷新后 store 自动从中初始化，
- * 因此无需再调用 /auth/settings/profile（后端未提供该端点）。
+ * 获取用户角色 — 与令牌同源的 localStorage 持久化值。
+ * 登录/注册成功时与令牌一起写入，route-guard 因此不需要依赖 Pinia（shared 不反向依赖 stores）。
  */
 function getUserRole(): UserRole | null {
   if (!getAccessToken()) return null
-  const authStore = useAuthStore()
-  return (authStore.user?.role as UserRole) || (getUserStored()?.role as UserRole) || null
+  return (getUserStored()?.role as UserRole) || null
 }
 
 /**
@@ -37,6 +34,20 @@ function getUserRole(): UserRole | null {
 function redirectToLogin(to: RouteLocationNormalized): void {
   // ponytail:allow-location 跨 MPA 跳转
   window.location.href = `/login?redirect=${encodeURIComponent(to.fullPath)}`
+}
+
+/**
+ * 注册全局认证守卫（meta.requiresAuth 路由）
+ * @param loginRouteName 未认证时同 SPA 内跳转的路由名；不传则跨 MPA 跳转 /login
+ */
+export function setupAuthGuards(router: Router, loginRouteName?: string): void {
+  router.beforeEach((to) => {
+    if (!to.meta.requiresAuth || getAccessToken()) return
+    if (loginRouteName) {
+      return { name: loginRouteName, query: { redirect: to.fullPath } }
+    }
+    redirectToLogin(to)
+  })
 }
 
 /**

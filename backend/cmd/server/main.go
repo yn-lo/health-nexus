@@ -109,7 +109,7 @@ func buildRouter(app *di.App) http.Handler {
 	app.Wiki.Mount(r)
 
 	// chat 域（8 端点：SSE + 会话管理 + 危机事件）
-	r.Mount("/", app.Chat)
+	app.Chat.Mount(r)
 
 	// config 域：公开只读端点（品牌配置），须在鉴权路由组之外注册。
 	app.Config.RegisterPublicRoutes(r)
@@ -123,10 +123,6 @@ func buildRouter(app *di.App) http.Handler {
 	// 前端静态文件托管 + SPA fallback（同源部署）
 	// /api/* 的 404 返回 JSON；其他路径先尝试静态文件，不存在则返回对应 SPA 入口 HTML，
 	// 由客户端 vue-router 接管路由（/staff/* → staff.html，其他 → chat.html）。
-	// 注意：chat 域 router 通过 Mount("/", ...) 挂载到根，未匹配路径会先命中
-	// chat router 的 NotFound（同样走 SPA fallback 逻辑），此处为兜底。
-	webDir := http.Dir("web")
-	fs := http.FileServer(webDir)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			response.WriteJSON(w, http.StatusNotFound, map[string]any{
@@ -135,16 +131,7 @@ func buildRouter(app *di.App) http.Handler {
 			})
 			return
 		}
-		if f, err := webDir.Open(r.URL.Path); err == nil {
-			f.Close()
-			fs.ServeHTTP(w, r)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/staff") || r.URL.Path == "/styles" {
-			http.ServeFile(w, r, "web/staff.html")
-			return
-		}
-		http.ServeFile(w, r, "web/chat.html")
+		middleware.ServeSPA(w, r)
 	})
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, http.StatusMethodNotAllowed, map[string]any{

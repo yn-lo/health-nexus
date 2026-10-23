@@ -1,4 +1,11 @@
-import { apiClient, getDeviceId } from './client';
+import {
+  apiClient,
+  clearTokens,
+  getAccessToken,
+  getDeviceId,
+  getRefreshToken,
+  tryRefreshToken,
+} from './client';
 import type {
   Conversation,
   ConversationListParams,
@@ -7,6 +14,7 @@ import type {
   MessageListParams,
 } from '../types/chat';
 import type { MessageFeedback } from '../constants/feedback';
+import type { Paginated } from '../types/base';
 
 /**
  * chat 域 API — 对齐后端 chat 域 6 个患者端端点（契约 §3.1~3.6）。
@@ -18,10 +26,52 @@ import type { MessageFeedback } from '../constants/feedback';
 
 /** 获取会话列表（契约 §3.2，分页） */
 export function listConversations(params?: ConversationListParams) {
-  return apiClient<{ items: Conversation[]; total: number; page: number; page_size: number }>(
-    '/chat/conversations',
-    { params },
-  );
+  return apiClient<Paginated<Conversation>>('/chat/conversations', { params });
+}
+
+export interface ChatStreamRequest {
+  message: string;
+  conversation_id: string;
+  request_id: string;
+  selected_dept_id?: number;
+}
+
+/**
+ * 打开问答 SSE 流（POST）— 统一处理认证头、401 刷新与匿名降级。
+ * 流式解析与业务事件留在 chat/composables/useSSEChat.ts。
+ */
+export async function openChatStream(body: ChatStreamRequest, signal: AbortSignal): Promise<Response> {
+  let useAuth = !!getAccessToken();
+
+  const doFetch = () => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (useAuth) headers['Authorization'] = `Bearer ${getAccessToken()}`;
+    else headers['X-Device-Id'] = getDeviceId();
+    return fetch(useAuth ? '/api/chat/stream' : '/api/public/chat/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+  };
+
+  let response = await doFetch();
+
+  if (response.status === 401 && useAuth) {
+    const attemptedRefresh = getRefreshToken();
+    const refreshed = await tryRefreshToken();
+    // 刷新成功，或 refresh token 已被其它标签页轮换（跨标签页并发刷新）→ 复用新 token 重试。
+    if (refreshed || (getRefreshToken() !== null && getRefreshToken() !== attemptedRefresh)) {
+      response = await doFetch();
+    } else {
+      // 会话彻底失效：清除本地登录态并降级为匿名继续本轮问答，避免硬跳登录打断访客。
+      clearTokens();
+      useAuth = false;
+      response = await doFetch();
+    }
+  }
+
+  return response;
 }
 
 /** 获取会话详情（契约 §3.3） */

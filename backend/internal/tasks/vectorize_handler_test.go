@@ -1,6 +1,6 @@
 // wiki_vectorize_handler 单元测试：覆盖 chunkContent 纯函数与 HandleVectorize asynq handler。
-// 白盒测试（package adapter）以访问未导出的 chunkContent。
-package adapter
+// 白盒测试（package tasks）以访问未导出的 chunkContent。
+package tasks
 
 import (
 	"context"

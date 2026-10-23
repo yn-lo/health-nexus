@@ -49,31 +49,8 @@ const navItems = computed(() =>
 
 const defaultActive = computed(() => (isAdmin.value ? 'dashboard' : 'profile'))
 
-/** 自带 AppHeader 返回按钮的二级页面，隐藏 tabbar 提升沉浸感 */
-const hideOnRoutes = [
-  'staff-article-create',
-  'staff-article-edit',
-  'staff-crisis-events',
-  'staff-feedback-stats',
-  'staff-references',
-  'staff-config-home',
-  'staff-config-accounts',
-  'staff-config-account-detail',
-  'staff-config-ai-providers',
-  'staff-config-ai-provider-create',
-  'staff-config-ai-provider-edit',
-  'staff-config-sensitive-words',
-  'staff-config-safety-rules',
-  'staff-config-rag',
-  'staff-config-safety-messages',
-  'staff-config-prompts',
-  'staff-config-prompt-create',
-  'staff-config-prompt-detail',
-  'staff-config-audit-logs',
-  'staff-config-departments',
-]
 </script>
 
 <template>
-  <BottomNavLayout :items="navItems" :default-active="defaultActive" :hide-on-routes="hideOnRoutes" />
+  <BottomNavLayout :items="navItems" :default-active="defaultActive" />
 </template>

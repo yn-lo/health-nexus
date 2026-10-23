@@ -4,7 +4,8 @@ import { MessageSquare, Settings, SquarePen, PanelRightClose, Trash2 } from '@lu
 import { useRouter, useRoute } from 'vue-router'
 import { useChatStore, removeAnonSession } from '@/stores/chat'
 import { deleteAnonConversation } from '@/shared/api/chat'
-import { getAccessToken, getUserStored, timeAgo } from '@/shared'
+import { timeAgo } from '@/shared'
+import { getUserStored, isAuthenticated } from '@/shared/api/client'
 import { STAFF_ROLES, ROLE_LABEL, DEFAULT_STAFF_LABEL, type UserRole } from '@/shared/constants/roles'
 import { EmptyState, DsPopup, DsSwipeCell } from '@/shared/components'
 import { useDsDialog } from '@/shared/composables'
@@ -27,7 +28,7 @@ const route = useRoute()
 const { showConfirmDialog } = useDsDialog()
 
 /** 匿名（无 token）：会话索引来自 localStorage；已登录：来自服务端 */
-const isAnon = computed(() => !getAccessToken())
+const isAnon = computed(() => !isAuthenticated.value)
 /** 匿名历史列表（本地索引）与登录会话列表合并展示 */
 const displayList = computed(() => (isAnon.value ? chatStore.anonSessions : chatStore.conversations))
 /** 当前高亮会话 id：匿名用路由参数，登录用 store 中的 currentConversation */
@@ -52,7 +53,7 @@ watch(() => props.visible, (visible) => {
 
 /** 是否医护角色：仅医护可从对话抽屉直达工作台 */
 const isStaff = computed(() => {
-  const role = getAccessToken() ? (getUserStored()?.role as UserRole) : null
+  const role = isAuthenticated.value ? (getUserStored()?.role as UserRole) : null
   return !!role && STAFF_ROLES.includes(role)
 })
 
@@ -202,189 +203,3 @@ async function loadMore() {
     </div>
   </DsPopup>
 </template>
-
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-.history-drawer {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 0 var(--spacer-16);
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: calc(var(--spacer-16) + env(safe-area-inset-bottom, 0px));
-}
-
-/* ── 顶部栏：左侧折叠 + 用户区 ─────────────────────────── */
-.history-drawer__topbar {
-  display: flex;
-  align-items: center;
-  gap: var(--spacer-12);
-}
-
-/* 折叠关闭按钮（Qwen 风格折叠把手） */
-.history-drawer__fold {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  color: var(--icon-tertiary);
-  background: var(--bg-overlay-l1);
-  border: none;
-  border-radius: var(--radius-full);
-}
-/* 折叠关闭 / 新对话按钮共用的指针与按压过渡 */
-.history-drawer__fold,
-.history-drawer__new {
-  cursor: pointer;
-  transition: transform var(--micro-duration) var(--micro-ease),
-              background-color var(--micro-duration) var(--micro-ease);
-}
-.history-drawer__fold:active {
-  transform: scale(var(--press-scale));
-  background: var(--bg-overlay-l2, var(--bg-overlay-l1));
-}
-
-/* ── 用户信息区：头像 + 用户名 + 个人中心（整卡可点击） ─── */
-.history-drawer__user {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--spacer-12);
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  padding: var(--spacer-20) 0 var(--spacer-16);
-  border: none;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.history-drawer__user:active {
-  opacity: 0.8;
-}
-
-.history-drawer__user-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.history-drawer__user-name {
-  font-size: var(--heading-sm-font-size);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-default);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-drawer__user-sub {
-  font-size: var(--body-xs-font-size);
-  color: var(--text-tertiary);
-}
-
-/* 工作台入口：仅医护可见的 40px 点击区，与折叠按钮同尺寸 */
-.history-drawer__workbench {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  color: var(--icon-tertiary);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-}
-.history-drawer__workbench:active {
-  background: var(--bg-overlay-l1);
-}
-
-/* ── 新对话入口：整行按钮（Qwen 风格） ─────────────────── */
-.history-drawer__new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacer-8);
-  width: 100%;
-  padding: var(--spacer-12) 0;
-  margin-bottom: var(--spacer-12);
-  font-size: var(--body-base-font-size);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-brand);
-  background: var(--bg-brand-light);
-  border: none;
-  border-radius: var(--radius-12);
-}
-.history-drawer__new:active {
-  transform: scale(var(--press-scale));
-}
-
-.history-drawer__divider {
-  border-top: 1px solid var(--border-neutral-l2);
-  margin-bottom: var(--spacer-12);
-}
-
-.history-drawer__list {
-  flex: 1;
-  overflow-y: auto;
-  list-style: none;
-  margin: 0;
-  padding: var(--spacer-8) 0;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ponytail: ds-list-item 全局类覆盖默认 padding，适配抽屉紧凑布局，折中 */
-.history-drawer__list .ds-list-item {
-  padding: var(--spacer-14) var(--spacer-8);
-  border-radius: var(--radius-8);
-  border-bottom: 1px solid var(--border-neutral-l1);
-}
-
-.history-drawer__list :deep(.ds-swipe-cell:last-child) .ds-list-item {
-  border-bottom: none;
-}
-
-/* 滑动单元格：禁止 flex 压缩，否则 cell 高度 < li 高度，overflow:hidden 裁切导致相邻项重叠 */
-.history-drawer__list :deep(.ds-swipe-cell) {
-  flex-shrink: 0;
-}
-
-.history-drawer__list .ds-list-item--active {
-  background: var(--bg-brand-light);
-}
-
-.history-drawer__list .ds-list-item--active .ds-list-item__icon {
-  background: var(--bg-brand);
-  color: var(--text-onbrand);
-}
-
-.history-item__delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 100%;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--icon-tertiary);
-  font-size: var(--body-xs-font-size);
-}
-
-/* ── 会话列表分页入口 ───────────────────────────────────── */
-.history-drawer__more {
-  display: flex;
-  justify-content: center;
-  padding: var(--spacer-12) 0;
-  border-bottom: none;
-}
-.history-drawer__more-btn:disabled {
-  opacity: 0.6;
-}
-</style>

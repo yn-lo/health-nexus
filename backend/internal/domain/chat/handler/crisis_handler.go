@@ -12,6 +12,10 @@ import (
 	"health-nexus/internal/shared/response"
 )
 
+// maxBodyBytes 危机处理请求体上限（1MB），防大报文耗尽内存。
+// 该端点 body 可选且允许未知字段（宽松解码），故不走 response.DecodeStrictJSON。
+const maxBodyBytes = 1 << 20
+
 // CrisisEventResponse 危机事件响应 DTO（契约 §3.7）。
 // HandleNote 用 *string：DB 中 NOT NULL DEFAULT ”，但响应中未处理/无备注时序列化为 null（契约示例 line 265）。
 type CrisisEventResponse struct {

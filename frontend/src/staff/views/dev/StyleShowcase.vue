@@ -982,12 +982,3 @@ const showToc = ref(false)
  <div class="h-[var(--spacer-48)]" />
  </main>
 </template>
-
-<style scoped ponytail:allow-scoped-css Vue transition 过渡类，组件级>
-.fade-enter-active, .fade-leave-active {
- transition: opacity var(--transition-fast);
-}
-.fade-enter-from, .fade-leave-to {
- opacity: 0;
-}
-</style>

@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"health-nexus/internal/config"
-	"health-nexus/internal/middleware"
+	"health-nexus/internal/shared/identity"
 )
 
 // TokenTypeAccess / TokenTypeRefresh 区分 access 与 refresh token。
@@ -66,7 +66,7 @@ func (t *TokenIssuer) sign(
 	userID int64, role string, deptID int64, tokenType string, ttl time.Duration, tokenVersion int64,
 ) (string, error) {
 	now := time.Now()
-	claims := &middleware.Claims{
+	claims := &identity.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Issuer:    t.issuer,

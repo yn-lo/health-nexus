@@ -6,7 +6,10 @@
  * 页面只通过 props + 插槽提供差异：筛选(#toolbar)、头部备注(#header-note)、列表项(默认槽)、表单(#form)。
  */
 import type { Component } from 'vue'
-import { AppHeader, DsPopup, StatRow, DsSearchBox } from '.'
+import AppHeader from './AppHeader.vue'
+import DsPopup from './DsPopup.vue'
+import StatRow from './StatRow.vue'
+import DsSearchBox from './DsSearchBox.vue'
 
 type Stat = { value: number | string; label: string }
 

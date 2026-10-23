@@ -8,11 +8,11 @@ import { createApp } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { bootstrapApp } from '@/shared/bootstrap'
 
-vi.mock('@/router/guards', () => ({
+vi.mock('@/shared/utils/route-guard', () => ({
   setupAuthGuards: vi.fn(),
 }))
 
-import { setupAuthGuards } from '@/router/guards'
+import { setupAuthGuards } from '@/shared/utils/route-guard'
 
 const mockGuards = vi.mocked(setupAuthGuards)
 

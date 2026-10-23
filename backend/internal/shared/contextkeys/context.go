@@ -14,9 +14,6 @@ const (
 	DeptID    Key = "dept_id"
 	// DeviceID 匿名用户设备标识（X-Device-Id 头），未登录时用于限流 key 与会话隔离。
 	DeviceID Key = "device_id"
-	// DataScopeKey DataIsolation 中间件写入的 DataScope 指针键。
-	// service 层通过 middleware.ActorFromDataScope 读取。
-	DataScopeKey Key = "data_scope"
 )
 
 // FromCtx 从 context 读取字符串值。

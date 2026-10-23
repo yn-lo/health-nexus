@@ -32,6 +32,7 @@ import (
 	wikiservice "health-nexus/internal/domain/wiki/service"
 	"health-nexus/internal/middleware"
 	"health-nexus/internal/shared/constants"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/response"
 )
 
@@ -97,14 +98,14 @@ func buildTestRouter() http.Handler {
 	).Mount(r)
 
 	// chat 域（8 端点：SSE + 会话管理 + 危机事件）
-	r.Mount("/", chathandler.NewRouter(
+	chathandler.NewRouter(
 		testAuth,
 		fakeRateLimiter(),
 		config.RateLimitConfig{},
 		chathandler.NewStreamHandler(nil),
 		chathandler.NewConversationHandler(nil),
 		chathandler.NewCrisisHandler(nil),
-	))
+	).Mount(r)
 
 	// config 域（22 端点，需 JWT + Admin）
 	r.Group(func(r chi.Router) {
@@ -131,7 +132,7 @@ func buildTestRouter() http.Handler {
 
 // signTestToken 签发 HS256 access JWT。
 func signTestToken(userID int64, role string, deptID int64) string {
-	claims := &middleware.Claims{
+	claims := &identity.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "health-nexus-test",
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),

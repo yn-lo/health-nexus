@@ -14,20 +14,9 @@ import (
 	"health-nexus/internal/config"
 	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/response"
 )
-
-// Claims JWT 自定义声明，扩展标准 RegisteredClaims。
-type Claims struct {
-	jwt.RegisteredClaims
-	UserID    int64  `json:"user_id"`
-	Role      string `json:"role"`
-	DeptID    int64  `json:"dept_id,omitempty"`
-	TokenType string `json:"token_type,omitempty"` // "access" 或 "refresh"；空表示历史 token
-	// TokenVersion 会话版本（签发时的 users.token_version）。与当前值不一致即视为失效：
-	// 密码变更后旧令牌不可再用（P1）。
-	TokenVersion int64 `json:"ver,omitempty"`
-}
 
 // SessionInfo 令牌对应用户的**当前**会话状态（取自 DB，不信任令牌内声明）。
 type SessionInfo struct {
@@ -65,8 +54,8 @@ func NewAuthenticator(cfg config.JWTConfig, sessions SessionStore) (*Authenticat
 }
 
 // Parse 验证 token 的 HS256 签名、签发者，返回声明。
-func (a *Authenticator) Parse(tokenString string) (*Claims, error) {
-	claims := &Claims{}
+func (a *Authenticator) Parse(tokenString string) (*identity.Claims, error) {
+	claims := &identity.Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
 		return a.secret, nil
 	}, jwt.WithIssuer(a.issuer), jwt.WithValidMethods([]string{"HS256"}))

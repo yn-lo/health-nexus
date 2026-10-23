@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import { setupAuthGuards } from '@/router/guards'
+import { setupAuthGuards } from '@/shared/utils/route-guard'
 import { clearTokens, setTokens } from '@/shared/api/client'
 
 describe('路由守卫', () => {

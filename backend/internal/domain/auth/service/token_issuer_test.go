@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"health-nexus/internal/config"
-	"health-nexus/internal/middleware"
+	"health-nexus/internal/shared/identity"
 )
 
 // newTestTokenIssuer 在同包内直接构造 TokenIssuer，跳过配置读取。
@@ -23,9 +23,9 @@ func newTestTokenIssuer(t *testing.T) *TokenIssuer {
 }
 
 // parseToken 用测试 issuer 的密钥解析 token 并返回 Claims。
-func parseToken(t *testing.T, issuer *TokenIssuer, tokenStr string) *middleware.Claims {
+func parseToken(t *testing.T, issuer *TokenIssuer, tokenStr string) *identity.Claims {
 	t.Helper()
-	claims := &middleware.Claims{}
+	claims := &identity.Claims{}
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
 		return issuer.secret, nil
 	})

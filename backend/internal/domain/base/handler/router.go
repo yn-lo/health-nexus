@@ -26,13 +26,13 @@ func (h *DepartmentHandler) Mount(r chi.Router) {
 
 	// 已登录用户均可访问：可见科室列表
 	r.Route("/api/base", func(r chi.Router) {
-		r.Use(middleware.JWTAuth(h.auth), middleware.RequireAnyRole(), middleware.DataIsolation())
+		r.Use(middleware.JWTAuth(h.auth), middleware.RequireAnyRole())
 		r.Get("/departments", h.ListDepartments)
 	})
 
 	// 管理员 CRUD：科室树管理
 	r.Route("/api/staff/base/departments", func(r chi.Router) {
-		r.Use(middleware.JWTAuth(h.auth), middleware.RequireAdmin(), middleware.DataIsolation())
+		r.Use(middleware.JWTAuth(h.auth), middleware.RequireAdmin())
 		r.Get("/", h.ListTree)
 		r.Post("/", h.CreateDepartment)
 		r.Get("/{id}", h.GetDepartment)

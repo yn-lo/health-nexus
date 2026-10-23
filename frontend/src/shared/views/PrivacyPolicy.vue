@@ -128,25 +128,3 @@ const { goBack } = usePageBack()
  </div>
  </div>
 </template>
-
-<style scoped ponytail:allow-scoped-css 法律文档页面专用排版>
-.privacy-page {
- background: var(--bg-base-default);
- min-height: 100dvh;
- display: flex;
- flex-direction: column;
-}
-
-.privacy-body {
- flex: 1;
- overflow-y: auto;
- padding-bottom: var(--spacer-32);
-}
-
-.privacy-intro {
- font-size: var(--body-md-font-size);
- line-height: var(--body-md-line-height);
- color: var(--text-secondary);
- margin-bottom: var(--spacer-20);
-}
-</style>

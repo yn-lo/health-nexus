@@ -14,8 +14,8 @@ import (
 // GetSafetyMessages 获取安全话术聚合视图。缺失 type 用默认值兜底（REQ-NFR-016）。
 // FIX-6: 单例配置走 cache-aside——先查 Redis，miss 回源 DB 并回填（TTL 5min）。
 func (s *ConfigService) GetSafetyMessages(ctx context.Context) (*SafetyMessagesResponse, error) {
-	if s.redis != nil {
-		if data, err := s.redis.Get(ctx, cacheKeySafetyMessages).Bytes(); err == nil {
+	if s.cache != nil {
+		if data, err := s.cache.Get(ctx, cacheKeySafetyMessages); err == nil {
 			var r SafetyMessagesResponse
 			if json.Unmarshal(data, &r) == nil {
 				return &r, nil
@@ -35,9 +35,9 @@ func (s *ConfigService) GetSafetyMessages(ctx context.Context) (*SafetyMessagesR
 		}
 	}
 	resp.UpdatedAt = latestUpdated
-	if s.redis != nil {
+	if s.cache != nil {
 		if data, mErr := json.Marshal(resp); mErr == nil {
-			s.redis.Set(ctx, cacheKeySafetyMessages, data, cacheTTL)
+			_ = s.cache.Set(ctx, cacheKeySafetyMessages, data, cacheTTL)
 		}
 	}
 	return &resp, nil

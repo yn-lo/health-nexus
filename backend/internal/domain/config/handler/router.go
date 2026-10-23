@@ -26,7 +26,7 @@ func (h *ConfigHandler) RegisterPublicRoutes(r chi.Router) {
 // 系统提示词属于全局安全配置：全院唯一、无科室维度，改动直接影响每个患者的回答口径。
 func (h *ConfigHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/staff/config", func(r chi.Router) {
-		r.Use(middleware.DataIsolation())
+		r.Use()
 
 		// 配置状态（管理端工作台黄色预警）——概览信息，科室管理员可见。
 		r.Get("/status", h.GetConfigStatus)

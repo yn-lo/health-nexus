@@ -3,7 +3,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -582,16 +581,10 @@ func currentIdentity(r *http.Request) (userID int64, role string, deptID int64, 
 	return userID, role, deptID, true
 }
 
-const maxAuthBodyBytes = 1 << 20
-
 // decodeJSON 解析请求体为 v。空体 → 422 VALIDATION_MISSING；格式错误 → 422 VALIDATION_INVALID。
-// 限制请求体 1MB，避免恶意大报文耗尽内存（auth 请求体极小，1MB 已远超合理上限）。
 // 严格模式：拒绝未知字段，与 wiki/config handler 一致，避免客户端笔误被静默忽略。
 func decodeJSON(r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, maxAuthBodyBytes)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	err := dec.Decode(v)
+	err := response.DecodeStrictJSON(r, v)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return apperrors.Validation("VALIDATION_MISSING", "请求体不能为空")

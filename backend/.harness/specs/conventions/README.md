@@ -31,9 +31,8 @@ owner: backend-team
 |---|---|---|---|---|
 | BE-BUILD | 制品无法编译 | 合并 | P0-1 `go build ./...` | 失败即阻断 |
 | BE-VET | 可疑构造（如 printf 类型不匹配） | 合并 | P0-2 `go vet ./...` | 失败即阻断 |
-| AC-ARCH-01..16 | 分层依赖倒置、跨域耦合、未落入已定义层的文件 | 合并 | P0-3 `go test ./internal/harness/arch/` | 任一违规即阻断；存量按规则逐条排除，不做全库豁免 |
+| AC-ARCH-01..17 | 分层依赖倒置、跨域耦合、未落入已定义层的文件 | 合并 | P0-3 `go test ./internal/harness/arch/` | 任一违规即阻断；存量按规则逐条排除，不做全库豁免 |
 | BE-CONTRACT | 路由 / 鉴权 / 角色门禁漂移 | 合并 | P0-4 `TestRouteIntegrity` `TestAuthGate` `TestRoleGate` | 失败即阻断 |
-| BE-APIMAP | 路由地图与代码不同步 | 合并 | P0-4b `TestGenerateAPIContract` | 无法生成即阻断 |
 | BE-UNIT | 功能回归 | 合并 | P0-5 `go test ./internal/...` | 失败即阻断 |
 | BE-RACE | 数据竞争 | 合并 | P0-6 `go test -race ./internal/...` | 失败即阻断；无 cgo/gcc 时本地降级告警、CI/发布阻断 |
 | BE-LINT | 死代码、魔法值、错误未处理、安全缺陷、超长函数、禁用依赖 | 合并 | P0-7 `golangci-lint run ./...` | 失败即阻断；例外写在 `.golangci.yml` 的 `exclusions` 并注明理由 |

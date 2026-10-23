@@ -2,10 +2,25 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"health-nexus/internal/domain/config/entity"
 	"health-nexus/internal/shared/pagination"
 )
+
+// TxRunner 事务执行能力（消费者定义，ISP）。*postgres.TxManager 实现此接口。
+type TxRunner interface {
+	WithTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+// CacheClient 单例配置 cache-aside 与变更广播能力（消费者定义，ISP）。
+// *redis.Cache 实现此接口；为 nil 时跳过缓存与热重载通知。
+type CacheClient interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	Del(ctx context.Context, keys ...string) error
+	Publish(ctx context.Context, channel, message string) error
+}
 
 // AIProviderPort AI 提供商仓储能力（消费者定义，ISP）。
 type AIProviderPort interface {

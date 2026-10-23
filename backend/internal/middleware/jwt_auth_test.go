@@ -13,6 +13,7 @@ import (
 	"health-nexus/internal/config"
 	"health-nexus/internal/shared/constants"
 	"health-nexus/internal/shared/contextkeys"
+	"health-nexus/internal/shared/identity"
 )
 
 // stubSessions 固定返回同一份会话状态，用于验证 JWTAuth 是否以 DB 状态为准（P1）。
@@ -28,7 +29,7 @@ func (s *stubSessions) CurrentSession(_ context.Context, _ int64) (*SessionInfo,
 const testJWTSecret = "test-secret-at-least-32-bytes-long!!"
 
 // signAccess 用测试密钥签发一枚 access token。
-func signAccess(t *testing.T, claims Claims) string {
+func signAccess(t *testing.T, claims identity.Claims) string {
 	t.Helper()
 	claims.TokenType = "access"
 	claims.Issuer = "test"
@@ -66,7 +67,7 @@ func runJWTAuth(
 // 不得继续持有令牌内声明的 role/dept。
 func TestJWTAuth_SessionStateOverridesClaims(t *testing.T) {
 	// 令牌声明为 DOCTOR/科室 10，但 DB 中当前已是 SUPER_ADMIN/科室 0。
-	token := signAccess(t, Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
+	token := signAccess(t, identity.Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
 	code, userID, role, deptID := runJWTAuth(t, &stubSessions{
 		info: &SessionInfo{Role: constants.RoleSuperAdmin, DeptID: 0, TokenVersion: 0, Active: true},
 	}, token)
@@ -83,7 +84,7 @@ func TestJWTAuth_SessionStateOverridesClaims(t *testing.T) {
 
 // TestJWTAuth_AccountNoLongerActive_Rejected P1：账户被锁定/删除后，旧 access token 立即失效。
 func TestJWTAuth_AccountNoLongerActive_Rejected(t *testing.T) {
-	token := signAccess(t, Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
+	token := signAccess(t, identity.Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
 	code, _, _, _ := runJWTAuth(t, &stubSessions{
 		info: &SessionInfo{Role: constants.RoleDoctor, DeptID: 10, TokenVersion: 0, Active: false},
 	}, token)
@@ -94,7 +95,7 @@ func TestJWTAuth_AccountNoLongerActive_Rejected(t *testing.T) {
 
 // TestJWTAuth_TokenVersionMismatch_Rejected P1：改密后 token_version 递增，旧 access token 立即失效。
 func TestJWTAuth_TokenVersionMismatch_Rejected(t *testing.T) {
-	token := signAccess(t, Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10, TokenVersion: 0})
+	token := signAccess(t, identity.Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10, TokenVersion: 0})
 	code, _, _, _ := runJWTAuth(t, &stubSessions{
 		info: &SessionInfo{Role: constants.RoleDoctor, DeptID: 10, TokenVersion: 1, Active: true},
 	}, token)
@@ -106,7 +107,7 @@ func TestJWTAuth_TokenVersionMismatch_Rejected(t *testing.T) {
 // TestJWTAuth_SessionStoreDown_FailClosed 会话存储故障时拒绝请求（fail-closed），
 // 避免故障窗口内旧令牌继续持有原权限。
 func TestJWTAuth_SessionStoreDown_FailClosed(t *testing.T) {
-	token := signAccess(t, Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
+	token := signAccess(t, identity.Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
 	code, _, _, _ := runJWTAuth(t, &stubSessions{err: errors.New("db down")}, token)
 	if code != http.StatusServiceUnavailable {
 		t.Fatalf("期望 503，实际 %d", code)
@@ -116,7 +117,7 @@ func TestJWTAuth_SessionStoreDown_FailClosed(t *testing.T) {
 // TestJWTAuth_NilSessionStore_TrustsClaims 未注入 SessionStore（如契约测试/本地）时退化为仅验签，
 // 保证既有装配方式不被破坏。
 func TestJWTAuth_NilSessionStore_TrustsClaims(t *testing.T) {
-	token := signAccess(t, Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
+	token := signAccess(t, identity.Claims{UserID: 42, Role: constants.RoleDoctor, DeptID: 10})
 	code, _, role, deptID := runJWTAuth(t, nil, token)
 	if code != http.StatusOK {
 		t.Fatalf("期望 200，实际 %d", code)

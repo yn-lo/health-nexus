@@ -10,6 +10,7 @@ import (
 	"health-nexus/internal/domain/chat/repository"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 )
 
 // timeRFC3339 时间格式常量（与契约 §0.1 对齐）。
@@ -55,11 +56,7 @@ func NewCrisisService(crisis CrisisRepoPort) *CrisisService {
 }
 
 // CrisisActor 危机事件操作者上下文。
-type CrisisActor struct {
-	UserID int64
-	Role   string
-	DeptID int64
-}
+type CrisisActor = identity.Actor
 
 // List 危机事件列表。level/handled 为空/nil 表示不过滤。
 // 数据隔离：非超管仅查看本科室（按会话锁定科室过滤）的危机事件。

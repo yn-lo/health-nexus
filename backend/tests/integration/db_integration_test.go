@@ -31,13 +31,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
-	"health-nexus/internal/adapter"
 	chatentity "health-nexus/internal/domain/chat/entity"
 	chatrepo "health-nexus/internal/domain/chat/repository"
 	wikientity "health-nexus/internal/domain/wiki/entity"
 	wikirepo "health-nexus/internal/domain/wiki/repository"
 	"health-nexus/internal/platform/postgres"
 	"health-nexus/internal/shared/contenthash"
+	"health-nexus/internal/tasks"
 )
 
 // errRollback 用于在校验结束后回滚事务（测试数据不落库）。
@@ -219,7 +219,7 @@ func TestVectorizeAtomicSwap(t *testing.T) {
 		artID := newArticle(ctx, "集成校验-正常向量化", 2)
 		insertChunk(ctx, artID, "旧版本切片", 1, "old-model")
 
-		h := adapter.NewVectorizeHandler(articleRepo, chunkRepo, &fakeEmbedder{}, nil, txm)
+		h := tasks.NewVectorizeHandler(articleRepo, chunkRepo, &fakeEmbedder{}, nil, txm)
 		task := asynqlib.NewTask("wiki:vectorize_article", []byte(fmt.Sprint(artID)))
 		if err := h.HandleVectorize(ctx, task); err != nil {
 			t.Fatalf("HandleVectorize 正常路径失败: %v", err)
@@ -259,7 +259,7 @@ func TestVectorizeAtomicSwap(t *testing.T) {
 			_, _ = postgres.Q(ctx, pool).Exec(ctx,
 				`UPDATE articles SET version = version + 1, published_version = version + 1 WHERE id = $1`, raceID)
 		}}
-		rh := adapter.NewVectorizeHandler(articleRepo, chunkRepo, racer, nil, txm)
+		rh := tasks.NewVectorizeHandler(articleRepo, chunkRepo, racer, nil, txm)
 		raceTask := asynqlib.NewTask("wiki:vectorize_article", []byte(fmt.Sprint(raceID)))
 		rerr := rh.HandleVectorize(ctx, raceTask)
 		if rerr == nil || !errors.Is(rerr, asynqlib.SkipRetry) {

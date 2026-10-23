@@ -4,7 +4,7 @@
  */
 import { ref } from 'vue'
 import { listDepartmentTree } from '@/shared/api/base'
-import type { DepartmentTreeNode } from '@/shared'
+import type { DepartmentTreeNode } from '@/shared/types/base'
 
 interface DepartmentOption {
   /** null 表示"全局/全部"哨兵，对应 department_id=null */

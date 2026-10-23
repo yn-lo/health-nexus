@@ -19,6 +19,7 @@ import (
 	"health-nexus/internal/shared/constants"
 	"health-nexus/internal/shared/contenthash"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 )
 
 // summaryMaxRunes 文章摘要自动截取的字符数上限（REQ-WIKI-007）。
@@ -29,11 +30,7 @@ const summaryMaxRunes = 100
 const titleMaxRunes = 255
 
 // Actor 操作者上下文（由 handler 从 JWT ctx 提取后传入）。
-type Actor struct {
-	UserID int64
-	Role   string
-	DeptID int64
-}
+type Actor = identity.Actor
 
 // VectorizeEnqueuer 文章向量化任务入队（消费者定义，ISP）。
 // 实现由 adapter.AsynqVectorizeEnqueuer 提供，将 int64 articleID 序列化为 asynq payload。

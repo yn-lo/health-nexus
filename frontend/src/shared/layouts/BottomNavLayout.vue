@@ -25,8 +25,6 @@ const props = defineProps<{
   items: NavItem[]
   /** 默认激活的 tab key */
   defaultActive?: string
-  /** 需要隐藏底部导航的路由名列表（如详情页自带操作栏） */
-  hideOnRoutes?: string[]
 }>()
 
 const router = useRouter()
@@ -38,11 +36,10 @@ const activeTab = computed(() => {
   return matched?.key ?? props.defaultActive ?? props.items[0]?.key ?? ''
 })
 
-/** 是否显示底部导航（详情页等自带操作栏的页面需隐藏） */
+/** 是否显示底部导航（详情页通过路由 meta.hideTabBar 声明） */
 const showTabBar = computed(() => {
   if (!route.name) return false
-  const name = route.name as string
-  return !props.hideOnRoutes?.includes(name)
+  return !route.meta.hideTabBar
 })
 
 function onTabChange(key: string) {
@@ -69,9 +66,3 @@ function onTabChange(key: string) {
   </div>
 </template>
 
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-.bottom-nav-layout--with-tabbar {
-  /* 留出底部 tabbar 高度 + iOS 安全区 */
-  padding-bottom: calc(var(--layout-tabbar-height) + env(safe-area-inset-bottom, 0px));
-}
-</style>

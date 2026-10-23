@@ -10,11 +10,8 @@ import (
 	"sync"
 	"time"
 
-	goredis "github.com/redis/go-redis/v9"
-
 	"health-nexus/internal/config"
 	"health-nexus/internal/domain/config/entity"
-	"health-nexus/internal/platform/postgres"
 	"health-nexus/internal/shared/constants"
 	"health-nexus/internal/shared/contextkeys"
 )
@@ -42,9 +39,9 @@ type ConfigService struct {
 	safetyMessageRepo  SafetyMessagePort
 	brandConfigRepo    BrandConfigPort
 	auditLogRepo       AuditLogPort
-	tx                 *postgres.TxManager
+	tx                 TxRunner
 	aesKey             []byte
-	redis              *goredis.Client
+	cache              CacheClient
 	llmCfg             config.LLMConfig // config.yaml fallback，供 GetConfigStatus 判断
 
 	// 生效系统提示词进程内缓存（cache-aside）：读多写少，写入路径主动失效。
@@ -56,7 +53,7 @@ type ConfigService struct {
 
 // NewConfigService 创建 ConfigService。
 // aesKey 必须是 32 字节（AES-256），由 di 层从 cfg.Security.EncryptionKey 派生 SHA-256 注入。
-// redis 用于单例配置（RAGConfig/SafetyMessages/BrandConfig）cache-aside，可为 nil（跳过缓存，回源 DB）。
+// cache 用于单例配置（RAGConfig/SafetyMessages/BrandConfig）cache-aside，可为 nil（跳过缓存，回源 DB）。
 // auditLogRepo 用于持久化变更审计日志（契约 §6 ConfigAuditLog）；tx 用于事务包裹批量写。
 func NewConfigService(
 	aiProviderRepo AIProviderPort,
@@ -67,9 +64,9 @@ func NewConfigService(
 	safetyMessageRepo SafetyMessagePort,
 	brandConfigRepo BrandConfigPort,
 	auditLogRepo AuditLogPort,
-	tx *postgres.TxManager,
+	tx TxRunner,
 	aesKey []byte,
-	redis *goredis.Client,
+	cache CacheClient,
 ) *ConfigService {
 	return &ConfigService{
 		aiProviderRepo:     aiProviderRepo,
@@ -82,7 +79,7 @@ func NewConfigService(
 		auditLogRepo:       auditLogRepo,
 		tx:                 tx,
 		aesKey:             aesKey,
-		redis:              redis,
+		cache:              cache,
 	}
 }
 
@@ -97,14 +94,14 @@ func NewConfigServiceWithLLM(
 	safetyMessageRepo SafetyMessagePort,
 	brandConfigRepo BrandConfigPort,
 	auditLogRepo AuditLogPort,
-	tx *postgres.TxManager,
+	tx TxRunner,
 	aesKey []byte,
-	redis *goredis.Client,
+	cache CacheClient,
 	llmCfg config.LLMConfig,
 ) *ConfigService {
 	svc := NewConfigService(aiProviderRepo, sensitiveWordRepo, safetyRuleRepo,
 		ragConfigRepo, promptTemplateRepo, safetyMessageRepo, brandConfigRepo,
-		auditLogRepo, tx, aesKey, redis)
+		auditLogRepo, tx, aesKey, cache)
 	svc.llmCfg = llmCfg
 	return svc
 }
@@ -180,10 +177,10 @@ func slogKVsToJSON(kvs []any) []byte {
 
 // invalidateCache 删除指定缓存 key。Redis 不可用时静默跳过（ponytail：缓存失败不影响正确性）。
 func (s *ConfigService) invalidateCache(ctx context.Context, keys ...string) {
-	if s.redis == nil {
+	if s.cache == nil {
 		return
 	}
-	s.redis.Del(ctx, keys...)
+	_ = s.cache.Del(ctx, keys...)
 }
 
 // LLMReloadChannel 返回 LLM 热重载通知的 Redis 频道名。
@@ -196,11 +193,11 @@ func LLMReloadChannel() string {
 // 订阅方（server/worker 进程）收到通知后从 DB 重新加载 LLM 客户端并热切换。
 // Redis 不可用时静默跳过（仅影响热切换时效性，下次启动仍会加载最新配置）。
 func (s *ConfigService) notifyLLMReload(ctx context.Context) {
-	if s.redis == nil {
-		slog.WarnContext(ctx, "config: redis not available, LLM hot-reload notification skipped")
+	if s.cache == nil {
+		slog.WarnContext(ctx, "config: cache not available, LLM hot-reload notification skipped")
 		return
 	}
-	if err := s.redis.Publish(ctx, llmReloadChannel, "reload").Err(); err != nil {
+	if err := s.cache.Publish(ctx, llmReloadChannel, "reload"); err != nil {
 		slog.WarnContext(ctx, "config: failed to publish LLM reload notification", "err", err)
 	}
 }

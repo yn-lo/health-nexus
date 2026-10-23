@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -10,8 +9,8 @@ import (
 
 	"health-nexus/internal/domain/wiki/service"
 	"health-nexus/internal/middleware"
-	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 	"health-nexus/internal/shared/response"
 )
 
@@ -72,7 +71,7 @@ func (rt *Router) Mount(r chi.Router) {
 
 	// 医护端：JWT + RequireStaff + DataIsolation（DOCTOR/NURSE/DEPT_ADMIN/SUPER_ADMIN 均可访问，具体权限由 service 层校验）。
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.JWTAuth(rt.auth), middleware.RequireStaff(), middleware.DataIsolation())
+		r.Use(middleware.JWTAuth(rt.auth), middleware.RequireStaff())
 
 		// 正文插图上传：仅医护端可上传，返回可写入正文的 URL。
 		r.Post("/api/staff/wiki/uploads", rt.upload.Create)
@@ -107,20 +106,10 @@ func (rt *Router) Mount(r chi.Router) {
 
 // ============ 共享辅助 ============
 
-// currentActor 从 ctx 提取医护身份（JWTAuth 以 int64/string/int64 写入，不通过 FromCtx）。
+// currentActor 从 ctx 提取医护身份（JWTAuth 以 int64/string/int64 写入）。
 // 返回 service.Actor 供 service 层鉴权使用。
 func currentActor(r *http.Request) (service.Actor, error) {
-	ctx := r.Context()
-	uid, ok := ctx.Value(contextkeys.UserID).(int64)
-	if !ok || uid <= 0 {
-		return service.Actor{}, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity")
-	}
-	role, _ := ctx.Value(contextkeys.UserRole).(string)
-	if role == "" {
-		return service.Actor{}, apperrors.Unauthorized("UNAUTHORIZED", "missing user role")
-	}
-	deptID, _ := ctx.Value(contextkeys.DeptID).(int64) // omitempty，PATIENT/部分账号可能为 0
-	return service.Actor{UserID: uid, Role: role, DeptID: deptID}, nil
+	return identity.ActorFromRequest(r)
 }
 
 // actorIDAction 封装"取当前操作者 + 解析 id + 解码请求体 + 调用 service + 写成功"的动作端点流程，
@@ -188,20 +177,13 @@ func parseOptionalInt64Query(r *http.Request, key string) (*int64, error) {
 	return &n, nil
 }
 
-// maxBodyBytes 请求体大小上限（1MB，与 auth handler 一致）。
-const maxBodyBytes = 1 << 20
-
 // decodeJSON 解析请求体到 dst。空 body 或格式错误返回 422。
 // 严格模式：拒绝未知字段，避免客户端笔误被静默忽略。
-// 限制请求体 1MB（与 auth handler 一致）；文章 content 可含长文本，1MB 仍远够用。
 func decodeJSON(r *http.Request, dst any) error {
 	if r.Body == nil {
 		return apperrors.Validation("WIKI_EMPTY_BODY", "请求体不能为空")
 	}
-	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
+	if err := response.DecodeStrictJSON(r, dst); err != nil {
 		return apperrors.Validation("WIKI_INVALID_JSON", "请求体格式错误")
 	}
 	return nil

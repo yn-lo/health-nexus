@@ -1,5 +1,5 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
-import { clearTokens, getAccessToken, getDeviceId, getRefreshToken, tryRefreshToken } from '@/shared/api/client'
+import { openChatStream, type ChatStreamRequest } from '@/shared/api/chat'
 import { type NoticeKind, type Reference, type SSEEvent, type TurnResult } from '@/shared/types/chat'
 import { parseSSELine } from './sseParse'
 
@@ -106,10 +106,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
         let receivedDone = false
 
         try {
-          // 认证态：会话彻底失效时降级为匿名端点，保持在患者端公开页（不硬跳登录丢上下文）。
-          let useAuth = !!getAccessToken()
-
-          const body: Record<string, unknown> = {
+          const body: ChatStreamRequest = {
             message: question,
             conversation_id: conversationId.value,
             request_id: requestId,
@@ -122,33 +119,7 @@ export function useSSEChat(options: UseSSEChatOptions) {
             body.selected_dept_id = options.selectedDeptId
           }
 
-          const doFetch = () => {
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-            if (useAuth) headers['Authorization'] = `Bearer ${getAccessToken()}`
-            else headers['X-Device-Id'] = getDeviceId()
-            return fetch(useAuth ? '/api/chat/stream' : '/api/public/chat/stream', {
-              method: 'POST',
-              headers,
-              body: JSON.stringify(body),
-              signal,
-            })
-          }
-
-          let response = await doFetch()
-
-          if (response.status === 401 && useAuth) {
-            const attemptedRefresh = getRefreshToken()
-            const refreshed = await tryRefreshToken()
-            // 刷新成功，或 refresh token 已被其它标签页轮换（跨标签页并发刷新）→ 复用新 token 重试。
-            if (refreshed || (getRefreshToken() !== null && getRefreshToken() !== attemptedRefresh)) {
-              response = await doFetch()
-            } else {
-              // 会话彻底失效：清除本地登录态并降级为匿名继续本轮问答，避免硬跳登录打断访客。
-              clearTokens()
-              useAuth = false
-              response = await doFetch()
-            }
-          }
+          const response = await openChatStream(body, signal)
 
           if (!response.ok) {
             let msg = `请求失败 (${response.status})`

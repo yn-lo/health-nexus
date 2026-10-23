@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	apperrors "health-nexus/internal/shared/errors"
 )
 
 // lockTokenLen 是锁 token 的随机字节数。
@@ -28,8 +30,7 @@ end
 
 // 锁相关错误。
 var (
-	ErrLockNotAcquired = errors.New("lock not acquired")
-	ErrLockNotHeld     = errors.New("lock not held or held by another")
+	ErrLockNotHeld = errors.New("lock not held or held by another")
 )
 
 // Locker 基于 Redis SET NX EX 的分布式锁。
@@ -55,7 +56,7 @@ func (l *Locker) Lock(ctx context.Context, key string, ttl time.Duration) (func(
 		return nil, fmt.Errorf("acquire lock: %w", err)
 	}
 	if !ok {
-		return nil, ErrLockNotAcquired
+		return nil, apperrors.ErrLockNotAcquired
 	}
 
 	unlock := func() error {

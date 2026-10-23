@@ -10,6 +10,7 @@ import (
 	"health-nexus/internal/domain/base/entity"
 	"health-nexus/internal/domain/base/service"
 	"health-nexus/internal/middleware"
+	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
 	"health-nexus/internal/shared/response"
 )
@@ -46,7 +47,7 @@ func NewNotificationHandler(svc *service.NotificationService, auth *middleware.A
 // Mount 挂载通知路由：/api/staff/notifications（JWTAuth + RequireStaff + DataIsolation）。
 func (h *NotificationHandler) Mount(r chi.Router) {
 	r.Route("/api/staff/notifications", func(r chi.Router) {
-		r.Use(middleware.JWTAuth(h.auth), middleware.RequireStaff(), middleware.DataIsolation())
+		r.Use(middleware.JWTAuth(h.auth), middleware.RequireStaff())
 		r.Get("/", h.List)
 		r.Get("/unread-count", h.UnreadCount)
 		r.Post("/read-all", h.MarkAllRead)
@@ -133,17 +134,18 @@ func (h *NotificationHandler) UnreadCount(w http.ResponseWriter, r *http.Request
 	response.WriteOK(w, map[string]int{"count": count})
 }
 
-// notificationScope 从 DataScope（DataIsolation 注入）提取角色与科室。
+// notificationScope 从 JWT context 提取角色与科室。
 // DeptID<=0 时返回 nil（仅可见广播通知）。
 func notificationScope(r *http.Request) (role string, deptID *int64, err error) {
-	scope := middleware.ScopeFromCtx(r.Context())
-	if scope == nil || scope.Role == "" {
+	ctx := r.Context()
+	role, _ = ctx.Value(contextkeys.UserRole).(string)
+	if role == "" {
 		return "", nil, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity")
 	}
-	if scope.DeptID > 0 {
-		deptID = &scope.DeptID
+	if id, ok := ctx.Value(contextkeys.DeptID).(int64); ok && id > 0 {
+		deptID = &id
 	}
-	return scope.Role, deptID, nil
+	return role, deptID, nil
 }
 
 func parseNotificationID(r *http.Request) (int64, error) {

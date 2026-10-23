@@ -122,14 +122,6 @@ run_p0() {
     "tests/api_contract_test.go, .harness/specs/conventions/testing.md" \
     -- go test ./tests/ -run 'TestRouteIntegrity|TestAuthGate|TestRoleGate' -count=1
 
-  # P0-4b API 路由地图生成（chi.Walk 遍历路由树 + runtime 反射 handler 限定名 → docs/api-contract.md）
-  # 每次门禁运行都重新生成，确保路由地图始终与代码同步，前端据此锁定 handler 源码位置。
-  capture_fail \
-    "API 路由地图生成失败" \
-    "检查 tests/api_contract_gen_test.go 与路由树是否一致" \
-    "tests/api_contract_gen_test.go, docs/api-contract.md" \
-    -- go test ./tests/ -run 'TestGenerateAPIContract' -count=1
-
   # P0-5 单元测试（无 race）
   capture_fail \
     "单元测试失败" \

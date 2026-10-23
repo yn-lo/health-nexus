@@ -28,6 +28,7 @@ internal/
 ├── config/                   配置加载（viper + 结构体映射）
 ├── di/                       手写依赖注入（NewApp 装配全部域）
 ├── adapter/                  跨域适配器（domain 之间的桥接，打破循环依赖）
+├── tasks/                    应用层任务用例（asynq：向量化/复审/危机/outbox）
 ├── middleware/               HTTP 中间件（JWT/CORS/限流/日志/隔离/恢复）
 ├── platform/                 基础设施（postgres/redis/asynq/llm/crypto/logger）
 ├── shared/                   跨域共享原语（errors/response/constants/contextkeys 等）
@@ -47,9 +48,11 @@ internal/di/schema.sql        数据模型唯一真源（幂等，启动自动�
 - `service/`：业务逻辑 + 事务编排，定义消费者接口（Ports）
 - `handler/`：HTTP 协议适配 + 路由注册（`Mount`/`RegisterRoutes`）
 
+跨进程任务用例不放在域内，也不放在 `cmd/worker`：统一在 `internal/tasks/`（应用层），由 worker 装配调用（AC-ARCH-17）。
+
 ## 部署拓扑
 - **server**（`cmd/server`）：HTTP API 服务，依赖 PostgreSQL + Redis + LLM API
-- **worker**（`cmd/worker`）：asynq 异步 worker，处理 wiki 文章向量化 + 复审逾期扫描，依赖 PostgreSQL + Redis + LLM Embedding API
+- **worker**（`cmd/worker`）：asynq 异步 worker，执行 `internal/tasks` 中的任务用例（文章向量化、复审逾期扫描、危机通知/超时升级、outbox 补投），依赖 PostgreSQL + Redis + LLM Embedding API
 - **外部依赖**：PostgreSQL（pgvector 扩展）、Redis、多个 LLM provider（硅基流动/智谱/OpenAI 兼容）
 
 ## 关键设计决策

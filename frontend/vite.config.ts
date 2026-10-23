@@ -18,31 +18,24 @@ function getMpaInputs(): Record<string, string> {
   return entries
 }
 
-/** MPA dev 路由中间件：将 URL 前缀映射到对应 SPA 入口 HTML
- * - /staff/* + /styles → staff.html（医护端）
- * - /、/login、/chat/*、/wiki/*、/about、/terms、/privacy → chat.html（患者端）
- * 未列出的路径由 vite 默认 fallback 处理（命中 index.html 跳转） */
+/** MPA dev 路由中间件：浏览器导航请求按入口归属选择 HTML
+ * - /staff、/staff/*、/styles → staff.html（医护端）
+ * - 其余 HTML 导航 → chat.html（患者端）
+ * 新增患者端顶级路由无需再维护路径白名单；静态资源/API/HTML 文件请求直接放行。 */
 function mpaFallback(): Plugin {
   return {
     name: 'mpa-fallback',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const url = req.url?.split('?')[0] ?? ''
-        // staff SPA 入口
-        if (url.startsWith('/staff/') || url === '/staff' || url === '/styles') {
+        const isHtmlNavigation = req.method === 'GET' && req.headers.accept?.includes('text/html')
+        if (!isHtmlNavigation || url.endsWith('.html')) return next()
+        if (url.startsWith('/api/') || url.startsWith('/uploads/')) return next()
+        if (url.startsWith('/staff') || url === '/styles') {
           req.url = '/staff.html'
           return next()
         }
-        // chat SPA 入口（含法律文档与关于页等顶级路由）
-        if (
-          url === '/' || url === '/login' ||
-          url === '/chat' || url.startsWith('/chat/') ||
-          url === '/wiki' || url.startsWith('/wiki/') ||
-          url === '/about' || url === '/terms' || url === '/privacy'
-        ) {
-          req.url = '/chat.html'
-          return next()
-        }
+        req.url = '/chat.html'
         next()
       })
     },
@@ -59,6 +52,11 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
     },
+  },
+  // markdown-it 只在懒加载的会话路由中使用：不预构建会在首条消息渲染时才被发现，
+  // 触发 Vite 整页 reload 并中断正在进行的 SSE 请求。
+  optimizeDeps: {
+    include: ['markdown-it'],
   },
   build: {
     rollupOptions: {

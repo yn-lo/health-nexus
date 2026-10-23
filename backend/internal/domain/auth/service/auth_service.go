@@ -15,12 +15,12 @@ import (
 
 	"health-nexus/internal/config"
 	"health-nexus/internal/domain/auth/entity"
-	"health-nexus/internal/middleware"
 	"health-nexus/internal/platform/crypto"
 	"health-nexus/internal/platform/postgres"
 	"health-nexus/internal/shared/constants"
 	"health-nexus/internal/shared/contextkeys"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 )
 
 // 用户名与密码约束。
@@ -140,12 +140,17 @@ type RedisClient interface {
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 }
 
+// TokenParser 校验 token 并返回声明（消费者定义，ISP）。*middleware.Authenticator 实现此接口。
+type TokenParser interface {
+	Parse(tokenString string) (*identity.Claims, error)
+}
+
 // AuthService 实现登录/注册/刷新/登出/密码重置业务逻辑。
 type AuthService struct {
 	repo   UserRepo
 	invite InviteRepo
 	issuer *TokenIssuer
-	auth   *middleware.Authenticator
+	auth   TokenParser
 	rdb    RedisClient
 	cfg    *config.Config
 }
@@ -155,7 +160,7 @@ func NewAuthService(
 	repo UserRepo,
 	invite InviteRepo,
 	issuer *TokenIssuer,
-	auth *middleware.Authenticator,
+	auth TokenParser,
 	rdb RedisClient,
 	cfg *config.Config,
 ) *AuthService {

@@ -15,7 +15,6 @@ import (
 
 	"health-nexus/internal/domain/chat/entity"
 	"health-nexus/internal/platform/llm"
-	"health-nexus/internal/platform/redis"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
 	"health-nexus/internal/shared/identity"
@@ -393,7 +392,7 @@ func (m *mockLockProvider) Lock(_ context.Context, key string, _ time.Duration) 
 	locked := m.locked
 	m.mu.Unlock()
 	if locked {
-		return nil, redis.ErrLockNotAcquired
+		return nil, apperrors.ErrLockNotAcquired
 	}
 	return func() error { return nil }, nil
 }

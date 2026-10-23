@@ -4,39 +4,21 @@
  * 标题 + 科室选择 + 标签 + 摘要 + TipTap 富文本编辑器 + 底部操作栏
  * API: wikiApi.createArticle() + wikiApi.updateArticle() + wikiApi.submitArticle()
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, useTemplateRef } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import {
- ChevronDown,
- Bold,
- Italic,
- Underline,
- Strikethrough,
- Heading,
- Quote,
- Minus,
- List,
- ListOrdered,
- AlignLeft,
- AlignCenter,
- AlignRight,
- ImagePlus,
- Trash2,
- RefreshCw,
- Layers,
-} from '@lucide/vue'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
-import TextAlign from '@tiptap/extension-text-align'
-import type { Component } from 'vue'
+import { ChevronDown, Trash2 } from '@lucide/vue'
+import { EditorContent } from '@tiptap/vue-3'
 import { useDsToast, useDsDialog } from '@/shared/composables'
 import { AppHeader } from '@/shared/components'
 import { wikiApi, useDepartmentOptions, stripHtml } from '@/shared'
 import { errmsg } from '@/shared/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { ADMIN_ROLES, SUPER_ADMIN_ROLE } from '@/shared/constants/roles'
-import { CONTENT_RISK_DEFAULT, CONTENT_RISK_OPTIONS } from '@/shared/constants/wiki'
+import { CONTENT_RISK_DEFAULT } from '@/shared/constants/wiki'
+import { useArticleEditor } from '@/staff/composables/useArticleEditor'
+import ArticleEditorToolbar from '@/staff/components/ArticleEditorToolbar.vue'
+import ArticleChunksPanel from '@/staff/components/ArticleChunksPanel.vue'
+import ArticleMetaFields from '@/staff/components/ArticleMetaFields.vue'
 import type { ArticleStatus, ArticleChunk, ContentRisk } from '@/shared'
 
 const router = useRouter()
@@ -65,7 +47,8 @@ const allowedDepartments = computed(() =>
 const title = ref('')
 const departmentId = ref<number | null>(null)
 const summary = ref('')
-const content = ref('')
+const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
+const { content, editor, uploading, pickImage, onImageSelected } = useArticleEditor(fileInput)
 /** 知识来源（可空，用于复审追溯与检索可见性） */
 const source = ref('')
 /** 适用人群（可空，如"高血压患者""孕产妇"） */
@@ -86,15 +69,6 @@ const originalContent = ref('')
 const chunks = ref<ArticleChunk[]>([])
 const chunksLoading = ref(false)
 const revectorizing = ref(false)
-/** 切片面板展开状态 */
-const chunksExpanded = ref(false)
-/** 当前展开查看完整内容的切片 ID */
-const expandedChunkId = ref<number | null>(null)
-
-/** 隐藏的文件选择框（工具栏"插入图片"触发） */
-const fileInput = ref<HTMLInputElement | null>(null)
-/** 图片上传中（防重复触发） */
-const uploading = ref(false)
 
 /** 是否编辑模式 */
 const isEditMode = computed(() => !!route.params.id)
@@ -110,233 +84,9 @@ const showRepublishNotice = computed(
   () => articleStatus.value === 'published' && content.value !== originalContent.value,
 )
 
-/** 切片最后生成时间（取首片 created_at 作为代理） */
-const chunksCreatedAt = computed(() => chunks.value[0]?.created_at ?? '')
-
 /** 页面标题 */
 const pageTitle = computed(() => (isEditMode.value ? '编辑文章' : '创建文章'))
 
-/** TipTap 编辑器实例 */
-// Image.extend：块级图片默认不吃 text-align（不在段落内），补一个 textAlign 属性，
-// 渲染为 display:block + margin auto 实现居中/右对齐；患者端消毒器已放行这些声明。
-const AlignedImage = Image.extend({
- addAttributes() {
- return {
- ...this.parent?.(),
- textAlign: {
- default: null as string | null,
- parseHTML: (el: HTMLElement) => {
- const s = el.style
- if (s.display === 'block' && s.marginLeft === 'auto' && s.marginRight === 'auto') return 'center'
- if (s.display === 'block' && s.marginLeft === 'auto' && s.marginRight === '0px') return 'right'
- return null
- },
- renderHTML: (attrs: { textAlign?: string | null }) => {
- if (attrs.textAlign === 'center') {
- return { style: 'display:block;margin-left:auto;margin-right:auto' }
- }
- if (attrs.textAlign === 'right') {
- return { style: 'display:block;margin-left:auto;margin-right:0' }
- }
- return {}
- },
- },
- }
- },
- // 官方 ResizableNodeView 的 update() 只保留 DOM、不同步节点属性（拖拽时是内部直接改样式），
- // 外部 updateAttributes 改对齐后编辑器画面不会更新。包一层：属性变更时同步容器
- // justify-content（官方容器为 flex 布局，对齐落在这里才生效）。
- addNodeView() {
- // this.parent?.() 先执行父方法，得到视图工厂 (props) => NodeView
- const parentFactory = this.parent?.()
- if (!parentFactory) return null
- // 官方 ResizableNodeView 运行时即 NodeView，额外附带 container/update（NodeView 类型未声明），故整块断言
- return ((props: Parameters<typeof parentFactory>[0]) => {
- type ResizableLike = {
- container?: HTMLElement | null
- update?: (node: unknown, decorations: unknown, innerDecorations: unknown) => boolean
- }
- const nv = parentFactory(props) as ResizableLike
- const syncAlign = (node: unknown) => {
- if (!nv.container) return
- const align = (node as { attrs?: { textAlign?: string | null } }).attrs?.textAlign
- nv.container.style.justifyContent =
- align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start'
- }
- // 父视图未提供 update（非官方 resize 实现）时无法包装，原样返回
- if (typeof nv.update !== 'function') return nv
- syncAlign(props.node)
- const originalUpdate = nv.update.bind(nv)
- nv.update = (node: unknown, decorations: unknown, innerDecorations: unknown) => {
- const ok = originalUpdate(node, decorations, innerDecorations)
- if (ok) syncAlign(node)
- return ok
- }
- return nv
- }) as typeof parentFactory
- },
-})
-
-const editor = useEditor({
- // StarterKit v3 已内置 Underline/Strike/Blockquote/HorizontalRule/OrderedList
- extensions: [
-  StarterKit,
-  AlignedImage.configure({
-   // 官方 resize：选中图片出现拖拽手柄，宽度以 width/height 属性写进正文
-   resize: { enabled: true, alwaysPreserveAspectRatio: true },
-  }),
-  TextAlign.configure({ types: ['heading', 'paragraph'] }),
- ],
- content: '',
- onUpdate: ({ editor: e }) => {
- content.value = e.getHTML()
- },
-})
-
-/** 允许的图片类型与大小上限（与后端 upload.max_size_mb 对齐，前端先拦一道减少无效请求） */
-const MAX_IMAGE_MB = 5
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-
-/** 触发文件选择 */
-function pickImage() {
- fileInput.value?.click()
-}
-
-/** 选择文件后上传并插入正文（正文只存 URL，图片本身不参与向量化） */
-async function onImageSelected(e: Event) {
- const input = e.target as HTMLInputElement
- const file = input.files?.[0]
- input.value = '' // 清空以便重复选择同一文件
- if (!file || uploading.value) return
- if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
- showFailToast('仅支持 JPG/PNG/WebP/GIF 格式图片')
- return
- }
- if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
- showFailToast(`图片不能超过 ${MAX_IMAGE_MB}MB`)
- return
- }
- uploading.value = true
- try {
- const { url } = await wikiApi.uploadArticleImage(file)
- editor.value?.chain().focus().setImage({ src: url, alt: file.name }).run()
- } catch (err) {
- showFailToast(errmsg(err, '图片上传失败'))
- } finally {
- uploading.value = false
- }
-}
-
-/** 工具栏按钮配置 */
-interface ToolbarButton {
- icon: Component
- label: string
- active: boolean
- action: () => void
-}
-
-/** 对齐动作：选中图片时改图片自身对齐（块级图片不吃段落 text-align），否则改段落/标题 */
-type AlignValue = 'left' | 'center' | 'right'
-
-function applyAlign(align: AlignValue) {
- const ed = editor.value
- if (!ed) return
- if (ed.isActive('image')) {
- ed.chain().focus().updateAttributes('image', { textAlign: align }).run()
- } else {
- ed.chain().focus().setTextAlign(align).run()
- }
-}
-
-/** 对齐激活态：图片节点读自身 textAlign，文本读段落 text-align */
-function isAlignActive(align: AlignValue): boolean {
- const ed = editor.value
- if (!ed) return false
- if (ed.isActive('image')) return ed.getAttributes('image').textAlign === align
- return ed.isActive({ textAlign: align })
-}
-
-/** 工具栏按钮 */
-const toolbarButtons = computed<ToolbarButton[]>(() => [
- {
- icon: Bold,
- label: '加粗',
- active: editor.value?.isActive('bold') ?? false,
- action: () => editor.value?.chain().focus().toggleBold().run(),
- },
- {
- icon: Italic,
- label: '斜体',
- active: editor.value?.isActive('italic') ?? false,
- action: () => editor.value?.chain().focus().toggleItalic().run(),
- },
- {
- icon: Underline,
- label: '下划线',
- active: editor.value?.isActive('underline') ?? false,
- action: () => editor.value?.chain().focus().toggleUnderline().run(),
- },
- {
- icon: Strikethrough,
- label: '删除线',
- active: editor.value?.isActive('strike') ?? false,
- action: () => editor.value?.chain().focus().toggleStrike().run(),
- },
- {
- icon: Heading,
- label: '标题',
- active: editor.value?.isActive('heading', { level: 2 }) ?? false,
- action: () => editor.value?.chain().focus().toggleHeading({ level: 2 }).run(),
- },
- {
- icon: Quote,
- label: '引用',
- active: editor.value?.isActive('blockquote') ?? false,
- action: () => editor.value?.chain().focus().toggleBlockquote().run(),
- },
- {
- icon: List,
- label: '无序列表',
- active: editor.value?.isActive('bulletList') ?? false,
- action: () => editor.value?.chain().focus().toggleBulletList().run(),
- },
- {
- icon: ListOrdered,
- label: '有序列表',
- active: editor.value?.isActive('orderedList') ?? false,
- action: () => editor.value?.chain().focus().toggleOrderedList().run(),
- },
- {
- icon: Minus,
- label: '分割线',
- active: false,
- action: () => editor.value?.chain().focus().setHorizontalRule().run(),
- },
- {
- icon: AlignLeft,
- label: '左对齐',
- active: isAlignActive('left'),
- action: () => applyAlign('left'),
- },
- {
- icon: AlignCenter,
- label: '居中',
- active: isAlignActive('center'),
- action: () => applyAlign('center'),
- },
- {
- icon: AlignRight,
- label: '右对齐',
- active: isAlignActive('right'),
- action: () => applyAlign('right'),
- },
- {
- icon: ImagePlus,
- label: '插入图片',
- active: uploading.value,
- action: pickImage,
- },
-])
 
 /** 构建创建请求体（含 department_id，对齐后端 createArticleRequest） */
 function buildCreatePayload() {
@@ -481,19 +231,6 @@ async function handleDelete() {
  }
 }
 
-/** ISO 日期 → YYYY-MM-DD HH:mm 完整格式 */
-function fmtDateTime(iso: string): string {
- if (!iso) return ''
- const d = new Date(iso)
- if (isNaN(d.getTime())) return ''
- const yyyy = d.getFullYear()
- const mm = String(d.getMonth() + 1).padStart(2, '0')
- const dd = String(d.getDate()).padStart(2, '0')
- const hh = String(d.getHours()).padStart(2, '0')
- const mi = String(d.getMinutes()).padStart(2, '0')
- return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
-
 /** 加载切片列表（仅 published 状态调用） */
 async function loadChunks() {
  if (!isEditMode.value) return
@@ -636,25 +373,7 @@ onMounted(async () => {
  <div
  class="overflow-hidden rounded-[var(--ds-control-radius-md)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)]"
  >
- <!-- 工具栏：移动端横向滑动（13 按钮在窄屏放不下，禁止换行/挤压，配 shrink-0） -->
- <div
- class="flex flex-nowrap items-center gap-[var(--spacer-4)] overflow-x-auto border-b border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] px-[var(--spacer-8)] py-[var(--spacer-8)]"
- >
- <button
- v-for="btn in toolbarButtons"
- :key="btn.label"
- type="button"
- class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-4)] border-none transition-colors"
- :class="
- btn.active
- ? 'bg-[var(--bg-overlay-l2)] text-text'
- : 'bg-transparent text-icon hover:bg-[var(--bg-overlay-l1)]'
- "
- :aria-label="btn.label"
- @click="btn.action"
- >
- <component :is="btn.icon" class="h-4 w-4" />
- </button>
+ <ArticleEditorToolbar :editor="editor" :uploading="uploading" @pick-image="pickImage" />
  <!-- 隐藏的图片选择框（仅接受图片，上传结果插入为 <img>，不参与向量化） -->
  <input
  ref="fileInput"
@@ -664,7 +383,6 @@ onMounted(async () => {
  aria-hidden="true"
  @change="onImageSelected"
  >
- </div>
  <!-- 编辑区 -->
  <EditorContent
  class="prose-article min-h-[180px] px-[var(--spacer-12)] py-[var(--spacer-12)] font-heading text-body-base text-text"
@@ -674,167 +392,21 @@ onMounted(async () => {
  </div>
 
  <!-- 知识元数据（创建/编辑均可设置：决定复审周期与检索可见性） -->
- <!-- 知识来源 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
-  <label class="font-heading text-body-base font-medium text-text">
-  知识来源
-  </label>
- <div class="ds-field-wrap">
- <input
- v-model="source"
- type="text"
- placeholder="如：《中国高血压防治指南（2024）》，可留空"
- >
- </div>
- <span class="font-heading text-body-xs text-text-tertiary">
- 用于复审追溯与检索可见性
- </span>
- </div>
-
- <!-- 适用人群 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="font-heading text-body-base font-medium text-text">
- 适用人群
- </label>
- <div class="ds-field-wrap">
- <input
- v-model="applicablePopulation"
- type="text"
- placeholder="如：高血压患者、孕产妇，可留空"
- >
- </div>
- <span class="font-heading text-body-xs text-text-tertiary">
- 用于检索可见性
- </span>
- </div>
-
- <!-- 有效期至（清空后提交空字符串，表示清空有效期） -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="font-heading text-body-base font-medium text-text">
- 有效期至
- </label>
- <div class="flex items-center gap-[var(--spacer-8)]">
- <div class="ds-field-wrap flex-1">
- <input
- v-model="validUntil"
- type="date"
- aria-label="有效期至"
- >
- </div>
- <button
- v-if="validUntil"
- type="button"
- class="border-none bg-transparent font-heading text-body-sm text-text-brand"
- @click="validUntil = ''"
- >
- 清空
- </button>
- </div>
- <span class="font-heading text-body-xs text-text-tertiary">
- 用于复审提醒与检索可见性；到期后进入复审
- </span>
- </div>
-
- <!-- 内容风险等级 -->
- <div class="flex flex-col gap-[var(--spacer-8)]">
- <label class="font-heading text-body-base font-medium text-text">
- 内容风险等级
- </label>
- <div class="relative">
- <select
- v-model="contentRisk"
- class="ds-select"
- aria-label="内容风险等级"
- >
- <option v-for="opt in CONTENT_RISK_OPTIONS" :key="opt.value" :value="opt.value">
- {{ opt.label }}
- </option>
- </select>
- <ChevronDown class="pointer-events-none absolute right-[var(--spacer-12)] top-1/2 h-4 w-4 -translate-y-1/2 text-icon-tertiary" />
- </div>
- <span class="font-heading text-body-xs text-text-tertiary">
- 高风险内容（用药、检查准备、高风险护理）逾期后会退出检索
- </span>
- </div>
+ <ArticleMetaFields
+ v-model:source="source"
+ v-model:applicable-population="applicablePopulation"
+ v-model:valid-until="validUntil"
+ v-model:content-risk="contentRisk"
+ />
 
  <!-- 切片状态（仅已发布文章显示，契约 §4.12/4.13） -->
- <div v-if="showChunks" class="flex flex-col gap-[var(--spacer-8)]">
- <div class="flex items-center justify-between">
- <label class="font-heading text-body-base font-medium text-text">
- 切片状态
- </label>
- <button
- type="button"
- class="inline-flex items-center gap-[var(--spacer-4)] border-none bg-transparent font-heading text-body-sm text-text-brand disabled:opacity-50"
- :disabled="revectorizing"
- @click="handleRevectorize"
- >
- <RefreshCw class="h-3.5 w-3.5" :class="revectorizing ? 'animate-spin' : ''" />
- 重新切片
- </button>
- </div>
- <div
- class="rounded-[var(--ds-control-radius-md)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-secondary)] px-[var(--spacer-12)] py-[var(--spacer-12)]"
- >
- <!-- 概要 -->
- <div class="flex items-center gap-[var(--spacer-8)]">
- <span class="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-4)] bg-[var(--bg-overlay-l1)] text-icon">
- <Layers class="h-4 w-4" />
- </span>
- <div class="flex-1 flex flex-col gap-[var(--spacer-2)]">
- <span v-if="chunksLoading" class="font-heading text-body-sm text-text-tertiary">加载中…</span>
- <span v-else-if="chunks.length === 0" class="font-heading text-body-sm text-[var(--status-error-default)]">
- 暂无切片（向量化可能失败，可尝试重新切片）
- </span>
- <span v-else class="font-heading text-body-sm text-text">
- 共 {{ chunks.length }} 片 · 版本 v{{ chunks[0]?.version }}
- </span>
- <span v-if="chunksCreatedAt" class="font-heading text-body-xs text-text-tertiary">
- 生成于 {{ fmtDateTime(chunksCreatedAt) }}
- </span>
- </div>
- <button
- v-if="chunks.length > 0"
- type="button"
- class="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-4)] border border-[var(--border-neutral-l1)] bg-[var(--bg-base-default)] text-icon transition-colors hover:bg-[var(--bg-overlay-l1)]"
- :aria-label="chunksExpanded ? '收起' : '展开'"
- @click="chunksExpanded = !chunksExpanded"
- >
- <ChevronDown
- class="h-4 w-4 transition-transform"
- :class="chunksExpanded ? 'rotate-180' : ''"
+ <ArticleChunksPanel
+ v-if="showChunks"
+ :chunks="chunks"
+ :loading="chunksLoading"
+ :revectorizing="revectorizing"
+ @revectorize="handleRevectorize"
  />
- </button>
- </div>
- <!-- 切片详情列表 -->
- <div
- v-if="chunksExpanded && chunks.length > 0"
- class="mt-[var(--spacer-12)] flex flex-col gap-[var(--spacer-8)] border-t border-[var(--border-neutral-l1)] pt-[var(--spacer-12)]"
- >
- <div
- v-for="chunk in chunks"
- :key="chunk.id"
- class="flex cursor-pointer flex-col gap-[var(--spacer-2)] rounded-[var(--radius-4)] px-[var(--spacer-4)] py-[var(--spacer-4)] transition-colors hover:bg-[var(--bg-overlay-l1)]"
- @click="expandedChunkId = expandedChunkId === chunk.id ? null : chunk.id"
- >
- <div class="flex items-center gap-[var(--spacer-4)]">
- <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-[var(--radius-2)] bg-[var(--bg-brand)] px-[var(--spacer-4)] font-heading text-body-xs font-medium text-onbrand">
- {{ chunk.chunk_index + 1 }}
- </span>
- <span class="font-heading text-body-xs text-text-tertiary">
- {{ chunk.content_hash.slice(0, 8) }}
- </span>
- </div>
- <p
- class="font-heading text-body-sm text-text-secondary"
- :class="expandedChunkId === chunk.id ? '' : 'line-clamp-2'"
- >
- {{ stripHtml(chunk.content) }}
- </p>
- </div>
- </div>
- </div>
- </div>
  </section>
 
  <!-- 底部固定操作栏 -->
@@ -889,90 +461,3 @@ onMounted(async () => {
  </div>
  </main>
 </template>
-
-<style scoped>
-/* TipTap 编辑器内容排版（ProseMirror） */
-.prose-article :deep(.ProseMirror) {
- min-height: 180px;
- outline: none;
-}
-
-.prose-article :deep(.ProseMirror p) {
- margin: 0 0 var(--spacer-8) 0;
-}
-
-.prose-article :deep(.ProseMirror p:last-child) {
- margin-bottom: 0;
-}
-
-.prose-article :deep(.ProseMirror strong) {
- font-weight: 600;
-}
-
-.prose-article :deep(.ProseMirror h2) {
- font-size: var(--body-lg-font-size);
- font-weight: 600;
- margin: var(--spacer-12) 0 var(--spacer-8) 0;
-}
-
-.prose-article :deep(.ProseMirror ul) {
- list-style: disc;
- padding-left: var(--spacer-20);
- margin: var(--spacer-8) 0;
-}
-
-.prose-article :deep(.ProseMirror li) {
- margin: var(--spacer-4) 0;
-}
-
-/* 插图：与患者端 .markdown-body img 保持一致的排版观感 */
-.prose-article :deep(.ProseMirror img) {
- max-width: 100%;
- height: auto;
- border-radius: var(--radius-8);
- margin: var(--spacer-8) 0;
-}
-
-/* 选中图片：selectednode 类由官方 NodeView 加在容器 div 上 */
-.prose-article :deep([data-resize-container].ProseMirror-selectednode img) {
- outline: 2px solid var(--border-brand);
-}
-
-/* 官方 resize 手柄不提供默认样式（宿主职责）：选中图片时显示四角拖拽点 */
-.prose-article :deep([data-resize-handle]) {
- position: absolute;
- width: 12px;
- height: 12px;
- background: var(--bg-base-default);
- border: 2px solid var(--border-brand);
- border-radius: 9999px;
- box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
- opacity: 0;
- pointer-events: none;
- transition: opacity 0.12s;
- z-index: 10;
-}
-
-.prose-article :deep([data-resize-container].ProseMirror-selectednode [data-resize-handle]) {
- opacity: 1;
- pointer-events: auto;
-}
-
-.prose-article :deep([data-resize-handle='bottom-right']),
-.prose-article :deep([data-resize-handle='top-left']) {
- cursor: nwse-resize;
-}
-
-.prose-article :deep([data-resize-handle='bottom-left']),
-.prose-article :deep([data-resize-handle='top-right']) {
- cursor: nesw-resize;
-}
-
-.prose-article :deep(.ProseMirror p.is-editor-empty:first-child::before) {
- content: attr(data-placeholder);
- float: left;
- color: var(--text-tertiary);
- pointer-events: none;
- height: 0;
-}
-</style>

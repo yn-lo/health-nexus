@@ -34,6 +34,18 @@ export function fmtDateTime(iso: string): string {
   return isNaN(d.getTime()) ? '' : dtfFull.format(d)
 }
 
+/** ISO → 消息时间：今天 HH:mm，否则 MM-DD HH:mm */
+export function fmtChatTime(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const sameDay = d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return sameDay ? hm : `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hm}`
+}
+
 /** ISO → MM-DD */
 export function fmtShortDate(iso: string): string {
   if (!iso) return ''

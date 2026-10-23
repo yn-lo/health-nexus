@@ -247,23 +247,3 @@ onMounted(async () => {
   </section>
  </div>
 </template>
-
-<style scoped ponytail:allow-scoped-css 页面专属样式，折中>
-/* ── 顶部问候区 ── */
-.dashboard-greeting {
-  background: linear-gradient(180deg, var(--bg-base-secondary) 0%, transparent 100%);
-}
-
-/* ── 头像 Logo 放大 + 品牌光晕 ── */
-.dashboard-avatar :deep(.brand-logo__icon-wrapper) {
-  width: 48px;  /* style-guard:ignore dashboard-only logo */
-  height: 48px; /* style-guard:ignore dashboard-only logo */
-  box-shadow: var(--shadow-glow-sm);
-}
-
-/* ── 三个功能区卡片风格统一：无边框 + 统一尺寸 ── */
-.dashboard-section :deep(.ds-action-card) {
-  border: none;
-  box-shadow: none;
-}
-</style>

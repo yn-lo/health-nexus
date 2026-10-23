@@ -32,7 +32,7 @@ export type {
 export { RAG_LIMITS, BRAND_LIMITS } from './types/config';
 
 // API client
-export { apiClient, getAccessToken, getRefreshToken, getDeviceId, setTokens, clearTokens, getUserStored, setUserStored, errmsg } from './api/client';
+export { apiClient, errmsg } from './api/client';
 
 // API 模块
 export * as authApi from './api/auth';

@@ -35,9 +35,3 @@ withDefaults(defineProps<{
  >{{ line }}</p>
  </section>
 </template>
-
-<style scoped ponytail:allow-scoped-css 组件级样式覆盖，折中>
-.profile-avatar {
- background: linear-gradient(135deg, var(--bg-brand) 0%, var(--brand-400) 100%);
-}
-</style>

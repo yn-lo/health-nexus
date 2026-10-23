@@ -125,18 +125,3 @@ const { goBack } = usePageBack()
  </div>
  </div>
 </template>
-
-<style scoped ponytail:allow-scoped-css 法律文档页面专用排版>
-.terms-page {
- background: var(--bg-base-default);
- min-height: 100dvh;
- display: flex;
- flex-direction: column;
-}
-
-.terms-body {
- flex: 1;
- overflow-y: auto;
- padding-bottom: var(--spacer-32);
-}
-</style>

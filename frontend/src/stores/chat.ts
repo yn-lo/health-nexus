@@ -4,8 +4,9 @@ import * as chatApi from '@/shared/api/chat'
 import type { Conversation, ConversationUpdateRequest, Message } from '@/shared/types/chat'
 
 // 匿名会话本地持久化：后端匿名上下文存 Redis（12h TTL 自动过期），前端无公开
-// 消息拉取端点，故在 localStorage 按 conversation_id 本地缓存消息做刷新回显，
-// TTL 与后端 Redis 保持一致的 12h，过期自动清理。
+// 消息拉取端点，故在 sessionStorage 按 conversation_id 本地缓存消息做刷新回显。
+// 用 sessionStorage 而非 localStorage：匿名问诊属健康敏感数据，关闭标签页即清除，
+// 不再明文落盘；TTL 与后端 Redis 保持一致的 12h，过期自动清理。
 const ANON_MSGS_PREFIX = 'hn_anon_msgs:'
 const ANON_MSG_TTL = 12 * 60 * 60 * 1000
 
@@ -17,11 +18,11 @@ function anonKey(conversationId: string): string {
 export function loadAnonMessages(conversationId: string): Message[] {
   if (!conversationId) return []
   try {
-    const raw = localStorage.getItem(anonKey(conversationId))
+    const raw = sessionStorage.getItem(anonKey(conversationId))
     if (!raw) return []
     const data = JSON.parse(raw) as { ts: number; list: Message[] }
     if (Date.now() - data.ts > ANON_MSG_TTL) {
-      localStorage.removeItem(anonKey(conversationId))
+      sessionStorage.removeItem(anonKey(conversationId))
       return []
     }
     return data.list
@@ -31,17 +32,17 @@ export function loadAnonMessages(conversationId: string): Message[] {
 }
 
 /** 持久化匿名会话本地消息（保存后刷新仍可见；存储异常仅丢失本地回显，不影响服务端 Redis 上下文） */
-export function saveAnonMessages(conversationId: string, list: Message[]): void {
+function saveAnonMessages(conversationId: string, list: Message[]): void {
   if (!conversationId) return
   try {
-    localStorage.setItem(anonKey(conversationId), JSON.stringify({ ts: Date.now(), list }))
+    sessionStorage.setItem(anonKey(conversationId), JSON.stringify({ ts: Date.now(), list }))
   } catch {
     /* 存储已满等：忽略 */
   }
 }
 
 /** 匿名会话索引项 — 用于匿名历史抽屉（会话无公开查询端点，索引存本地） */
-export interface AnonSessionMeta {
+interface AnonSessionMeta {
   id: string
   title: string
   last_message_at: string
@@ -55,7 +56,7 @@ const ANON_SESSIONS_MAX = 20
 
 function rawAnonSessions(): AnonSessionMeta[] {
   try {
-    const raw = localStorage.getItem(ANON_SESSIONS_KEY)
+    const raw = sessionStorage.getItem(ANON_SESSIONS_KEY)
     if (!raw) return []
     return JSON.parse(raw) as AnonSessionMeta[]
   } catch {
@@ -65,7 +66,7 @@ function rawAnonSessions(): AnonSessionMeta[] {
 
 function writeAnonSessions(list: AnonSessionMeta[]): void {
   try {
-    localStorage.setItem(ANON_SESSIONS_KEY, JSON.stringify(list))
+    sessionStorage.setItem(ANON_SESSIONS_KEY, JSON.stringify(list))
   } catch {
     /* 存储已满等：忽略 */
   }
@@ -77,7 +78,7 @@ function loadAnonSessions(): AnonSessionMeta[] {
 }
 
 /** 新增/更新一条匿名会话索引（按 id 幂等，写入时移到最前并限长） */
-export function upsertAnonSession(meta: AnonSessionMeta): void {
+function upsertAnonSession(meta: AnonSessionMeta): void {
   const list = rawAnonSessions().filter((m) => m.id !== meta.id)
   list.unshift(meta)
   writeAnonSessions(list.slice(0, ANON_SESSIONS_MAX))
@@ -86,7 +87,28 @@ export function upsertAnonSession(meta: AnonSessionMeta): void {
 /** 删除匿名会话及其本地消息缓存（匿名历史抽屉删除） */
 export function removeAnonSession(conversationId: string): void {
   writeAnonSessions(rawAnonSessions().filter((m) => m.id !== conversationId))
-  localStorage.removeItem(anonKey(conversationId))
+  sessionStorage.removeItem(anonKey(conversationId))
+}
+
+/** 保存匿名会话快照：消息缓存 + 历史索引（标题取首条用户消息，活跃时间取最后一条） */
+export function saveAnonSessionSnapshot(conversationId: string, list: Message[]): void {
+  if (!conversationId) return
+  saveAnonMessages(conversationId, list)
+  const firstUser = list.find((m) => m.role === 'user')
+  const last = list[list.length - 1]
+  upsertAnonSession({
+    id: conversationId,
+    title: truncateTitle(firstUser?.content ?? ''),
+    created_at: list[0]?.created_at ?? new Date().toISOString(),
+    last_message_at: last?.created_at ?? new Date().toISOString(),
+  })
+}
+
+/** 截断会话标题到 24 字符（对齐后端 truncateTitle 语义） */
+function truncateTitle(title: string): string {
+  const t = title.trim().replace(/\s+/g, ' ')
+  if (!t) return '新对话'
+  return t.length > 24 ? t.slice(0, 24) + '…' : t
 }
 
 /** 消息单页大小（与后端默认 limit 一致） */

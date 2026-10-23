@@ -1,5 +1,4 @@
-// serveSPA 静态托管 / SPA fallback 单测。
-package handler
+package middleware
 
 import (
 	"net/http"
@@ -31,16 +30,16 @@ func setupWebDir(t *testing.T) {
 	t.Chdir(dir)
 }
 
-// serve 用 serveSPA 处理一次 GET，返回状态码与响应体。
+// serve 用 ServeSPA 处理一次 GET，返回状态码与响应体。
 func serve(t *testing.T, path string) (code int, body string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	serveSPA(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+	ServeSPA(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
 	return rec.Code, rec.Body.String()
 }
 
 // 根路径必须直接落到患者端入口：命中 index.html 中转页会多一次文档级导航（多一个 RTT）。
-func TestServeSPA_RootServesPatientEntry(t *testing.T) {
+func TestServeSPA_RootServeSPAtientEntry(t *testing.T) {
 	setupWebDir(t)
 	code, body := serve(t, "/")
 	if code != http.StatusOK || body != "PATIENT-ENTRY" {

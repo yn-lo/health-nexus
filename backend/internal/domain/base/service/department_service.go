@@ -8,11 +8,15 @@ import (
 	"time"
 
 	"health-nexus/internal/domain/base/entity"
-	"health-nexus/internal/middleware"
-	"health-nexus/internal/platform/postgres"
 	"health-nexus/internal/shared/constants"
 	apperrors "health-nexus/internal/shared/errors"
+	"health-nexus/internal/shared/identity"
 )
+
+// TxRunner 事务执行能力（消费者定义，ISP）。*postgres.TxManager 实现此接口。
+type TxRunner interface {
+	WithTx(ctx context.Context, fn func(ctx context.Context) error) error
+}
 
 // DepartmentRepo 是 base 域需要的科室持久化能力（消费者定义，ISP）。
 // 由 repository 包实现，通过 InitializeApp 注入。
@@ -58,27 +62,13 @@ type DepartmentTreeDTO struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// Actor 操作者上下文（由 handler 从 JWT ctx 提取后传入；与 wiki 域 Actor 一致风格）。
-type Actor struct {
-	UserID int64
-	Role   string
-	DeptID int64
-}
-
-// ActorFromDataScope 从 ctx 中的 DataScope（DataIsolation 中间件注入）构造 Actor。
-// 返回 ok=false 表示 ctx 未挂载 DataScope（如未走 DataIsolation 中间件的路由）。
-func ActorFromDataScope(ctx context.Context) (Actor, bool) {
-	scope := middleware.ScopeFromCtx(ctx)
-	if scope == nil {
-		return Actor{}, false
-	}
-	return Actor{UserID: scope.UserID, Role: scope.Role, DeptID: scope.DeptID}, true
-}
+// Actor 操作者上下文（由 handler 从 JWT ctx 提取后传入）。
+type Actor = identity.Actor
 
 // DepartmentService 科室业务服务：只读可见列表 + 管理员 CRUD + 树形/环路校验。
 type DepartmentService struct {
 	repo DepartmentRepo
-	tx   *postgres.TxManager
+	tx   TxRunner
 	// defaultDeptID 问答默认责任科室 id（chat.default_dept_id；<=0 时取首个公共启用科室）。
 	// 仅用于在科室列表响应中标记 is_default，供前端预选；不参与鉴权。
 	defaultDeptID int64
@@ -87,7 +77,7 @@ type DepartmentService struct {
 // NewDepartmentService 构造科室服务。tx 为 nil 时 CRUD 方法以非事务模式运行
 // （仅用于单元测试场景，生产环境必须注入 TxManager）。
 // defaultDeptID 来自 chat.default_dept_id（0 = 未配置，取首个公共启用科室）。
-func NewDepartmentService(repo DepartmentRepo, tx *postgres.TxManager, defaultDeptID int64) *DepartmentService {
+func NewDepartmentService(repo DepartmentRepo, tx TxRunner, defaultDeptID int64) *DepartmentService {
 	return &DepartmentService{repo: repo, tx: tx, defaultDeptID: defaultDeptID}
 }
 

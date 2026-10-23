@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue'
-import { baseApi, getAccessToken } from '@/shared'
+import { baseApi } from '@/shared'
+import { isAuthenticated } from '@/shared/api/client'
 import type { Department } from '@/shared'
 
 const ALL_DEPARTMENTS: Department = {
@@ -49,7 +50,7 @@ export function useDepartments(options: UseDepartmentsOptions = {}) {
       }
     }
     try {
-      apply(getAccessToken() ? await baseApi.listDepartments() : await baseApi.listPublicDepartments())
+      apply(isAuthenticated.value ? await baseApi.listDepartments() : await baseApi.listPublicDepartments())
     } catch {
       // 登录态失效时 client.ts 已清除 token：降级公开接口，保证匿名仍可选用科室。
       try {

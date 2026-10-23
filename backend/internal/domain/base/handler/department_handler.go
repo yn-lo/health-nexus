@@ -95,7 +95,7 @@ type createDepartmentRequest struct {
 
 // CreateDepartment POST /api/staff/base/departments — 创建科室（REQ-BASE-005/011）。
 func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
+	actor, err := actorFromRequest(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -132,7 +132,7 @@ func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Requ
 // ListTree GET /api/staff/base/departments — 科室树（扁平数组，前端按 parent_id 组装）。
 // SUPER_ADMIN 返回全树；DEPT_ADMIN 仅返回主科室子树（REQ-BASE-006/011）。
 func (h *DepartmentHandler) ListTree(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
+	actor, err := actorFromRequest(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -147,7 +147,7 @@ func (h *DepartmentHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 
 // GetDepartment GET /api/staff/base/departments/{id} — 科室详情（REQ-BASE-007/011）。
 func (h *DepartmentHandler) GetDepartment(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
+	actor, err := actorFromRequest(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -177,7 +177,7 @@ type updateDepartmentRequest struct {
 
 // UpdateDepartment PATCH /api/staff/base/departments/{id} — 更新科室（REQ-BASE-008/009/011）。
 func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
+	actor, err := actorFromRequest(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -209,7 +209,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 
 // DeleteDepartment DELETE /api/staff/base/departments/{id} — 删除科室（REQ-BASE-010/011）。
 func (h *DepartmentHandler) DeleteDepartment(w http.ResponseWriter, r *http.Request) {
-	actor, err := currentActor(r)
+	actor, err := actorFromRequest(r)
 	if err != nil {
 		response.WriteError(w, r, err)
 		return
@@ -227,20 +227,6 @@ func (h *DepartmentHandler) DeleteDepartment(w http.ResponseWriter, r *http.Requ
 }
 
 // ============ 共享辅助 ============
-
-// currentActor 从 ctx 提取医护身份。
-// DataIsolation 中间件挂载后由 service.ActorFromDataScope 统一读取，避免重复实现。
-func currentActor(r *http.Request) (service.Actor, error) {
-	// 复用 service.ActorFromDataScope（DataIsolation 已挂载）。
-	actor, ok := service.ActorFromDataScope(r.Context())
-	if !ok || actor.UserID <= 0 {
-		return service.Actor{}, apperrors.Unauthorized("UNAUTHORIZED", "missing user identity")
-	}
-	if actor.Role == "" {
-		return service.Actor{}, apperrors.Unauthorized("UNAUTHORIZED", "missing user role")
-	}
-	return actor, nil
-}
 
 // parseDeptID 解析 {id} 路径参数为 int64（契约 §2.3/2.5/2.6）。
 func parseDeptID(r *http.Request) (int64, error) {
